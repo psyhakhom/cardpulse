@@ -173,6 +173,53 @@ function extractComps(items, limit = 10, grade = null) {
     }))
 }
 
+// ─── CLUSTER DETECTION ───────────────────────────────────────────────────────
+const BUCKETS = [
+  { label: 'Under $20',   min: 0,   max: 20  },
+  { label: '$20–$50',     min: 20,  max: 50  },
+  { label: '$50–$100',    min: 50,  max: 100 },
+  { label: '$100–$200',   min: 100, max: 200 },
+  { label: '$200–$500',   min: 200, max: 500 },
+  { label: '$500+',       min: 500, max: Infinity },
+]
+
+function detectClusters(items) {
+  const priced = items.filter((i) => parseFloat(i.price?.value || 0) > 0)
+  if (priced.length < 6) return null
+
+  const buckets = BUCKETS.map((b) => {
+    const members = priced.filter((i) => {
+      const p = parseFloat(i.price.value)
+      return p >= b.min && p < b.max
+    })
+    const avg = members.length
+      ? members.reduce((s, i) => s + parseFloat(i.price.value), 0) / members.length
+      : 0
+    return { label: b.label, min: b.min, max: b.max, count: members.length, avg: parseFloat(avg.toFixed(2)) }
+  }).filter((b) => b.count > 0)
+
+  if (buckets.length < 2) return null
+
+  const total = priced.length
+  const dominant = buckets.reduce((a, b) => (b.count > a.count ? b : a))
+
+  // Check if dominant bucket has 80%+ of results
+  if (dominant.count / total < 0.8) return null
+
+  // Check if any other bucket has items at 10x+ the dominant avg
+  const hasHighOutlierCluster = buckets.some(
+    (b) => b !== dominant && b.avg >= dominant.avg * 10 && b.count >= 2
+  )
+  // Also check opposite: dominant is the cheap bucket and there's a high-value cluster
+  const hasLowDominantWithHighCluster = buckets.some(
+    (b) => b !== dominant && dominant.avg > 0 && b.avg >= dominant.avg * 10 && b.count >= 2
+  )
+
+  if (!hasHighOutlierCluster && !hasLowDominantWithHighCluster) return null
+
+  return buckets.filter((b) => b.count >= 2)
+}
+
 // ─── TREND ───────────────────────────────────────────────────────────────────
 function calcTrend(recentAvg, allAvg) {
   if (!recentAvg || !allAvg || allAvg === 0) return 0
@@ -441,6 +488,10 @@ export default async function handler(req, res) {
       searchTip: blended.confidence < 60 && blended.totalComps < 5
         ? 'Try adding the set name or card number for better results'
         : null,
+      ...(() => {
+        const clusters = detectClusters(allItems)
+        return clusters ? { multipleProducts: true, clusters } : { multipleProducts: false }
+      })(),
     }
 
     // Log to Supabase — fire and forget, never blocks the response
