@@ -506,11 +506,12 @@ function spellCorrect(query) {
 // ─── RARITY NORMALIZATION ────────────────────────────────────────────────────
 // Normalize rarity aliases to canonical forms BEFORE any other preprocessing.
 // Order matters: longer/more specific patterns must come first.
+// `tier` tracks the starred rarity for DBS (SR vs SR* vs SCR vs SCR** etc)
 const RARITY_ALIASES = [
-  // DBS / Fusion World — multi-word aliases (longest first)
-  { re: /\bscr\s*(?:double\s*alt|double\s*star|\*\*)/gi, to: 'SCR' },
-  { re: /\bscr\s*(?:alt(?:ernate)?(?:\s*art)?|\+)/gi, to: 'SCR' },
-  { re: /\bsr\s*(?:alt(?:ernate)?(?:\s*art)?|\+)/gi, to: 'SR' },
+  // DBS / Fusion World — starred variants (longest first)
+  { re: /\bscr\s*(?:double\s*alt|double\s*star|\*\*)/gi, to: 'SCR', tier: 'SCR**' },
+  { re: /\bscr\s*(?:alt(?:ernate)?(?:\s*art)?|\+|\*)/gi, to: 'SCR', tier: 'SCR*' },
+  { re: /\bsr\s*(?:alt(?:ernate)?(?:\s*art)?|\+|\*)/gi, to: 'SR', tier: 'SR*' },
   // Pokemon — multi-word aliases (longest first)
   { re: /\bspecial\s*illustration\s*rare\b/gi, to: 'SIR' },
   { re: /\billustration\s*rare\b/gi, to: 'IR' },
@@ -534,12 +535,25 @@ const RARITY_ALIASES = [
 
 function normalizeRarity(raw) {
   let q = raw
+  let requiredRarity = null
   for (const alias of RARITY_ALIASES) {
     const before = q
     q = q.replace(alias.re, alias.to)
-    if (q !== before) console.log(`[rarity-norm] "${before}" → "${q}" (${alias.to})`)
+    if (q !== before) {
+      console.log(`[rarity-norm] "${before}" → "${q}" (${alias.to}${alias.tier ? ', tier=' + alias.tier : ''})`)
+      // Track the starred tier if this alias defines one
+      if (alias.tier) requiredRarity = alias.tier
+    }
   }
-  return q
+  // If no starred alias matched, detect plain rarity codes (SR, SCR etc)
+  // so filterByRarity can exclude starred variants from plain searches
+  if (!requiredRarity) {
+    if (/\bSCR\b/.test(q)) requiredRarity = 'SCR'
+    else if (/\bSPR\b/.test(q)) requiredRarity = 'SPR'
+    else if (/\bSR\b/.test(q)) requiredRarity = 'SR'
+  }
+  if (requiredRarity) console.log(`[rarity-norm] requiredRarity: ${requiredRarity}`)
+  return { query: q, requiredRarity }
 }
 
 // ─── QUERY PREPROCESSOR ──────────────────────────────────────────────────────
@@ -619,14 +633,14 @@ function cleanFullTitle(q) {
  * Returns { query, type, tokens } for logging and debugging.
  */
 function preprocessQuery(raw, grade = 'Raw') {
-  const rarityNormed = normalizeRarity(raw)
+  const { query: rarityNormed, requiredRarity } = normalizeRarity(raw)
   const normalised = normalize(rarityNormed)
   const type = detectType(normalised, grade)
 
   // Short set-code queries are already specific — pass through untouched
   if (type === 'SET_CODE' && normalised.length <= 60) {
     console.log(`[preprocess] type=SET_CODE (passthrough) "${raw}" → "${normalised}"`)
-    return { query: normalised, type, tokens: extractTokens(normalised) }
+    return { query: normalised, type, tokens: extractTokens(normalised), requiredRarity }
   }
 
   const tokens = extractTokens(normalised)
@@ -670,8 +684,8 @@ function preprocessQuery(raw, grade = 'Raw') {
   // Fallback: if cleaning gutted the query, return the normalised original
   if (query.length < 3) query = normalised.substring(0, 50)
 
-  console.log(`[preprocess] type=${type} "${raw}" → "${query}"`)
-  return { query, type, tokens }
+  console.log(`[preprocess] type=${type} "${raw}" → "${query}"${requiredRarity ? ' requiredRarity=' + requiredRarity : ''}`)
+  return { query, type, tokens, requiredRarity }
 }
 
 // ─── QUERY BUILDERS ──────────────────────────────────────────────────────────
@@ -845,22 +859,55 @@ export default async function handler(req, res) {
   try {
     const token = await getToken()
     // When exact=1 (card catalog selection), skip preprocessor entirely
-    const processed = exact === '1' ? q.trim() : preprocessQuery(q.trim(), grade).query
+    let requiredRarity = null
+    let processed
+    if (exact === '1') {
+      processed = q.trim()
+    } else {
+      const pp = preprocessQuery(q.trim(), grade)
+      processed = pp.query
+      requiredRarity = pp.requiredRarity || null
+    }
 
     // Helper: run the three parallel eBay queries for a given name.
     // Grade filtering is applied immediately after raw results come back,
     // before calcStats, extractComps, or image selection see any data.
-    // Detect rarity code in the query — if present, enforce it in results
-    const queryRarity = RARITY_CODES.find((r) => new RegExp(`\\b${r}\\b`, 'i').test(processed))
-    if (queryRarity) console.log(`[rarity] detected "${queryRarity}" in query — enforcing in results`)
+    // Rarity-tier enforcement — uses requiredRarity from normalizeRarity()
+    // Distinguishes between SR (plain) vs SR* (alt art) vs SCR vs SCR* vs SCR**
+    if (requiredRarity) console.log(`[rarity] enforcing tier: ${requiredRarity}`)
 
     function filterByRarity(items) {
-      if (!queryRarity || !items?.length) return items
-      const re = new RegExp(`\\b${queryRarity}\\b`, 'i')
-      const kept = items.filter((i) => re.test(i.title || ''))
-      console.log(`[rarity] ${items.length} → ${kept.length} with "${queryRarity}" in title`)
-      // Fall back to unfiltered if rarity filter leaves too few results
-      return kept.length >= 2 ? kept : items
+      if (!requiredRarity || !items?.length) return items
+      const kept = items.filter((i) => {
+        const t = i.title || ''
+        switch (requiredRarity) {
+          // Starred variants: title must contain the star version
+          case 'SR*':
+            // Must have SR* (star after SR), exclude plain SR and SR**
+            return /\bSR\s*\*/i.test(t) && !/\bSR\s*\*\*/i.test(t)
+          case 'SCR*':
+            // Must have SCR* but not SCR**
+            return /\bSCR\s*\*/i.test(t) && !/\bSCR\s*\*\*/i.test(t)
+          case 'SCR**':
+            // Must have SCR**
+            return /\bSCR\s*\*\*/i.test(t)
+          // Plain rarity: title must have the code but NOT the starred version
+          case 'SR':
+            return /\bSR\b/i.test(t) && !/\bSR\s*\*/i.test(t)
+          case 'SCR':
+            return /\bSCR\b/i.test(t) && !/\bSCR\s*\*/i.test(t)
+          case 'SPR':
+            return /\bSPR\b/i.test(t) && !/\bSPR\s*\*/i.test(t)
+          // Other rarity codes: simple word-boundary match
+          default: {
+            const re = new RegExp(`\\b${requiredRarity}\\b`, 'i')
+            return re.test(t)
+          }
+        }
+      })
+      console.log(`[rarity] ${items.length} → ${kept.length} with tier "${requiredRarity}"`)
+      // Do NOT fall back — wrong rarity comps are worse than no data
+      return kept
     }
 
     async function runQueries(name) {
