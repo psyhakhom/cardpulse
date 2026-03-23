@@ -445,7 +445,7 @@ function spellCorrect(query) {
 // ─── QUERY PREPROCESSOR ──────────────────────────────────────────────────────
 
 // Rarity codes to extract and preserve
-const RARITY_CODES = ['IMIR', 'SIR', 'SCR', 'SPR', 'SAR', 'SSR', 'SEC', 'ACE', 'UR', 'SR', 'RR', 'UC', 'CHR', 'AR']
+const RARITY_CODES = ['IMIR', 'SIR', 'SCR', 'SPR', 'SAR', 'SSR', 'SEC', 'ACE', 'UR', 'SR', 'RRR', 'RR', 'UC', 'CHR', 'AR', 'ALT', 'FA']
 
 // Set code pattern: BT27-019, FB09, OP01-112, D-BT01, SD23-01, 121/088
 const SET_CODE_RE = /\b(?:[A-Z]{1,4}-)?(?:BT|FB|OP|SD|P|D-BT|ST)\d+(?:-\d+)?\b|\b[A-Z]{1,4}\d{2,3}(?:-\d+)?\b|\b\d{3}\/\d{3}\b/gi
@@ -749,6 +749,19 @@ export default async function handler(req, res) {
     // Helper: run the three parallel eBay queries for a given name.
     // Grade filtering is applied immediately after raw results come back,
     // before calcStats, extractComps, or image selection see any data.
+    // Detect rarity code in the query — if present, enforce it in results
+    const queryRarity = RARITY_CODES.find((r) => new RegExp(`\\b${r}\\b`, 'i').test(processed))
+    if (queryRarity) console.log(`[rarity] detected "${queryRarity}" in query — enforcing in results`)
+
+    function filterByRarity(items) {
+      if (!queryRarity || !items?.length) return items
+      const re = new RegExp(`\\b${queryRarity}\\b`, 'i')
+      const kept = items.filter((i) => re.test(i.title || ''))
+      console.log(`[rarity] ${items.length} → ${kept.length} with "${queryRarity}" in title`)
+      // Fall back to unfiltered if rarity filter leaves too few results
+      return kept.length >= 2 ? kept : items
+    }
+
     async function runQueries(name) {
       const qs = buildQueries(name, grade, lang)
       const [dA, dB, dC, dD] = await Promise.allSettled([
@@ -762,13 +775,13 @@ export default async function handler(req, res) {
       const rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
       const rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
 
-      // Filter by grade immediately — filtered items are used for everything downstream
-      const fA = filterItems(rawA, grade)
-      const fB = filterItems(rawB, grade)
-      const fC = filterItems(rawC, grade)
+      // Filter by grade, then by rarity — filtered items are used for everything downstream
+      const fA = filterByRarity(filterItems(rawA, grade))
+      const fB = filterByRarity(filterItems(rawB, grade))
+      const fC = filterByRarity(filterItems(rawC, grade))
       // Query D: only include live auctions with 1+ bids (price validated by a buyer)
-      const fDgraded = filterItems(rawD, grade)
-      console.log(`[query:D] ${rawD.length} raw auctions → ${fDgraded.length} after grade filter`)
+      const fDgraded = filterByRarity(filterItems(rawD, grade))
+      console.log(`[query:D] ${rawD.length} raw auctions → ${fDgraded.length} after grade+rarity filter`)
       const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
 
