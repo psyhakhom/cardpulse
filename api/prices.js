@@ -226,6 +226,89 @@ function calcTrend(recentAvg, allAvg) {
   return parseFloat((((recentAvg - allAvg) / allAvg) * 100).toFixed(1))
 }
 
+// ─── SPELL CORRECTION ────────────────────────────────────────────────────────
+
+// Exact substitutions checked first (fast path)
+const SPELL_MAP = {
+  shiing: 'shining', shiinging: 'shining', shinnig: 'shining',
+  warior: 'warrior', warroir: 'warrior', warrioir: 'warrior',
+  potental: 'potential', potenital: 'potential',
+  unlimted: 'unlimited', unlimitd: 'unlimited',
+  goget: 'gogeta', gogeta_: 'gogeta',
+  vegi: 'vegeta',
+  vegito_: 'vegito',
+  charizrd: 'charizard', charizar: 'charizard', charizrd: 'charizard',
+  picachu: 'pikachu', pikach: 'pikachu', pkachu: 'pikachu',
+  meowht: 'meowth', meotwh: 'meowth',
+  freiza: 'frieza', frieeza: 'frieza',
+  piccilo: 'piccolo', picolo: 'piccolo',
+  goahn: 'gohan', gohna: 'gohan',
+  trunkz: 'trunks',
+  bardok: 'bardock',
+  brolly: 'broly', broli: 'broly',
+}
+
+// Known-good dictionary for Levenshtein matching (only words > 5 chars needed)
+const KNOWN_TERMS = [
+  // DBS characters
+  'shining','warrior','potential','unlimited','awakening','evolution',
+  'fusion','instinct','majin','saiyan','namekian','frieza','piccolo',
+  'vegeta','vegito','gogeta','gohan','goku','broly','beerus','whis',
+  'android','cell','trunks','bardock','cooler','turles','raditz',
+  // Pokemon
+  'charizard','pikachu','meowth','gengar','eevee','mewtwo','blastoise',
+  'venusaur','snorlax','gyarados','dragonite','alakazam','umbreon',
+  'espeon','sylveon','gardevoir','lucario','greninja','rayquaza',
+  // Rarity / card terms
+  'secret','special','illustration','alternate','parallel','rainbow',
+  'hyper','ultra','super','uncommon','common','promo','leader',
+  // Set names
+  'perfect','scarlet','violet','obsidian','temporal','paldea','paradox',
+]
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i])
+  for (let j = 1; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    }
+  }
+  return dp[m][n]
+}
+
+function correctWord(word) {
+  const wl = word.toLowerCase()
+  // 1. Exact map hit
+  if (SPELL_MAP[wl]) return SPELL_MAP[wl]
+  // 2. Already a known term — no correction needed
+  if (KNOWN_TERMS.includes(wl)) return word
+  // 3. Short words and numbers — don't touch
+  if (wl.length <= 5 || /^\d/.test(wl)) return word
+  // 4. Levenshtein — find closest known term within distance 2
+  let best = null, bestDist = 3
+  for (const term of KNOWN_TERMS) {
+    if (Math.abs(term.length - wl.length) > 2) continue // prune
+    const d = levenshtein(wl, term)
+    if (d < bestDist) { bestDist = d; best = term }
+  }
+  return best || word
+}
+
+/**
+ * Spell-correct a preprocessed query word by word.
+ * Returns { corrected, changed } where changed is true if any word was fixed.
+ */
+function spellCorrect(query) {
+  const tokens = query.split(/\s+/)
+  const corrected = tokens.map(correctWord)
+  const changed = corrected.some((w, i) => w !== tokens[i])
+  return { corrected: corrected.join(' '), changed }
+}
+
 // ─── QUERY PREPROCESSOR ──────────────────────────────────────────────────────
 
 // Rarity codes to extract and preserve
@@ -508,53 +591,64 @@ export default async function handler(req, res) {
   try {
     const token = await getToken()
     const { query: processed } = preprocessQuery(q.trim(), grade)
-    const queries = buildQueries(processed, grade, lang)
 
-    // Three queries in parallel — one failure doesn't kill the others
-    const [dataA, dataB, dataC] = await Promise.allSettled([
-      ebaySearch(queries.a.q, token, { limit: queries.a.limit, sort: queries.a.sort }),
-      ebaySearch(queries.b.q, token, { limit: queries.b.limit, sort: queries.b.sort }),
-      ebaySearch(queries.c.q, token, { limit: queries.c.limit, sort: queries.c.sort }),
-    ])
-
-    const itemsA =
-      dataA.status === 'fulfilled' ? dataA.value.itemSummaries || [] : []
-    const itemsB =
-      dataB.status === 'fulfilled' ? dataB.value.itemSummaries || [] : []
-    const itemsC =
-      dataC.status === 'fulfilled' ? dataC.value.itemSummaries || [] : []
-
-    let results = [
-      { ...queries.a, stats: calcStats(filterByGrade(itemsA, grade, 'A')) },
-      { ...queries.b, stats: calcStats(filterByGrade(itemsB, grade, 'B')) },
-      { ...queries.c, stats: calcStats(filterByGrade(itemsC, grade, 'C')) },
-    ]
-
-    let blended = blend(results)
-    let allItems = [...itemsA, ...itemsB, ...itemsC]
-
-    // Fallback: strip last word and retry when comps are too thin
-    if ((!blended || blended.totalComps < 3) && processed.split(/\s+/).length > 1) {
-      const fallbackName = processed.split(/\s+/).slice(0, -1).join(' ')
-      const fbQueries = buildQueries(fallbackName, grade, lang)
-      const [fbA, fbB, fbC] = await Promise.allSettled([
-        ebaySearch(fbQueries.a.q, token, { limit: fbQueries.a.limit, sort: fbQueries.a.sort }),
-        ebaySearch(fbQueries.b.q, token, { limit: fbQueries.b.limit, sort: fbQueries.b.sort }),
-        ebaySearch(fbQueries.c.q, token, { limit: fbQueries.c.limit, sort: fbQueries.c.sort }),
+    // Helper: run the three parallel eBay queries for a given name and return
+    // { results, blended, allItems }
+    async function runQueries(name) {
+      const qs = buildQueries(name, grade, lang)
+      const [dA, dB, dC] = await Promise.allSettled([
+        ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
+        ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
+        ebaySearch(qs.c.q, token, { limit: qs.c.limit, sort: qs.c.sort }),
       ])
-      const fbItemsA = fbA.status === 'fulfilled' ? fbA.value.itemSummaries || [] : []
-      const fbItemsB = fbB.status === 'fulfilled' ? fbB.value.itemSummaries || [] : []
-      const fbItemsC = fbC.status === 'fulfilled' ? fbC.value.itemSummaries || [] : []
-      const fbResults = [
-        { ...fbQueries.a, stats: calcStats(filterByGrade(fbItemsA, grade, 'fbA')) },
-        { ...fbQueries.b, stats: calcStats(filterByGrade(fbItemsB, grade, 'fbB')) },
-        { ...fbQueries.c, stats: calcStats(filterByGrade(fbItemsC, grade, 'fbC')) },
+      const iA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
+      const iB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
+      const iC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
+      const res = [
+        { ...qs.a, stats: calcStats(filterByGrade(iA, grade, 'A')) },
+        { ...qs.b, stats: calcStats(filterByGrade(iB, grade, 'B')) },
+        { ...qs.c, stats: calcStats(filterByGrade(iC, grade, 'C')) },
       ]
-      const fbBlended = blend(fbResults)
-      if (fbBlended && fbBlended.totalComps > (blended?.totalComps || 0)) {
-        results = fbResults
-        blended = fbBlended
-        allItems = [...fbItemsA, ...fbItemsB, ...fbItemsC]
+      return { results: res, blended: blend(res), allItems: [...iA, ...iB, ...iC] }
+    }
+
+    let { results, blended, allItems } = await runQueries(processed)
+    let correctedQuery = null  // set if we used spell correction or word-strip
+
+    // ── Retry 1: spell correction ────────────────────────────────────────────
+    if (!blended || blended.totalComps === 0) {
+      const { corrected, changed } = spellCorrect(processed)
+      if (changed) {
+        console.log(`[spellcorrect] "${processed}" → "${corrected}"`)
+        const attempt = await runQueries(corrected)
+        if (attempt.blended && attempt.blended.totalComps > 0) {
+          ;({ results, blended, allItems } = attempt)
+          correctedQuery = corrected
+        }
+      }
+    }
+
+    // ── Retry 2: progressive word removal (strip from middle, keep set codes) ─
+    if (!blended || blended.totalComps < 3) {
+      const base = correctedQuery || processed
+      const words = base.split(/\s+/)
+      // Identify anchor positions: set codes, card numbers, rarity codes
+      const anchorRe = /^(?:[A-Z]{1,4}-?\d+|\d{1,3}\/\d{1,3}|SIR|SCR|SPR|SR|UR|SEC|SAR)$/i
+      const anchorIdx = new Set(words.map((w, i) => anchorRe.test(w) ? i : -1).filter(i => i >= 0))
+
+      // Build candidate removal sequence: try removing each non-anchor word
+      // starting from the last non-anchor position (right-to-left, skip anchors)
+      for (let i = words.length - 1; i >= 1; i--) {
+        if (anchorIdx.has(i)) continue
+        const candidate = words.filter((_, idx) => idx !== i).join(' ')
+        if (candidate === base) continue
+        console.log(`[word-strip] trying "${candidate}"`)
+        const attempt = await runQueries(candidate)
+        if (attempt.blended && attempt.blended.totalComps > (blended?.totalComps || 0)) {
+          ;({ results, blended, allItems } = attempt)
+          if (!correctedQuery) correctedQuery = candidate
+          if (blended.totalComps >= 3) break  // good enough, stop retrying
+        }
       }
     }
 
@@ -613,6 +707,7 @@ export default async function handler(req, res) {
       })),
       comps: extractComps(deduped, 10, grade),
       query: q,
+      correctedQuery: correctedQuery !== processed ? correctedQuery : null,
       grade,
       lang,
       source: 'ebay',

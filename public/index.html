@@ -96,6 +96,7 @@ a.ct2:hover{text-decoration:underline}
 .fxb strong{color:var(--a2)}
 .tmb{background:rgba(186,117,23,.12);border:1px solid rgba(186,117,23,.35);border-radius:7px;padding:6px 9px;margin-bottom:9px;font-family:monospace;font-size:9px;color:#BA7517}
 .stb{background:rgba(100,149,237,.10);border:1px solid rgba(100,149,237,.30);border-radius:7px;padding:6px 9px;margin-bottom:9px;font-family:monospace;font-size:9px;color:#6495ed;line-height:1.5}
+.cqb{font-family:monospace;font-size:9px;color:var(--mu);margin-bottom:5px}
 .jpb{background:rgba(255,75,75,.10);border:1px solid rgba(255,75,75,.3);border-radius:7px;padding:7px 10px;margin-bottom:10px;font-family:monospace;font-size:9px;color:#ff6b6b;line-height:1.5}
 .spb{background:rgba(232,255,71,.06);border:1px solid rgba(232,255,71,.25);border-radius:7px;padding:7px 10px;margin-top:10px;margin-bottom:2px;font-family:monospace;font-size:9px;color:var(--ac);line-height:1.6}
 .mpb{background:rgba(255,150,50,.08);border:1px solid rgba(255,150,50,.35);border-radius:7px;padding:8px 10px;margin-bottom:9px;font-family:monospace;font-size:9px;color:#ff9632;line-height:1.5}
@@ -491,6 +492,7 @@ function normalizeApiResponse(data, q) {
     searchTip: data.searchTip || null,
     multipleProducts: data.multipleProducts || false,
     clusters: data.clusters || null,
+    correctedQuery: data.correctedQuery || null,
   };
 }
 
@@ -572,6 +574,7 @@ function renderResult(el,q,r){
   const jb=r.jx?`<div class="jpb"><strong>Japan-exclusive set.</strong> Auto-routed to Yahoo JP, Buyee, Mercari JP. Prices converted from ¥.</div>`:'';
   const conf=r.conf,cc=conf>=75?'var(--gn)':conf>=50?'var(--ac)':'#f7931e';
   const rad=17,circ=2*Math.PI*rad,dash=(conf/100)*circ;
+  const cqb=r.correctedQuery?`<div class="cqb">Showing results for: <em>${escH(r.correctedQuery)}</em></div>`:'';
   const mpb=r.multipleProducts&&r.clusters?`<div class="mpb"><div class="mpb-title">⚠ Multiple card types found</div>${r.clusters.map(c=>`<div class="mpc"><span>${escH(c.label)} <span style="color:var(--mu)">(${c.count} sold)</span></span><span style="font-weight:700">${fP(c.avg)} avg</span></div>`).join('')}<div style="margin-top:4px;color:rgba(255,150,50,.7)">Add the set name or card number to narrow results.</div></div>`:'';
   const spread=r.lo>0&&(r.hi/r.lo)>5?`<div class="spb">⚠ Wide price spread detected. Results may include different variants, conditions, or lot sales. Try adding terms like <strong>'holo'</strong>, <strong>'1st edition'</strong>, <strong>'silver'</strong>, <strong>'gold'</strong>, or a specific condition to narrow results. For Dragon Ball cards, include the set code like <strong>BT27</strong> or <strong>FB09</strong>. For Pokémon, include the set name like <strong>'Base Set'</strong> or <strong>'Scarlet Violet'</strong>.</div>`:'';
   const tip=r.searchTip?`<div class="stb">💡 ${escH(r.searchTip)}</div>`:'';
@@ -594,7 +597,7 @@ function renderResult(el,q,r){
     <div class="rh" id="rh"><div class="shim" id="shim"></div>
     <img src="${r.img}" style="opacity:0" onload="this.style.opacity='1';var s=document.getElementById('shim');if(s)s.remove()" onerror="this.style.display='none'"/>
     <div class="rhl">${ctl}</div></div>
-    <div class="rb">${jb}${fx}${tm}
+    <div class="rb">${jb}${fx}${tm}${cqb}
     <div class="rt">${escH(q)}${lb}</div>
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}</div>
     <div class="pg">
