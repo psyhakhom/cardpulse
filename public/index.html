@@ -22,6 +22,17 @@ header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:spa
 .si{width:100%;background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:11px 72px 11px 13px;font-size:15px;color:var(--tx);outline:none}
 .scl{position:absolute;right:44px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--mu);font-size:16px;line-height:1;cursor:pointer;padding:4px 6px;display:none}
 .scl.vis{display:block}
+/* autocomplete dropdown */
+.ac-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--s1);border:1px solid var(--bd);border-radius:10px;z-index:200;overflow:hidden;display:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.ac-drop.open{display:block}
+.ac-item{display:flex;align-items:center;padding:8px 12px;cursor:pointer;gap:9px;border-bottom:1px solid var(--bd)}
+.ac-item:last-of-type{border-bottom:none}
+.ac-item:hover,.ac-item.sel{background:var(--s2)}
+.ac-img{width:30px;height:42px;object-fit:contain;border-radius:3px;flex-shrink:0;background:var(--bd)}
+.ac-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-sub{font-family:monospace;font-size:9px;color:var(--mu);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-badge{font-family:monospace;font-size:8px;padding:1px 4px;border-radius:3px;background:var(--s2);border:1px solid var(--bd);color:var(--ac);white-space:nowrap;flex-shrink:0}
+.ac-attr{font-family:monospace;font-size:8px;color:var(--mu);padding:4px 12px 5px;text-align:right}
 .si:focus{border-color:var(--ac)}.si::placeholder{color:var(--mu)}
 .sb{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--ac);border:none;border-radius:7px;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .sb svg{width:15px;height:15px}
@@ -220,9 +231,12 @@ video{width:100%;height:100%;object-fit:cover;display:block}
 <!-- SEARCH -->
 <div id="p-search" class="pane on">
   <div class="sw">
-    <input class="si" id="si" placeholder="Card name · set name · set code (e.g. Son Goku BT27-019)" autocomplete="off" onkeydown="if(event.key==='Enter')doSearch()" oninput="toggleClear()"/>
+    <input class="si" id="si" placeholder="Card name · set name · set code (e.g. Son Goku BT27-019)" autocomplete="off"
+      oninput="toggleClear();acOnInput(this.value)"
+      onkeydown="acKeydown(event)"/>
     <button class="scl" id="scl" onclick="clearSearch()" aria-label="Clear search">×</button>
     <button class="sb" onclick="doSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
+    <div class="ac-drop" id="ac-drop"></div>
   </div>
   <div class="fr"><span class="fl">Grade</span><div class="fg" id="gc">
     <button class="ch on" onclick="pick(this,'g')">Raw</button>
@@ -381,9 +395,65 @@ function camOff(){
 
 // SEARCH
 function toggleClear(){document.getElementById('scl').classList.toggle('vis',document.getElementById('si').value.length>0);}
-function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');i.focus();}
-function doSearch(){const q=document.getElementById('si').value.trim();if(q)search(q,'sr');}
+function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');hideAc();i.focus();}
+function doSearch(){const q=document.getElementById('si').value.trim();if(q){hideAc();search(q,'sr');}}
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
+
+// AUTOCOMPLETE
+let acTimer=null,acSel=-1,acList=[],acOverrideImage=null;
+function acOnInput(v){
+  clearTimeout(acTimer);
+  const q=v.trim();
+  if(q.length<3){hideAc();return;}
+  acTimer=setTimeout(()=>fetchAc(q),400);
+}
+function acKeydown(e){
+  const open=document.getElementById('ac-drop').classList.contains('open');
+  if(e.key==='ArrowDown'){if(open){e.preventDefault();acMove(1);}return;}
+  if(e.key==='ArrowUp'){if(open){e.preventDefault();acMove(-1);}return;}
+  if(e.key==='Escape'){hideAc();return;}
+  if(e.key==='Enter'){if(open&&acSel>=0){e.preventDefault();selectAc(acSel);}else{hideAc();doSearch();}}
+}
+async function fetchAc(q){
+  try{
+    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}`);
+    if(!r.ok){hideAc();return;}
+    const d=await r.json();
+    renderAc(d,q);
+  }catch{hideAc();}
+}
+function renderAc(d,q){
+  const drop=document.getElementById('ac-drop');
+  acList=[...(d.cards||[]),d.ebayDirect].filter(Boolean);
+  acSel=-1;
+  if(!acList.length){hideAc();return;}
+  drop.innerHTML=acList.map((c,i)=>{
+    if(c.isDirect)return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu)">${escH(c.name)}</div></div></div>`;
+    const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='var(--bd)'">`:`<div class="ac-img"></div>`;
+    const badge=c.rarity?`<span class="ac-badge">${escH(c.rarity.slice(0,12))}</span>`:'';
+    const sub=[c.set,c.number].filter(Boolean).join(' · ');
+    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name">${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div>${badge}</div>`;
+  }).join('');
+  if(d.attribution)drop.innerHTML+=`<div class="ac-attr">powered by ${escH(d.attribution)}</div>`;
+  drop.classList.add('open');
+}
+function hideAc(){document.getElementById('ac-drop').classList.remove('open');acSel=-1;}
+function acMove(dir){
+  const items=document.querySelectorAll('#ac-drop .ac-item');
+  if(!items.length)return;
+  if(acSel>=0)items[acSel].classList.remove('sel');
+  acSel=Math.max(0,Math.min(items.length-1,acSel+dir));
+  items[acSel].classList.add('sel');
+}
+function selectAc(i){
+  const card=acList[i];if(!card)return;
+  document.getElementById('si').value=card.searchQuery;
+  acOverrideImage=card.largeImageUrl||null;
+  toggleClear();hideAc();
+  search(card.searchQuery,'sr');
+}
+// Close dropdown when clicking outside the search wrapper
+document.addEventListener('click',e=>{if(!e.target.closest('.sw'))hideAc();});
 
 // Toggle between real API and mock data.
 // Set USE_REAL_API = true once your Vercel backend is deployed.
@@ -487,7 +557,7 @@ function normalizeApiResponse(data, q) {
     jx,
     showFX:  false,
     l:       L,
-    img:     data.imageUrl || getImg(q),
+    img:     (() => { const ov=acOverrideImage; acOverrideImage=null; return ov || data.imageUrl || getImg(q); })(),
     comps,
     searchTip: data.searchTip || null,
     multipleProducts: data.multipleProducts || false,
