@@ -66,12 +66,12 @@ async function getToken() {
 async function ebaySearch(
   query,
   token,
-  { limit = 40, marketplaceId = 'EBAY_US' } = {}
+  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US' } = {}
 ) {
   const params = new URLSearchParams({
     q: query,
     filter: 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true',
-    sort: 'endingSoonest',
+    sort,
     limit: String(limit),
   })
   const res = await fetch(
@@ -180,18 +180,14 @@ function buildQueries(name, grade, lang) {
   const gradeStr = grade && grade !== 'Raw' ? ` ${grade}` : ''
   const base = `${name}${langSuffix}${cardSuffix}${gradeStr}`
   return {
-    a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40 },
-    b: {
-      q: `${base} sold`,
-      label: 'Recent sold (30d)',
-      weight: 0.45,
-      limit: 20,
-    },
+    a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40, sort: 'endingSoonest' },
+    b: { q: base, label: 'Recent sold (30d)', weight: 0.45, limit: 15, sort: 'newlyListed' },
     c: {
       q: base,
       label: `Grade-exact (${grade || 'raw'})`,
       weight: 0.3,
       limit: 30,
+      sort: 'endingSoonest',
     },
   }
 }
@@ -327,9 +323,9 @@ export default async function handler(req, res) {
 
     // Three queries in parallel — one failure doesn't kill the others
     const [dataA, dataB, dataC] = await Promise.allSettled([
-      ebaySearch(queries.a.q, token, { limit: queries.a.limit }),
-      ebaySearch(queries.b.q, token, { limit: queries.b.limit }),
-      ebaySearch(queries.c.q, token, { limit: queries.c.limit }),
+      ebaySearch(queries.a.q, token, { limit: queries.a.limit, sort: queries.a.sort }),
+      ebaySearch(queries.b.q, token, { limit: queries.b.limit, sort: queries.b.sort }),
+      ebaySearch(queries.c.q, token, { limit: queries.c.limit, sort: queries.c.sort }),
     ])
 
     const itemsA =
@@ -353,9 +349,9 @@ export default async function handler(req, res) {
       const fallbackName = q.trim().split(/\s+/).slice(0, -1).join(' ')
       const fbQueries = buildQueries(fallbackName, grade, lang)
       const [fbA, fbB, fbC] = await Promise.allSettled([
-        ebaySearch(fbQueries.a.q, token, { limit: fbQueries.a.limit }),
-        ebaySearch(fbQueries.b.q, token, { limit: fbQueries.b.limit }),
-        ebaySearch(fbQueries.c.q, token, { limit: fbQueries.c.limit }),
+        ebaySearch(fbQueries.a.q, token, { limit: fbQueries.a.limit, sort: fbQueries.a.sort }),
+        ebaySearch(fbQueries.b.q, token, { limit: fbQueries.b.limit, sort: fbQueries.b.sort }),
+        ebaySearch(fbQueries.c.q, token, { limit: fbQueries.c.limit, sort: fbQueries.c.sort }),
       ])
       const fbItemsA = fbA.status === 'fulfilled' ? fbA.value.itemSummaries || [] : []
       const fbItemsB = fbB.status === 'fulfilled' ? fbB.value.itemSummaries || [] : []
