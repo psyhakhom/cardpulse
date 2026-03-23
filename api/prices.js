@@ -107,19 +107,31 @@ function filterByGrade(items, grade, label) {
   if (!items?.length) return items
   const tag = `[filterByGrade:${label || '?'}]`
   if (!grade || grade === 'Raw') {
-    const filtered = items.filter((i) => {
+    const kept = []
+    const removed = []
+    for (const i of items) {
       const t = (i.title || '').toLowerCase()
-      return !RAW_EXCLUDE.some((kw) => t.includes(kw))
-    })
-    console.log(`${tag} Raw: ${items.length} → ${filtered.length} (removed ${items.length - filtered.length} graded)`)
-    if (filtered.length >= 2) return filtered
-    console.log(`${tag} Raw: fewer than 2 remain, keeping full set`)
+      const hitKw = RAW_EXCLUDE.find((kw) => t.includes(kw))
+      if (hitKw) {
+        removed.push({ title: i.title, reason: hitKw })
+      } else {
+        kept.push(i)
+      }
+    }
+    console.log(`${tag} Raw: ${items.length} in → ${kept.length} kept, ${removed.length} removed`)
+    if (removed.length) console.log(`${tag} removed:`, removed.map(r => `"${r.title?.slice(0,60)}" (matched "${r.reason}")`))
+    if (kept.length >= 2) return kept
+    console.log(`${tag} Raw: fewer than 2 remain after filtering — keeping full set to avoid empty results`)
     return items
   }
   const filtered = items.filter((i) => gradeMatch(i.title, grade))
-  console.log(`${tag} ${grade}: ${items.length} → ${filtered.length} match`)
+  console.log(`${tag} ${grade}: ${items.length} in → ${filtered.length} match`)
+  if (filtered.length < items.length) {
+    const dropped = items.filter((i) => !gradeMatch(i.title, grade))
+    console.log(`${tag} dropped:`, dropped.map(i => `"${i.title?.slice(0,60)}"`))
+  }
   if (filtered.length >= 2) return filtered
-  console.log(`${tag} ${grade}: fewer than 2 remain, keeping full set`)
+  console.log(`${tag} ${grade}: fewer than 2 remain — keeping full set`)
   return items
 }
 
@@ -683,12 +695,17 @@ export default async function handler(req, res) {
       imageUrl: (() => {
         const qLower = q.trim().toLowerCase()
         const qWords = qLower.split(/\s+/)
-        // Terms that signal a specific rare variant — if the query contains them,
-        // heavily prefer images from listings that also contain them.
         const rareTerms = ['illustration rare', 'special illustration', ' sir ', 'sir)', 'full art', 'alt art', 'alternate art']
         const queryIsRare = rareTerms.some((t) => qLower.includes(t))
+        const isRawSearch = !grade || grade === 'Raw'
         const scored = deduped
           .filter((i) => i.image?.imageUrl)
+          .filter((i) => {
+            // When searching Raw, exclude images from graded slab listings
+            if (!isRawSearch) return true
+            const t = (i.title || '').toLowerCase()
+            return !RAW_EXCLUDE.some((kw) => t.includes(kw))
+          })
           .map((i) => {
             const t = (i.title || '').toLowerCase()
             let score = qWords.filter((w) => t.includes(w)).length
