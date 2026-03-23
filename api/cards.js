@@ -47,6 +47,16 @@ function detectGame(query) {
   return null
 }
 
+// ─── QUERY SANITIZER ─────────────────────────────────────────────────────────
+// Strip colons, commas, and other special chars that break card database searches
+// (e.g. "Son Goku: Childhood" → "Son Goku Childhood" for the API query)
+function sanitizeQuery(query) {
+  return query
+    .replace(/[:;,!?@#$%^&*()[\]{}|\\<>~`"']/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 // ─── QUERY BUILDERS ──────────────────────────────────────────────────────────
 function buildPokemonQuery(card) {
   const name = card.name || ''
@@ -72,7 +82,7 @@ async function searchPokemon(query) {
     const headers = { Accept: 'application/json' }
     if (apiKey) headers['X-Api-Key'] = apiKey
 
-    const q = `name:${query}*`
+    const q = `name:${sanitizeQuery(query)}*`
     const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) })
     if (!res.ok) throw new Error(`pokemontcg ${res.status}`)
@@ -95,7 +105,8 @@ async function searchPokemon(query) {
 // ─── MTG / SCRYFALL ──────────────────────────────────────────────────────────
 async function searchMtg(query) {
   return withCache(`mtg:${query.toLowerCase()}`, async () => {
-    const url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&unique=prints&order=released&dir=desc`
+    const sanitized = sanitizeQuery(query)
+    const url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(sanitized)}&unique=prints&order=released&dir=desc`
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return []
     const data = await res.json()
@@ -114,74 +125,125 @@ async function searchMtg(query) {
   })
 }
 
-// ─── DBS CARD GAME SITE ──────────────────────────────────────────────────────
-async function searchDbsSite(query) {
-  return withCache(`dbs-site:${query.toLowerCase()}`, async () => {
-    const url = `https://www.dbs-cardgame.com/us-en/cardlist/?search=true&keyword=${encodeURIComponent(query)}`
+// ─── EBAY TOKEN ───────────────────────────────────────────────────────────────
+let ebayToken = null
+let ebayTokenExp = 0
+
+async function getEbayToken() {
+  if (ebayToken && Date.now() < ebayTokenExp) return ebayToken
+  const id = process.env.EBAY_CLIENT_ID
+  const secret = process.env.EBAY_CLIENT_SECRET
+  if (!id || !secret) throw new Error('eBay credentials not configured')
+  const creds = Buffer.from(`${id}:${secret}`).toString('base64')
+  const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    method: 'POST',
+    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope',
+    signal: AbortSignal.timeout(5000),
+  })
+  if (!res.ok) throw new Error(`eBay token ${res.status}`)
+  const data = await res.json()
+  ebayToken = data.access_token
+  ebayTokenExp = Date.now() + (data.expires_in - 60) * 1000
+  return ebayToken
+}
+
+// ─── DBS VIA EBAY ACTIVE LISTINGS ────────────────────────────────────────────
+// Search eBay active listings, extract unique card identities from titles,
+// and return them as autocomplete suggestions with images.
+const DBS_NUM_RE = /\b((?:BT|FB|SD|ST|D-BT|P-)\d+-\d+[A-Z]?)\b/i
+const DBS_RARITY_RE = /\b(SCR|SPR|SR|SIR|SSR|SEC|UR|RR|UC|CHR|AR|R|C)\b/
+const JUNK_RE = /\b(lot|bundle|collection|complete set|booster|pack|box|sealed|\d+\s*cards?|\dx|\bx\d+)\b/i
+
+function extractDbsCard(title) {
+  const numMatch = title.match(DBS_NUM_RE)
+  const number = numMatch ? numMatch[1].toUpperCase() : ''
+  const set = number ? number.replace(/-\d+[A-Z]?$/, '') : ''
+
+  // Extract rarity
+  const rarityMatch = title.match(DBS_RARITY_RE)
+  const rarity = rarityMatch ? rarityMatch[1].toUpperCase() : ''
+
+  // Extract card name: strip noise from the title
+  let name = title
+    .replace(/\bdragon\s*ball\s*(super\s*)?(card\s*game|tcg|dbscg)?\b/gi, '')
+    .replace(/\bfusion\s*world\b/gi, '')
+    .replace(/\bdbs\b/gi, '')
+    .replace(DBS_NUM_RE, '')
+    .replace(DBS_RARITY_RE, '')
+    .replace(/\bpsa\s*\d+\b/gi, '')
+    .replace(/\bbgs\s*[\d.]+\b/gi, '')
+    .replace(/\bcgc\s*[\d.]+\b/gi, '')
+    .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b|\bgd\b/gi, '')
+    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b/gi, '')
+    .replace(/\bcard\b|\bsingle\b|\btrading\b|\bgame\b/gi, '')
+    .replace(/\benglish\b|\bjapanese\b/gi, '')
+    .replace(/[[\]()|#]/g, ' ')
+    .replace(/\s*[-–—]\s*$/g, '') // trailing dashes
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+
+  // Clean leading/trailing punctuation
+  name = name.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
+
+  // Title-case
+  name = name.replace(/\b\w/g, (c) => c.toUpperCase())
+
+  return { name, number, set, rarity }
+}
+
+async function searchDbsEbay(query) {
+  return withCache(`dbs-ebay:${query.toLowerCase()}`, async () => {
+    const token = await getEbayToken()
+    const sanitized = sanitizeQuery(query)
+    const q = `${sanitized} dragon ball card`
+    console.log(`[cards:dbs] searching eBay active listings: "${q}"`)
+    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&filter=buyingOptions:{AUCTION|FIXED_PRICE}&sort=newlyListed&limit=40`
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'CardPulse/1.0' },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+      },
       signal: AbortSignal.timeout(6000),
     })
-    if (!res.ok) throw new Error(`DBS site ${res.status}`)
-    const html = await res.text()
+    if (!res.ok) {
+      console.error(`[cards:dbs] eBay search error: ${res.status}`)
+      return []
+    }
+    const data = await res.json()
+    const items = data.itemSummaries || []
+    console.log(`[cards:dbs] eBay returned ${items.length} active listings`)
 
+    // Extract unique cards from listing titles
+    const seen = new Set()
     const cards = []
-    // Parse card list items from the HTML — each card is in a <li> with class "list-inner"
-    // Card image: <img src="..."> inside the list item
-    // Card name: inside <dd class="cardName"> or similar
-    // Card number: inside <dd class="cardNumber">
-    const cardBlockRe = /<li[^>]*class="[^"]*list-inner[^"]*"[^>]*>([\s\S]*?)<\/li>/gi
-    let match
-    while ((match = cardBlockRe.exec(html)) !== null && cards.length < 8) {
-      const block = match[1]
-      const imgMatch = block.match(/<img[^>]+src="([^"]+)"/)
-      const nameMatch = block.match(/cardName[^>]*>([^<]+)/) || block.match(/<dt[^>]*>([^<]{3,})<\/dt>/)
-      const numMatch = block.match(/cardNumber[^>]*>([^<]+)/) || block.match(/((?:BT|FB|SD|ST|D-BT)\d+-\d+[A-Z]?)/)
-      const rarityMatch = block.match(/cardRarity[^>]*>([^<]+)/) || block.match(/rarity[^>]*>([^<]+)/i)
+    for (const item of items) {
+      const title = item.title || ''
+      if (JUNK_RE.test(title)) continue
 
-      if (!nameMatch) continue
-      const name = nameMatch[1].trim()
-      const number = numMatch ? numMatch[1].trim() : ''
-      const rarity = rarityMatch ? rarityMatch[1].trim() : ''
-      let imageUrl = imgMatch ? imgMatch[1].trim() : null
-      if (imageUrl && imageUrl.startsWith('/')) {
-        imageUrl = `https://www.dbs-cardgame.com${imageUrl}`
-      }
+      const { name, number, set, rarity } = extractDbsCard(title)
+      if (!name || name.length < 3) continue
+
+      // Deduplicate by card number (best) or lowercase name
+      const dedupeKey = number ? number.toLowerCase() : name.toLowerCase()
+      if (seen.has(dedupeKey)) continue
+      seen.add(dedupeKey)
 
       cards.push({
-        id: `dbs-${number || cards.length}`,
+        id: `dbs-ebay-${item.itemId}`,
         name,
-        set: number ? number.replace(/-\d+[A-Z]?$/, '') : '',
+        set,
         number,
         rarity,
         game: 'dbs',
-        imageUrl,
-        largeImageUrl: imageUrl,
+        imageUrl: item.image?.imageUrl || null,
+        largeImageUrl: item.image?.imageUrl || null,
         searchQuery: buildDbsQuery({ name, number, rarity }),
       })
+      if (cards.length >= 8) break
     }
 
-    // If HTML parsing found nothing, try a simpler pattern for the card page format
-    if (!cards.length) {
-      const simpleRe = /<a[^>]+href="[^"]*\/cardlist\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<\/a>/gi
-      while ((match = simpleRe.exec(html)) !== null && cards.length < 8) {
-        const slug = match[1]
-        const imgUrl = match[2].startsWith('/') ? `https://www.dbs-cardgame.com${match[2]}` : match[2]
-        const numFromSlug = slug.match(/((?:BT|FB|SD|ST|D-BT)\d+-\d+[A-Z]?)/i)
-        cards.push({
-          id: `dbs-${slug}`,
-          name: slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-          set: numFromSlug ? numFromSlug[1].replace(/-\d+[A-Z]?$/, '') : '',
-          number: numFromSlug ? numFromSlug[1] : '',
-          rarity: '',
-          game: 'dbs',
-          imageUrl: imgUrl,
-          largeImageUrl: imgUrl,
-          searchQuery: numFromSlug ? `${slug.replace(/[-_]/g, ' ')} ${numFromSlug[1]}` : slug.replace(/[-_]/g, ' '),
-        })
-      }
-    }
-
+    console.log(`[cards:dbs] extracted ${cards.length} unique cards from listings`)
     return cards
   })
 }
@@ -291,7 +353,8 @@ const DBS_POPULAR = [
 ]
 
 function searchDbsFallback(query) {
-  const ql = query.toLowerCase()
+  const sanitized = sanitizeQuery(query)
+  const ql = sanitized.toLowerCase()
   const terms = ql.split(/\s+/)
   return DBS_POPULAR.filter((card) => {
     const hay = `${card.name} ${card.number} ${card.rarity}`.toLowerCase()
@@ -310,12 +373,15 @@ function searchDbsFallback(query) {
 }
 
 async function searchDbs(query) {
+  // Primary: search eBay active listings and extract card identities
   try {
-    const siteResults = await searchDbsSite(query)
-    if (siteResults.length > 0) return siteResults
+    const ebayResults = await searchDbsEbay(query)
+    if (ebayResults.length > 0) return ebayResults
   } catch (err) {
-    console.log(`[cards] DBS site scrape failed: ${err.message}, using fallback`)
+    console.log(`[cards:dbs] eBay active listing search failed: ${err.message}`)
   }
+  // Fallback: hardcoded popular cards dictionary
+  console.log('[cards:dbs] falling back to hardcoded dictionary')
   return searchDbsFallback(query)
 }
 
@@ -369,27 +435,27 @@ export default async function handler(req, res) {
   if (game === 'pokemon') {
     try {
       cards = await searchPokemon(query)
-      attribution = 'pokemontcg.io'
       console.log('[cards] pokemon results:', cards.length)
     } catch (err) {
       console.error('[cards] pokemon error:', err.message)
     }
+    if (cards.length) attribution = 'pokemontcg.io'
   } else if (game === 'mtg') {
     try {
       cards = await searchMtg(query)
-      attribution = 'Scryfall'
       console.log('[cards] mtg results:', cards.length)
     } catch (err) {
       console.error('[cards] mtg error:', err.message)
     }
+    if (cards.length) attribution = 'Scryfall'
   } else if (game === 'dbs') {
     try {
       cards = await searchDbs(query)
-      attribution = 'DBS Card Game'
       console.log('[cards] dbs results:', cards.length)
     } catch (err) {
       console.error('[cards] dbs error:', err.message)
     }
+    if (cards.length) attribution = 'eBay listings'
   } else {
     // Unknown game — try Pokemon and MTG in parallel
     const [pkm, mtg] = await Promise.allSettled([searchPokemon(query), searchMtg(query)])
@@ -398,9 +464,7 @@ export default async function handler(req, res) {
     if (mtg.status === 'fulfilled') { cards.push(...mtg.value); console.log('[cards] unknown/mtg:', mtg.value.length) }
     else console.error('[cards] unknown/mtg error:', mtg.reason?.message)
 
-    if (cards.length) {
-      attribution = 'pokemontcg.io & Scryfall'
-    }
+    if (cards.length) attribution = 'pokemontcg.io & Scryfall'
   }
 
   return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution })
