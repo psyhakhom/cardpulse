@@ -36,6 +36,10 @@ const DBS_KW = [
   'dragon ball', 'dragonball', 'dbs', 'fusion world', 'goku', 'vegeta',
   'vegito', 'gogeta', 'frieza', 'gohan', 'piccolo', 'broly', 'beerus', 'trunks',
   'bardock', 'cell', 'android', 'majin', 'saiyan',
+  // Attack/move names
+  'kamehameha', 'final flash', 'galick gun', 'spirit bomb', 'instant transmission',
+  'hakai', 'ultra instinct', 'god kamehameha', 'destructo disc',
+  'special beam cannon', 'makankosappo',
 ]
 const DBS_CODE_RE = /\b(?:BT|FB|SD|OP|ST|D-BT)\d+/i
 
@@ -373,14 +377,32 @@ function searchDbsFallback(query) {
 }
 
 async function searchDbs(query) {
-  // Primary: search eBay active listings and extract card identities
+  // Primary: search eBay active listings with full query
   try {
     const ebayResults = await searchDbsEbay(query)
     if (ebayResults.length > 0) return ebayResults
   } catch (err) {
     console.log(`[cards:dbs] eBay active listing search failed: ${err.message}`)
   }
-  // Fallback: hardcoded popular cards dictionary
+
+  // Retry: try individual key words from the query (longest first)
+  // "god kamehameha" → try "kamehameha", then "god"
+  const words = sanitizeQuery(query).split(/\s+/).filter((w) => w.length >= 3)
+  if (words.length > 1) {
+    const sorted = [...words].sort((a, b) => b.length - a.length)
+    for (const word of sorted) {
+      console.log(`[cards:dbs] retrying broader search with: "${word}"`)
+      try {
+        const retry = await searchDbsEbay(word)
+        if (retry.length > 0) return retry
+      } catch (_) { /* continue */ }
+      // Also try hardcoded fallback with the single word
+      const fbRetry = searchDbsFallback(word)
+      if (fbRetry.length > 0) return fbRetry
+    }
+  }
+
+  // Final fallback: hardcoded popular cards dictionary with full query
   console.log('[cards:dbs] falling back to hardcoded dictionary')
   return searchDbsFallback(query)
 }

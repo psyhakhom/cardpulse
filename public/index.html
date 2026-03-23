@@ -566,7 +566,10 @@ function normalizeApiResponse(data, q, sc) {
        'bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16',
        'bt17','bt18','bt19','bt20','fb0','fb1','fb2','fb3',
        'sd0','sd1','sd2',
-       'gogeta','goku','vegeta','frieza'].some(k => ql.includes(k))) return 'dbs';
+       'gogeta','goku','vegeta','frieza',
+       'kamehameha','final flash','galick gun','spirit bomb','instant transmission',
+       'hakai','ultra instinct','god kamehameha','destructo disc',
+       'special beam cannon','makankosappo'].some(k => ql.includes(k))) return 'dbs';
   if (['pokemon','charizard','pikachu','mtg','magic ','yugioh',
        'lorcana','one piece'].some(k => ql.includes(k))) return 'tcg';
   return g !== 'Raw' ? 'sg' : 'sr';
@@ -640,7 +643,7 @@ const FX={JPY:149.5,KRW:1320,CNY:7.24,USD:1};
 
 function cardType(q,g){
   const ql=q.toLowerCase();
-  if(['dragon ball','dragonball','dbs','dbscg','fusion world','d-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8','bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16','bt17','bt18','bt19','bt20'].some(k=>ql.includes(k)))return'dbs';
+  if(['dragon ball','dragonball','dbs','dbscg','fusion world','d-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8','bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16','bt17','bt18','bt19','bt20','kamehameha','final flash','galick gun','spirit bomb','instant transmission','hakai','ultra instinct','god kamehameha','destructo disc','special beam cannon','makankosappo'].some(k=>ql.includes(k)))return'dbs';
   if(['pokemon','charizard','pikachu','mtg','magic ','yugioh','lorcana','one piece'].some(k=>ql.includes(k)))return'tcg';
   return g!=='Raw'?'sg':'sr';
 }
