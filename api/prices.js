@@ -143,7 +143,8 @@ function buildQueries(name, grade, lang) {
   const hasCardWord = /\bcard\b/i.test(name)
   const cardSuffix = hasSetCode || hasCardWord ? '' : ' card'
   const gradeStr = grade && grade !== 'Raw' ? ` ${grade}` : ''
-  const base = `${name}${langSuffix}${cardSuffix}${gradeStr}`
+  const rawExclude = (!grade || grade === 'Raw') ? ' -PSA -BGS -CGC -SGC -graded -slab' : ''
+  const base = `${name}${langSuffix}${cardSuffix}${gradeStr}${rawExclude}`
   return {
     a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40 },
     b: {
