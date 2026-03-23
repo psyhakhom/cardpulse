@@ -90,33 +90,36 @@ async function ebaySearch(
 
 // ─── PRICE STATS ─────────────────────────────────────────────────────────────
 const RAW_EXCLUDE = ['psa', 'bgs', 'cgc', 'sgc', 'beckett', 'graded', 'slab', 'black label']
-const GRADE_INCLUDE = {
-  'PSA 9':  (t) => /psa\s*9(?![\d.]|\s*10)/i.test(t),
-  'PSA 10': (t) => /psa\s*10\b/i.test(t),
-  'BGS 10': (t) => /bgs\s*10\b/i.test(t) || t.toLowerCase().includes('black label'),
-  'CGC 10': (t) => /cgc\s*10\b/i.test(t),
+
+function gradeMatch(title, grade) {
+  const t = (title || '').toLowerCase()
+  if (grade === 'PSA 10') {
+    if (t.includes('psa 9') || t.includes('psa9')) return false   // block PSA 9 contamination
+    return t.includes('psa 10') || t.includes('psa10') || t.includes('gem mint') || t.includes('gem-mint')
+  }
+  if (grade === 'PSA 9') return t.includes('psa 9') || t.includes('psa9')
+  if (grade === 'BGS 10') return t.includes('bgs 10') || t.includes('bgs10') || t.includes('black label')
+  if (grade === 'CGC 10') return t.includes('cgc 10') || t.includes('cgc10')
+  return true
 }
 
 function filterByGrade(items, grade, label) {
   if (!items?.length) return items
-  const tag = label ? `[${label}]` : '[filterByGrade]'
+  const tag = `[filterByGrade:${label || '?'}]`
   if (!grade || grade === 'Raw') {
     const filtered = items.filter((i) => {
       const t = (i.title || '').toLowerCase()
       return !RAW_EXCLUDE.some((kw) => t.includes(kw))
     })
-    console.log(`${tag} Raw filter: ${items.length} in → ${filtered.length} after removing graded (${items.length - filtered.length} removed)`)
-    if (filtered.length >= 3) return filtered
-    console.log(`${tag} Raw filter: fewer than 3 remain, using full set`)
+    console.log(`${tag} Raw: ${items.length} → ${filtered.length} (removed ${items.length - filtered.length} graded)`)
+    if (filtered.length >= 2) return filtered
+    console.log(`${tag} Raw: fewer than 2 remain, keeping full set`)
     return items
   }
-  if (GRADE_INCLUDE[grade]) {
-    const filtered = items.filter((i) => GRADE_INCLUDE[grade](i.title || ''))
-    console.log(`${tag} ${grade} filter: ${items.length} in → ${filtered.length} match`)
-    if (filtered.length >= 3) return filtered
-    console.log(`${tag} ${grade} filter: fewer than 3 remain, using full set`)
-    return items
-  }
+  const filtered = items.filter((i) => gradeMatch(i.title, grade))
+  console.log(`${tag} ${grade}: ${items.length} → ${filtered.length} match`)
+  if (filtered.length >= 2) return filtered
+  console.log(`${tag} ${grade}: fewer than 2 remain, keeping full set`)
   return items
 }
 
@@ -144,9 +147,10 @@ function calcStats(items) {
 }
 
 // ─── COMP EXTRACTION ─────────────────────────────────────────────────────────
-function extractComps(items, limit = 10) {
+function extractComps(items, limit = 10, grade = null) {
   return items
     .filter((i) => parseFloat(i.price?.value || 0) > 0)
+    .filter((i) => !grade || gradeMatch(i.title, grade))
     .slice(0, limit)
     .map((i) => ({
       title: i.title,
@@ -414,7 +418,7 @@ export default async function handler(req, res) {
         avg: r.stats?.avg || null,
         count: r.stats?.count || 0,
       })),
-      comps: extractComps(deduped, 10),
+      comps: extractComps(deduped, 10, grade),
       query: q,
       grade,
       lang,
