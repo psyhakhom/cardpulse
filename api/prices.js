@@ -231,7 +231,7 @@ function calcTrend(recentAvg, allAvg) {
 // Rarity codes to extract and preserve
 const RARITY_CODES = ['IMIR', 'SIR', 'SCR', 'SPR', 'SAR', 'SSR', 'SEC', 'ACE', 'UR', 'SR', 'RR', 'UC', 'CHR', 'AR']
 
-// Set code pattern: BT27-019, FB09, OP01-112, D-BT01, 121/088
+// Set code pattern: BT27-019, FB09, OP01-112, D-BT01, SD23-01, 121/088
 const SET_CODE_RE = /\b(?:[A-Z]{1,4}-)?(?:BT|FB|OP|SD|P|D-BT|ST)\d+(?:-\d+)?\b|\b[A-Z]{1,4}\d{2,3}(?:-\d+)?\b|\b\d{3}\/\d{3}\b/gi
 
 // Card number standalone: 121/088
@@ -305,6 +305,13 @@ function cleanFullTitle(q) {
 function preprocessQuery(raw, grade = 'Raw') {
   const normalised = normalize(raw)
   const type = detectType(normalised, grade)
+
+  // Short set-code queries are already specific — pass through untouched
+  if (type === 'SET_CODE' && normalised.length <= 60) {
+    console.log(`[preprocess] type=SET_CODE (passthrough) "${raw}" → "${normalised}"`)
+    return { query: normalised, type, tokens: extractTokens(normalised) }
+  }
+
   const tokens = extractTokens(normalised)
 
   let cleaned
