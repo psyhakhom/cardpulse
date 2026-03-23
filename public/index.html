@@ -402,6 +402,7 @@ function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q
 // AUTOCOMPLETE
 let acTimer=null,acSel=-1,acList=[],acOverrideImage=null;
 function acOnInput(v){
+  console.log('[ac] input fired, value:', JSON.stringify(v));
   clearTimeout(acTimer);
   const q=v.trim();
   if(q.length<3){hideAc();return;}
@@ -415,17 +416,21 @@ function acKeydown(e){
   if(e.key==='Enter'){if(open&&acSel>=0){e.preventDefault();selectAc(acSel);}else{hideAc();doSearch();}}
 }
 async function fetchAc(q){
+  console.log('[ac] fetching /api/cards?q='+encodeURIComponent(q));
   try{
     const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}`);
-    if(!r.ok){hideAc();return;}
+    console.log('[ac] response status:', r.status);
+    if(!r.ok){console.warn('[ac] non-ok response, hiding');hideAc();return;}
     const d=await r.json();
+    console.log('[ac] data:', JSON.stringify(d).slice(0,300));
     renderAc(d,q);
-  }catch{hideAc();}
+  }catch(err){console.error('[ac] fetch error:', err);hideAc();}
 }
 function renderAc(d,q){
   const drop=document.getElementById('ac-drop');
   acList=[...(d.cards||[]),d.ebayDirect].filter(Boolean);
   acSel=-1;
+  console.log('[ac] renderAc acList.length:', acList.length, 'drop el:', drop);
   if(!acList.length){hideAc();return;}
   drop.innerHTML=acList.map((c,i)=>{
     if(c.isDirect)return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu)">${escH(c.name)}</div></div></div>`;

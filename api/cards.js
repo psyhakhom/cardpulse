@@ -116,12 +116,15 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { q } = req.query
+  console.log('[cards] handler called, q:', q)
+
   if (!q || q.trim().length < 3) {
     return res.status(400).json({ error: 'Query too short' })
   }
 
   const query = q.trim()
   const game = detectGame(query)
+  console.log('[cards] game detected:', game)
   const ebayDirect = {
     id: 'ebay-direct',
     name: `Search eBay for "${query}"`,
