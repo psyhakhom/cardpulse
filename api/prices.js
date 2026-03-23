@@ -99,9 +99,6 @@ async function ebaySearch(
 // ─── GRADE FILTERING ─────────────────────────────────────────────────────────
 const GRADE_EXCLUDE = {
   'Raw': [
-    // Graded slabs
-    'psa', 'bgs', 'cgc', 'sgc', 'beckett', 'graded', 'slab', 'black label',
-    'gem mint', 'gem-mint',
     // Variant listings that skew single-card prices
     'gold alt art', 'gold parallel', 'parallel scr', 'rainbow rare', 'hyper rare',
     // Multi-card lots and sealed product
@@ -110,8 +107,8 @@ const GRADE_EXCLUDE = {
     '2 card', '3 card', '4 card', '5 card', '10 card', '21 card',
     'booster box', 'booster pack', 'sealed',
     'buy 3 get 1', 'buy 2 get 1', 'buy 1 get 1', 'bogo', 'get 1 free', 'get one free',
-    // Signed/autograph — completely different product category
-    'signed', 'autograph', 'autographed', 'oda', 'signature',
+    // Multi-word phrases safe for includes() (no false-positive risk)
+    'gem mint', 'gem-mint', 'black label',
   ],
 }
 
@@ -133,13 +130,27 @@ function gradeMatch(title, grade) {
  * For graded grades: keeps only listings whose title matches the grade.
  * Falls back to the full set if fewer than 2 items survive (avoids empty results).
  */
-// Regex patterns for filtering — catches graded formats that simple .includes() misses
+// Hard sanity check: always exclude graded slabs from Raw, even in fallback
+const GRADED_SLAB_RE = /\b(?:psa|bgs|cgc|sgc)\s*\d/i
+
+// Regex patterns with word boundaries — avoids false positives on card names
 const EXCLUDE_PATTERNS = [
+  // Graded slabs — word-boundary to avoid matching set codes like FB09
+  /\bpsa\b/i,
+  /\bbgs\b/i,
+  /\bcgc\b/i,
+  /\bsgc\b/i,
+  /\bbeckett\b/i,
+  /\bgraded\b/i,
+  /\bslab\b/i,
+  // Graded with numeric grade (catches "PSA10", "BGS 9.5", "CGC9" etc)
+  /\b(?:psa|bgs|cgc|sgc)\s*\d/i,
+  /\bgrade[d]?\s*\d/i,
+  // Signed/autograph — word-boundary so "Sign" in card names doesn't match
+  /\bsigned\b/i,
+  /\bautograph(?:ed)?\b/i,
   /\bauto\b/i,
-  /\b(?:psa|bgs|cgc|sgc)\s*\d/i,       // "PSA10", "BGS 9.5", "CGC9", etc
-  /\bgrade[d]?\s*\d/i,                   // "graded 10", "grade 9"
-  /\b(?:mint|gem)\s*\d/i,               // "mint 9", "gem 10"
-  /\b\d+\.?\d*\s*(?:grade|slab)\b/i,    // "10 grade", "9.5 slab"
+  /\bsignature\b/i,
 ]
 
 function filterItems(items, grade) {
@@ -156,7 +167,11 @@ function filterItems(items, grade) {
       return true
     })
     console.log(`[filter:Raw] ${items.length} → ${kept.length} kept`)
-    return kept.length >= 2 ? kept : items
+    if (kept.length >= 2) return kept
+    // Fallback to full set but ALWAYS strip graded slabs — they are never Raw
+    const safeItems = items.filter((i) => !GRADED_SLAB_RE.test(i.title || ''))
+    console.log(`[filter:Raw] fallback: ${items.length} → ${safeItems.length} after slab sanity check`)
+    return safeItems
   }
   if (grade && grade !== 'Raw') {
     // Graded — keep only titles that match the grade string
