@@ -569,7 +569,7 @@ function buildQueries(name, grade, lang) {
       limit: 30,
       sort: 'endingSoonest',
     },
-    d: { q: base, label: 'Ending soon (live)', weight: 0.15, limit: 10, sort: 'endingSoonest', live: true },
+    d: { q: base, label: 'Live auctions', weight: 0.15, limit: 10, sort: 'endingSoonest', live: true },
   }
 }
 
@@ -581,7 +581,7 @@ const WEIGHTS_WITHOUT_LIVE = { a: 0.25, b: 0.45, c: 0.30 }
 // ─── WEIGHTED BLEND ──────────────────────────────────────────────────────────
 function blend(results) {
   // Check if Query D (live auctions) has data to decide weight set
-  const hasLive = results.some((r) => r.label === 'Ending soon (live)' && r.stats !== null)
+  const hasLive = results.some((r) => r.label === 'Live auctions' && r.stats !== null)
   const weightMap = hasLive ? WEIGHTS_WITH_LIVE : WEIGHTS_WITHOUT_LIVE
   const keys = ['a', 'b', 'c', 'd']
 
@@ -855,7 +855,7 @@ export default async function handler(req, res) {
         available: r.stats !== null,
         avg: r.stats?.avg || null,
         count: r.stats?.count || 0,
-        live: r.label === 'Ending soon (live)',
+        live: r.label === 'Live auctions',
       })),
       comps: extractComps(deduped, 10, grade),
       query: q,
