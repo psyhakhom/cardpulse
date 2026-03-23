@@ -128,49 +128,93 @@ async function searchPokemon(query) {
   return withCache(`pkm:${query.toLowerCase()}`, async () => {
     const headers = pokemonHeaders()
     const sanitized = sanitizeQuery(query)
+    const seenIds = new Set()
+    let cards = []
 
-    // Build the name query — handle "vs" queries specially
+    function addCards(rawCards) {
+      const mapped = rawCards.map(mapPokemonCard)
+      const added = []
+      for (const c of mapped) {
+        if (!seenIds.has(c.id)) {
+          seenIds.add(c.id)
+          added.push(c)
+        }
+      }
+      return added
+    }
+
+    async function pkmFetch(url) {
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) })
+      if (!res.ok) return []
+      const data = await res.json()
+      return data.data || []
+    }
+
+    // ── Priority 1: Card name contains the query (most relevant) ──────────
     let nameQ
     if (/\bvs\.?\b/i.test(sanitized)) {
       const parts = sanitized.split(/\bvs\.?\b/i).map((s) => s.trim()).filter(Boolean)
       nameQ = parts.map((p) => `name:*${p}*`).join(' ')
       console.log(`[cards:pkm] VS query detected: "${nameQ}"`)
     } else {
-      nameQ = `name:${sanitized}*`
+      // Use *query* (contains) not query* (starts-with) for multi-word queries
+      nameQ = sanitized.includes(' ') ? `name:"*${sanitized}*"` : `name:${sanitized}*`
     }
 
-    // Run name search + set name search in parallel
     const nameUrl = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(nameQ)}&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
-    const setUrl = `https://api.pokemontcg.io/v2/cards?q=set.name:"*${encodeURIComponent(sanitized)}*"&pageSize=4&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
+
+    // Also fetch matching sets in parallel (for "Browse set" options)
     const setsUrl = `https://api.pokemontcg.io/v2/sets?q=name:"*${encodeURIComponent(sanitized)}*"&pageSize=3&orderBy=-releaseDate`
 
-    const [nameRes, setRes, setsRes] = await Promise.allSettled([
-      fetch(nameUrl, { headers, signal: AbortSignal.timeout(5000) }),
-      fetch(setUrl, { headers, signal: AbortSignal.timeout(5000) }),
+    const [nameRaw, setsRes] = await Promise.allSettled([
+      pkmFetch(nameUrl),
       fetch(setsUrl, { headers, signal: AbortSignal.timeout(5000) }),
     ])
 
-    // Collect cards from name search
-    let cards = []
-    if (nameRes.status === 'fulfilled' && nameRes.value.ok) {
-      const data = await nameRes.value.json()
-      cards.push(...(data.data || []).map(mapPokemonCard))
+    if (nameRaw.status === 'fulfilled') {
+      cards.push(...addCards(nameRaw.value))
+      console.log(`[cards:pkm] name search: ${nameRaw.value.length} raw → ${cards.length} deduped`)
     }
 
-    // Merge cards from set name search, deduplicating by id
-    if (setRes.status === 'fulfilled' && setRes.value.ok) {
-      const data = await setRes.value.json()
-      const seenIds = new Set(cards.map((c) => c.id))
-      for (const card of (data.data || [])) {
-        const mapped = mapPokemonCard(card)
-        if (!seenIds.has(mapped.id)) {
-          cards.push(mapped)
-          seenIds.add(mapped.id)
-        }
+    // ── Priority 2: Subtypes/trainer search (if <4 name results) ──────────
+    if (cards.length < 4) {
+      // Try subtypes search (e.g. subtypes:"Team Rocket")
+      const subtypeQ = `subtypes:"${sanitized}"`
+      const subtypeUrl = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(subtypeQ)}&pageSize=4&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
+      try {
+        const subtypeCards = await pkmFetch(subtypeUrl)
+        const added = addCards(subtypeCards)
+        cards.push(...added)
+        console.log(`[cards:pkm] subtype search: ${subtypeCards.length} raw → ${added.length} new`)
+      } catch (_) { /* non-fatal */ }
+    }
+
+    // ── Priority 3: Set name search (last resort backfill) ────────────────
+    if (cards.length < 4) {
+      const setUrl = `https://api.pokemontcg.io/v2/cards?q=set.name:"*${encodeURIComponent(sanitized)}*"&pageSize=${8 - cards.length}&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
+      try {
+        const setCards = await pkmFetch(setUrl)
+        const added = addCards(setCards)
+        cards.push(...added)
+        console.log(`[cards:pkm] set name backfill: ${setCards.length} raw → ${added.length} new`)
+      } catch (_) { /* non-fatal */ }
+    }
+
+    // ── Direct set.name retry for JP exclusives when nothing found ────────
+    if (!cards.length) {
+      console.log(`[cards:pkm] no results, retrying with direct set.name:"${sanitized}"`)
+      try {
+        const directCards = await pkmFetch(
+          `https://api.pokemontcg.io/v2/cards?q=set.name:"${encodeURIComponent(sanitized)}"&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
+        )
+        cards.push(...addCards(directCards))
+        console.log(`[cards:pkm] direct set.name retry found ${cards.length} cards`)
+      } catch (err) {
+        console.log(`[cards:pkm] direct set.name retry failed: ${err.message}`)
       }
     }
 
-    // Collect matching sets as "Browse set" options
+    // ── Collect matching sets as "Browse set" options ─────────────────────
     const sets = []
     if (setsRes.status === 'fulfilled' && setsRes.value.ok) {
       const data = await setsRes.value.json()
@@ -190,28 +234,11 @@ async function searchPokemon(query) {
       }
     }
 
-    // If no cards found, retry with a direct set.name match (catches JP exclusives like "Ash vs Team Rocket")
-    if (!cards.length && !sets.length) {
-      console.log(`[cards:pkm] no results, retrying with direct set.name:"${sanitized}"`)
-      const directSetUrl = `https://api.pokemontcg.io/v2/cards?q=set.name:"${encodeURIComponent(sanitized)}"&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
-      try {
-        const directRes = await fetch(directSetUrl, { headers, signal: AbortSignal.timeout(5000) })
-        if (directRes.ok) {
-          const data = await directRes.json()
-          cards.push(...(data.data || []).map(mapPokemonCard))
-          console.log(`[cards:pkm] direct set.name retry found ${cards.length} cards`)
-        }
-      } catch (err) {
-        console.log(`[cards:pkm] direct set.name retry failed: ${err.message}`)
-      }
-    }
-
-    // Also flag if the query itself matches a known JP exclusive set
     const queryIsJp = JP_EXCLUSIVE_SETS.some((jp) => sanitized.toLowerCase().includes(jp))
     const jpExclusive = queryIsJp || cards.some((c) => c.jpExclusive) || sets.some((s) => isJpExclusiveSet(s.set))
 
-    // Sets go at the top, then card results
-    return { cards: [...sets, ...cards], jpExclusive }
+    // Sets at the bottom (after card name matches), card name matches first
+    return { cards: [...cards, ...sets], jpExclusive }
   })
 }
 
