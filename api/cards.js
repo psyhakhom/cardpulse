@@ -4,8 +4,11 @@
  * Card catalog autocomplete endpoint. Returns up to 8 matching cards from:
  *   - pokemontcg.io  (Pokemon)
  *   - Scryfall       (MTG)
- *   - dbs-cardgame.com (DBS) with hardcoded fallback
- *   - Sports: returns empty — falls back to direct eBay search
+ *   - YGOProDeck     (Yu-Gi-Oh)
+ *   - OPTCG GitHub   (One Piece)
+ *   - DBS site + community JSON fallback (Dragon Ball Super)
+ *   - Lorcana API    (Disney Lorcana)
+ *   - eBay fallback  (anything else)
  * Plus an "eBay direct" fallback option always included.
  *
  * All responses are in-memory cached for 1 hour per query string.
@@ -30,44 +33,48 @@ const POKEMON_KW = [
   'venusaur', 'gengar', 'snorlax', 'gyarados', 'meowth', 'lugia', 'ho-oh',
   'rayquaza', 'mew', 'umbreon', 'espeon', 'sylveon', 'gardevoir', 'lucario',
   'greninja', 'alakazam', 'bulbasaur', 'squirtle', 'jigglypuff', 'dragonite',
-  // Trainer/character names
   'ash', 'misty', 'brock', 'team rocket', 'jessie', 'james', 'giovanni',
   'gary', 'professor oak', 'nurse joy', 'gym leader', 'elite four', 'trainer',
 ]
 const MTG_KW = ['mtg', 'magic the gathering', 'magic:', 'planeswalker', 'mana ']
+const YGO_KW = [
+  'yugioh', 'yu-gi-oh', 'yu gi oh', 'blue-eyes', 'blue eyes', 'dark magician',
+  'exodia', 'red-eyes', 'red eyes', 'kuriboh', 'pot of greed', 'raigeki',
+  'mirror force', 'monster reborn', 'polymerization', 'stardust dragon',
+  'cyber dragon', 'utopia', 'number 39', 'elemental hero',
+]
 const DBS_KW = [
   'dragon ball', 'dragonball', 'dbs', 'fusion world', 'goku', 'vegeta',
   'vegito', 'gogeta', 'frieza', 'gohan', 'piccolo', 'broly', 'beerus', 'trunks',
   'bardock', 'cell', 'android', 'majin', 'saiyan',
-  // Attack/move names
   'kamehameha', 'final flash', 'galick gun', 'spirit bomb', 'instant transmission',
   'hakai', 'ultra instinct', 'god kamehameha', 'destructo disc',
   'special beam cannon', 'makankosappo',
 ]
 const DBS_CODE_RE = /\b(?:BT|FB|SD|ST|D-BT)\d+/i
 const OP_KW = [
-  'one piece', 'onepiece', 'optcg',
-  // Set codes
+  'one piece', 'onepiece', 'optcg', 'luffy', 'zoro', 'nami', 'sanji',
+  'chopper', 'robin', 'franky', 'brook',
   'op-01', 'op-02', 'op-03', 'op-04', 'op-05', 'op-06', 'op-07',
   'op-08', 'op-09', 'op-10', 'op-11', 'op-12', 'op-13', 'op-14',
-  // Character names
   'shanks', 'whitebeard', 'blackbeard', 'hancock', 'mihawk',
   'crocodile', 'doflamingo', 'katakuri', 'kaido', 'big mom', 'yamato', 'uta',
 ]
 const OP_CODE_RE = /\bOP-?\d{2}/i
+const LORCANA_KW = ['lorcana', 'disney lorcana']
 
 function detectGame(query) {
   const ql = query.toLowerCase()
   if (POKEMON_KW.some((k) => ql.includes(k))) return 'pokemon'
   if (MTG_KW.some((k) => ql.includes(k))) return 'mtg'
+  if (YGO_KW.some((k) => ql.includes(k))) return 'yugioh'
   if (OP_KW.some((k) => ql.includes(k)) || OP_CODE_RE.test(query)) return 'onepiece'
   if (DBS_KW.some((k) => ql.includes(k)) || DBS_CODE_RE.test(query)) return 'dbs'
+  if (LORCANA_KW.some((k) => ql.includes(k))) return 'lorcana'
   return null
 }
 
 // ─── QUERY SANITIZER ─────────────────────────────────────────────────────────
-// Strip colons, commas, and other special chars that break card database searches
-// (e.g. "Son Goku: Childhood" → "Son Goku Childhood" for the API query)
 function sanitizeQuery(query) {
   return query
     .replace(/[:;,!?@#$%^&*()[\]{}|\\<>~`"']/g, ' ')
@@ -75,7 +82,13 @@ function sanitizeQuery(query) {
     .trim()
 }
 
-// ─── QUERY BUILDERS ──────────────────────────────────────────────────────────
+// ─── UNIVERSAL QUERY BUILDER ─────────────────────────────────────────────────
+// "{card name} {card number} {rarity}" — works across all TCGs on eBay
+function buildSearchQuery(name, number, rarity) {
+  return [name, number, rarity].filter(Boolean).join(' ').slice(0, 60)
+}
+
+// ─── POKEMON-SPECIFIC QUERY BUILDER ─────────────────────────────────────────
 function buildPokemonQuery(card) {
   const name = card.name || ''
   const number = card.number || ''
@@ -85,35 +98,15 @@ function buildPokemonQuery(card) {
   return [name, numStr, setName].filter(Boolean).join(' ').slice(0, 60)
 }
 
-function buildMtgQuery(card) {
-  return [card.name, card.set_name, card.collector_number].filter(Boolean).join(' ').slice(0, 60)
-}
-
 function simplifyDbsName(name) {
-  // Strip everything after colon, plus sign, or dash that follows the character name
-  // "Son Goku : DA + Evolve" → "Son Goku"
-  // "Vegeta : Limit Breaker" → "Vegeta"
-  // "Gogeta : Fusion Reborn" → "Gogeta"
   let simplified = name
-    .replace(/\s*[:+]\s*.*/g, '') // strip from first colon or plus onward
-    .replace(/\s*[-–—]\s*(DA|Evolve|Awakening|Limit Breaker|Fusion|Super|Ultra|Power|Surge|Reborn)\b.*/gi, '') // strip descriptor suffixes after dash
+    .replace(/\s*[:+]\s*.*/g, '')
+    .replace(/\s*[-–—]\s*(DA|Evolve|Awakening|Limit Breaker|Fusion|Super|Ultra|Power|Surge|Reborn)\b.*/gi, '')
     .trim()
-  // If stripping gutted the name, fall back to original
   return simplified.length >= 2 ? simplified : name
 }
 
-function buildDbsQuery(card) {
-  const name = simplifyDbsName(card.name || '')
-  // Card number is the most precise identifier — always anchor on it
-  return [name, card.number, card.rarity].filter(Boolean).join(' ').slice(0, 60)
-}
-
-function buildOpQuery(card) {
-  return [card.name, card.number].filter(Boolean).join(' ').slice(0, 60)
-}
-
 // ─── POKEMON TCG API ──────────────────────────────────────────────────────────
-// Japanese exclusive sets — when detected, flag results so frontend can auto-set language
 const JP_EXCLUSIVE_SETS = [
   'ash vs team rocket', 'tag team gx', 'dream league', 'alter genesis',
   'remix bout', 'miraculous intermezzo', 'shiny star v', 'eevee heroes',
@@ -165,10 +158,7 @@ async function searchPokemon(query) {
       const mapped = rawCards.map(mapPokemonCard)
       const added = []
       for (const c of mapped) {
-        if (!seenIds.has(c.id)) {
-          seenIds.add(c.id)
-          added.push(c)
-        }
+        if (!seenIds.has(c.id)) { seenIds.add(c.id); added.push(c) }
       }
       return added
     }
@@ -180,20 +170,15 @@ async function searchPokemon(query) {
       return data.data || []
     }
 
-    // ── Priority 1: Card name contains the query (most relevant) ──────────
     let nameQ
     if (/\bvs\.?\b/i.test(sanitized)) {
       const parts = sanitized.split(/\bvs\.?\b/i).map((s) => s.trim()).filter(Boolean)
       nameQ = parts.map((p) => `name:*${p}*`).join(' ')
-      console.log(`[cards:pkm] VS query detected: "${nameQ}"`)
     } else {
-      // Use *query* (contains) not query* (starts-with) for multi-word queries
       nameQ = sanitized.includes(' ') ? `name:"*${sanitized}*"` : `name:${sanitized}*`
     }
 
     const nameUrl = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(nameQ)}&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
-
-    // Also fetch matching sets in parallel (for "Browse set" options)
     const setsUrl = `https://api.pokemontcg.io/v2/sets?q=name:"*${encodeURIComponent(sanitized)}*"&pageSize=3&orderBy=-releaseDate`
 
     const [nameRaw, setsRes] = await Promise.allSettled([
@@ -201,65 +186,39 @@ async function searchPokemon(query) {
       fetch(setsUrl, { headers, signal: AbortSignal.timeout(5000) }),
     ])
 
-    if (nameRaw.status === 'fulfilled') {
-      cards.push(...addCards(nameRaw.value))
-      console.log(`[cards:pkm] name search: ${nameRaw.value.length} raw → ${cards.length} deduped`)
-    }
+    if (nameRaw.status === 'fulfilled') cards.push(...addCards(nameRaw.value))
 
-    // ── Priority 2: Subtypes/trainer search (if <4 name results) ──────────
     if (cards.length < 4) {
-      // Try subtypes search (e.g. subtypes:"Team Rocket")
-      const subtypeQ = `subtypes:"${sanitized}"`
-      const subtypeUrl = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(subtypeQ)}&pageSize=4&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
       try {
-        const subtypeCards = await pkmFetch(subtypeUrl)
-        const added = addCards(subtypeCards)
-        cards.push(...added)
-        console.log(`[cards:pkm] subtype search: ${subtypeCards.length} raw → ${added.length} new`)
-      } catch (_) { /* non-fatal */ }
+        const subtypeCards = await pkmFetch(`https://api.pokemontcg.io/v2/cards?q=subtypes:"${encodeURIComponent(sanitized)}"&pageSize=4&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`)
+        cards.push(...addCards(subtypeCards))
+      } catch (_) {}
     }
 
-    // ── Priority 3: Set name search (last resort backfill) ────────────────
     if (cards.length < 4) {
-      const setUrl = `https://api.pokemontcg.io/v2/cards?q=set.name:"*${encodeURIComponent(sanitized)}*"&pageSize=${8 - cards.length}&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
       try {
-        const setCards = await pkmFetch(setUrl)
-        const added = addCards(setCards)
-        cards.push(...added)
-        console.log(`[cards:pkm] set name backfill: ${setCards.length} raw → ${added.length} new`)
-      } catch (_) { /* non-fatal */ }
+        const setCards = await pkmFetch(`https://api.pokemontcg.io/v2/cards?q=set.name:"*${encodeURIComponent(sanitized)}*"&pageSize=${8 - cards.length}&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`)
+        cards.push(...addCards(setCards))
+      } catch (_) {}
     }
 
-    // ── Direct set.name retry for JP exclusives when nothing found ────────
     if (!cards.length) {
-      console.log(`[cards:pkm] no results, retrying with direct set.name:"${sanitized}"`)
       try {
-        const directCards = await pkmFetch(
-          `https://api.pokemontcg.io/v2/cards?q=set.name:"${encodeURIComponent(sanitized)}"&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
-        )
+        const directCards = await pkmFetch(`https://api.pokemontcg.io/v2/cards?q=set.name:"${encodeURIComponent(sanitized)}"&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`)
         cards.push(...addCards(directCards))
-        console.log(`[cards:pkm] direct set.name retry found ${cards.length} cards`)
-      } catch (err) {
-        console.log(`[cards:pkm] direct set.name retry failed: ${err.message}`)
-      }
+      } catch (_) {}
     }
 
-    // ── Collect matching sets as "Browse set" options ─────────────────────
     const sets = []
     if (setsRes.status === 'fulfilled' && setsRes.value.ok) {
       const data = await setsRes.value.json()
       for (const s of (data.data || [])) {
         sets.push({
-          id: `pkm-set-${s.id}`,
-          name: `Browse: ${s.name}`,
-          set: s.name,
-          number: `${s.total || '?'} cards`,
-          rarity: s.releaseDate || '',
-          game: 'pokemon',
-          imageUrl: s.images?.symbol || null,
+          id: `pkm-set-${s.id}`, name: `Browse: ${s.name}`, set: s.name,
+          number: `${s.total || '?'} cards`, rarity: s.releaseDate || '',
+          game: 'pokemon', imageUrl: s.images?.symbol || null,
           largeImageUrl: s.images?.logo || null,
-          searchQuery: `pokemon ${s.name}`,
-          isSet: true,
+          searchQuery: `pokemon ${s.name}`, isSet: true,
         })
       }
     }
@@ -267,7 +226,6 @@ async function searchPokemon(query) {
     const queryIsJp = JP_EXCLUSIVE_SETS.some((jp) => sanitized.toLowerCase().includes(jp))
     const jpExclusive = queryIsJp || cards.some((c) => c.jpExclusive) || sets.some((s) => isJpExclusiveSet(s.set))
 
-    // Sets at the bottom (after card name matches), card name matches first
     return { cards: [...cards, ...sets], jpExclusive }
   })
 }
@@ -290,251 +248,332 @@ async function searchMtg(query) {
       game: 'mtg',
       imageUrl: card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || null,
       largeImageUrl: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || null,
-      searchQuery: buildMtgQuery(card),
+      searchQuery: buildSearchQuery(card.name, card.collector_number, card.set_name),
     }))
   })
 }
 
-// ─── SHARED LISTING FILTERS ──────────────────────────────────────────────────
-const LISTING_NOISE_RE = /\b(psa|bgs|cgc|sgc|beckett)\s*\d+[\d.]*/gi
-const LISTING_JUNK_RE = /\b(lot|bundle|collection|complete set|booster|pack|box|sealed|\d+\s*cards?|\dx|\bx\d+|buy \d|bogo|get \d free)\b/i
-const CARD_NUM_GENERAL_RE = /\b((?:[A-Z]{1,4}-?\d+-\d+[A-Z]?)|(?:\d{1,3}\/\d{1,3}))\b/
-
-// ─── ONE PIECE CARD GAME ─────────────────────────────────────────────────────
-const OP_NUM_RE = /\b((?:OP|ST|EB)\d+-\d+)\b/i
-const OP_RARITY_RE = /\b(SEC|SR|R|UC|C|L|SP|P|DON)\b/
-
-function extractOpCard(title) {
-  const numMatch = title.match(OP_NUM_RE)
-  const number = numMatch ? numMatch[1].toUpperCase() : ''
-  const set = number ? number.replace(/-\d+$/, '') : ''
-
-  const rarityMatch = title.match(OP_RARITY_RE)
-  const rarity = rarityMatch ? rarityMatch[1].toUpperCase() : ''
-
-  let name = title
-    .replace(/\bone\s*piece\s*(card\s*game|tcg)?\b/gi, '')
-    .replace(/\boptcg\b/gi, '')
-    .replace(OP_NUM_RE, '')
-    .replace(OP_RARITY_RE, '')
-    .replace(/\bpsa\s*\d+\b/gi, '')
-    .replace(/\bbgs\s*[\d.]+\b/gi, '')
-    .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b/gi, '')
-    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b|\bmanga\b/gi, '')
-    .replace(/\bcard\b|\bsingle\b|\btrading\b|\bgame\b/gi, '')
-    .replace(/\benglish\b|\bjapanese\b/gi, '')
-    .replace(/[[\]()|#•★◆▲●◇■□△▽♦♠♣♥]/g, ' ')
-    .replace(/\s*[-–—]\s*$/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-
-  name = name.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
-  name = name.replace(/\b\w/g, (c) => c.toUpperCase())
-
-  return { name, number, set, rarity }
-}
-
-async function searchOpSite(query) {
-  return withCache(`op-site:${query.toLowerCase()}`, async () => {
+// ─── YU-GI-OH / YGOPRODECK ──────────────────────────────────────────────────
+async function searchYugioh(query) {
+  return withCache(`ygo:${query.toLowerCase()}`, async () => {
     const sanitized = sanitizeQuery(query)
-    const url = `https://en.onepiece-cardgame.com/cardlist/?search=true&freewords=${encodeURIComponent(sanitized)}`
-    console.log(`[cards:op] fetching One Piece site: "${sanitized}"`)
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'CardPulse/1.0' },
-      signal: AbortSignal.timeout(6000),
-    })
-    if (!res.ok) throw new Error(`OP site ${res.status}`)
-    const html = await res.text()
-    console.log(`[cards:op] site response: ${html.length} chars`)
-
-    const cards = []
-    // Try to parse card entries from the HTML
-    const cardRe = /<a[^>]*class="[^"]*modalCol[^"]*"[^>]*>([\s\S]*?)<\/a>/gi
-    let match
-    while ((match = cardRe.exec(html)) !== null && cards.length < 8) {
-      const block = match[1]
-      const imgMatch = block.match(/<img[^>]+src="([^"]+)"/)
-      const nameMatch = block.match(/cardName[^>]*>([^<]+)/) || block.match(/<div[^>]*class="[^"]*name[^"]*"[^>]*>([^<]+)/)
-      const numMatch = block.match(/((?:OP|ST|EB)\d+-\d+)/i)
-
-      if (!nameMatch) continue
-      const name = nameMatch[1].trim()
-      const number = numMatch ? numMatch[1].toUpperCase() : ''
-      let imageUrl = imgMatch ? imgMatch[1].trim() : null
-      if (imageUrl && imageUrl.startsWith('/')) {
-        imageUrl = `https://en.onepiece-cardgame.com${imageUrl}`
-      }
-
-      cards.push({
-        id: `op-${number || cards.length}`,
-        name,
-        set: number ? number.replace(/-\d+$/, '') : '',
-        number,
-        rarity: '',
-        game: 'onepiece',
-        imageUrl,
-        largeImageUrl: imageUrl,
-        searchQuery: buildOpQuery({ name, number }),
-      })
-    }
-
-    return cards
-  })
-}
-
-async function searchOpEbay(query) {
-  return withCache(`op-ebay:${query.toLowerCase()}`, async () => {
-    const token = await getEbayToken()
-    const sanitized = sanitizeQuery(query)
-    const q = `${sanitized} one piece card game`
-    console.log(`[cards:op] searching eBay active listings: "${q}"`)
-    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&filter=buyingOptions:{AUCTION|FIXED_PRICE}&sort=newlyListed&limit=40`
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-      },
-      signal: AbortSignal.timeout(6000),
-    })
+    const url = `https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(sanitized)}&num=8&offset=0`
+    console.log(`[cards:ygo] fetching: ${sanitized}`)
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) {
-      console.error(`[cards:op] eBay search error: ${res.status}`)
+      console.log(`[cards:ygo] API returned ${res.status}`)
       return []
     }
     const data = await res.json()
-    const items = data.itemSummaries || []
-    console.log(`[cards:op] eBay returned ${items.length} active listings`)
+    const items = data.data || []
+    console.log(`[cards:ygo] got ${items.length} results`)
 
-    const seen = new Set()
-    const cards = []
-    for (const item of items) {
-      const title = item.title || ''
-      if (LISTING_JUNK_RE.test(title)) continue
-
-      const { name, number, set, rarity } = extractOpCard(title)
-      if (!name || name.length < 3) continue
-
-      const dedupeKey = number ? number.toLowerCase() : name.toLowerCase()
-      if (seen.has(dedupeKey)) continue
-      seen.add(dedupeKey)
-
-      cards.push({
-        id: `op-ebay-${item.itemId}`,
-        name,
-        set,
-        number,
-        rarity,
-        game: 'onepiece',
-        imageUrl: item.image?.imageUrl || null,
-        largeImageUrl: item.image?.imageUrl || null,
-        searchQuery: buildOpQuery({ name, number }),
-      })
-      if (cards.length >= 8) break
-    }
-    console.log(`[cards:op] extracted ${cards.length} unique cards`)
-    return cards
+    return items.slice(0, 8).map((card) => {
+      const setInfo = card.card_sets?.[0] || {}
+      return {
+        id: `ygo-${card.id}`,
+        name: card.name,
+        set: setInfo.set_name || '',
+        number: setInfo.set_code || '',
+        rarity: setInfo.set_rarity_code || setInfo.set_rarity || '',
+        game: 'yugioh',
+        imageUrl: card.card_images?.[0]?.image_url_small || null,
+        largeImageUrl: card.card_images?.[0]?.image_url || null,
+        searchQuery: buildSearchQuery(card.name, setInfo.set_code, ''),
+      }
+    })
   })
+}
+
+// ─── ONE PIECE / OPTCG GITHUB DATA ──────────────────────────────────────────
+let opCardData = null
+let opDataLoading = null
+
+async function loadOpData() {
+  if (opCardData) return opCardData
+  if (opDataLoading) return opDataLoading
+
+  opDataLoading = (async () => {
+    console.log('[cards:op] loading OPTCG card data from GitHub...')
+    try {
+      const res = await fetch('https://raw.githubusercontent.com/danielisonp/optcg/main/cards.json', {
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!res.ok) throw new Error(`GitHub ${res.status}`)
+      opCardData = await res.json()
+      console.log(`[cards:op] loaded ${Array.isArray(opCardData) ? opCardData.length : 'unknown'} cards`)
+      return opCardData
+    } catch (err) {
+      console.error(`[cards:op] failed to load card data: ${err.message}`)
+      opDataLoading = null
+      return null
+    }
+  })()
+  return opDataLoading
 }
 
 async function searchOnePiece(query) {
-  // Try official site first
-  try {
-    const siteResults = await searchOpSite(query)
-    if (siteResults.length > 0) return siteResults
-  } catch (err) {
-    console.log(`[cards:op] site scrape failed: ${err.message}`)
-  }
-  // Fall back to eBay active listings
-  try {
-    const ebayResults = await searchOpEbay(query)
-    if (ebayResults.length > 0) return ebayResults
-  } catch (err) {
-    console.log(`[cards:op] eBay fallback failed: ${err.message}`)
-  }
-  return []
-}
-
-// ─── GENERAL EBAY FALLBACK ────────────────────────────────────────────────────
-// When official card databases return nothing, search eBay active listings
-// and extract card suggestions from listing titles. Works for any card game.
-
-function extractCardFromTitle(title) {
-  let name = title
-    .replace(LISTING_NOISE_RE, '')
-    .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b|\bgd\b/gi, '')
-    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b/gi, '')
-    .replace(/\bsingle\b|\btrading\b|\bcard\s*game\b/gi, '')
-    .replace(/\benglish\b|\bjapanese\b|\bkorean\b|\bchinese\b/gi, '')
-    .replace(/[[\]()|#•★◆▲●◇■□△▽♦♠♣♥]/g, ' ')
-    .replace(/\s*[-–—]\s*$/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-
-  const numMatch = name.match(CARD_NUM_GENERAL_RE)
-  const number = numMatch ? numMatch[1] : ''
-  if (number) name = name.replace(number, '').trim()
-
-  name = name.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
-  // Title-case
-  name = name.replace(/\b\w/g, (c) => c.toUpperCase())
-
-  return { name, number }
-}
-
-async function searchEbayFallback(query) {
-  return withCache(`ebay-fallback:${query.toLowerCase()}`, async () => {
-    const token = await getEbayToken()
+  return withCache(`op:${query.toLowerCase()}`, async () => {
     const sanitized = sanitizeQuery(query)
-    const q = `${sanitized} card`
-    console.log(`[cards:fallback] searching eBay active listings: "${q}"`)
-    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&filter=buyingOptions:{AUCTION|FIXED_PRICE}&sort=newlyListed&limit=40`
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-      },
-      signal: AbortSignal.timeout(6000),
-    })
-    if (!res.ok) {
-      console.error(`[cards:fallback] eBay search error: ${res.status}`)
-      return []
+    const terms = sanitized.toLowerCase().split(/\s+/)
+    const data = await loadOpData()
+
+    if (data && Array.isArray(data)) {
+      const results = data.filter((card) => {
+        const hay = `${card.name || ''} ${card.id || ''} ${card.number || ''} ${card.type || ''}`.toLowerCase()
+        return terms.every((t) => hay.includes(t))
+      }).slice(0, 8)
+
+      if (results.length > 0) {
+        return results.map((card) => ({
+          id: `op-${card.id || card.number || Math.random()}`,
+          name: card.name || '',
+          set: (card.number || card.id || '').replace(/-\d+$/, ''),
+          number: card.number || card.id || '',
+          rarity: card.rarity || '',
+          game: 'onepiece',
+          imageUrl: card.image || card.imageUrl || null,
+          largeImageUrl: card.image || card.imageUrl || null,
+          searchQuery: buildSearchQuery(card.name, card.number || card.id, card.rarity),
+        }))
+      }
     }
-    const data = await res.json()
-    const items = data.itemSummaries || []
-    console.log(`[cards:fallback] eBay returned ${items.length} active listings`)
 
-    const seen = new Set()
-    const cards = []
-    for (const item of items) {
-      const title = item.title || ''
-      if (LISTING_JUNK_RE.test(title)) continue
-
-      const { name, number } = extractCardFromTitle(title)
-      if (!name || name.length < 3) continue
-
-      const dedupeKey = number ? number.toLowerCase() : name.toLowerCase().slice(0, 30)
-      if (seen.has(dedupeKey)) continue
-      seen.add(dedupeKey)
-
-      cards.push({
-        id: `ebay-fb-${item.itemId}`,
-        name,
-        set: number ? number.replace(/-\d+[A-Z]?$/, '') : '',
-        number,
-        rarity: '',
-        game: 'ebay',
-        imageUrl: item.image?.imageUrl || null,
-        largeImageUrl: item.image?.imageUrl || null,
-        searchQuery: number ? `${name} ${number}` : name,
-        viaEbay: true,
+    // Fallback: try the official site
+    try {
+      const url = `https://en.onepiece-cardgame.com/cardlist/?search=true&freewords=${encodeURIComponent(sanitized)}`
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'CardPulse/1.0' },
+        signal: AbortSignal.timeout(6000),
       })
-      if (cards.length >= 5) break
+      if (res.ok) {
+        const html = await res.text()
+        const cards = []
+        const cardRe = /<a[^>]*class="[^"]*modalCol[^"]*"[^>]*>([\s\S]*?)<\/a>/gi
+        let match
+        while ((match = cardRe.exec(html)) !== null && cards.length < 8) {
+          const block = match[1]
+          const imgMatch = block.match(/<img[^>]+src="([^"]+)"/)
+          const nameMatch = block.match(/cardName[^>]*>([^<]+)/) || block.match(/<div[^>]*class="[^"]*name[^"]*"[^>]*>([^<]+)/)
+          const numMatch = block.match(/((?:OP|ST|EB)\d+-\d+)/i)
+          if (!nameMatch) continue
+          const name = nameMatch[1].trim()
+          const number = numMatch ? numMatch[1].toUpperCase() : ''
+          let imageUrl = imgMatch ? imgMatch[1].trim() : null
+          if (imageUrl && imageUrl.startsWith('/')) imageUrl = `https://en.onepiece-cardgame.com${imageUrl}`
+          cards.push({
+            id: `op-site-${number || cards.length}`, name,
+            set: number ? number.replace(/-\d+$/, '') : '', number,
+            rarity: '', game: 'onepiece',
+            imageUrl, largeImageUrl: imageUrl,
+            searchQuery: buildSearchQuery(name, number, ''),
+          })
+        }
+        if (cards.length > 0) return cards
+      }
+    } catch (err) {
+      console.log(`[cards:op] site fallback failed: ${err.message}`)
     }
-    console.log(`[cards:fallback] extracted ${cards.length} unique cards`)
-    return cards
+
+    return []
   })
 }
 
-// ─── EBAY TOKEN ───────────────────────────────────────────────────────────────
+// ─── DRAGON BALL SUPER ───────────────────────────────────────────────────────
+let dbsCardData = null
+let dbsDataLoading = null
+
+async function loadDbsData() {
+  if (dbsCardData) return dbsCardData
+  if (dbsDataLoading) return dbsDataLoading
+
+  dbsDataLoading = (async () => {
+    console.log('[cards:dbs] loading DBS card data from GitHub...')
+    try {
+      const res = await fetch('https://raw.githubusercontent.com/boffinism/dbs-card-list/main/cards.json', {
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!res.ok) throw new Error(`GitHub ${res.status}`)
+      dbsCardData = await res.json()
+      console.log(`[cards:dbs] loaded ${Array.isArray(dbsCardData) ? dbsCardData.length : 'unknown'} cards`)
+      return dbsCardData
+    } catch (err) {
+      console.error(`[cards:dbs] failed to load card data: ${err.message}`)
+      dbsDataLoading = null
+      return null
+    }
+  })()
+  return dbsDataLoading
+}
+
+const DBS_NUM_RE = /\b((?:BT|FB|SD|ST|D-BT|P-)\d+-\d+[A-Z]?)\b/i
+
+async function searchDbsSite(query) {
+  const sanitized = sanitizeQuery(query)
+  const url = `https://www.dbs-cardgame.com/us-en/cardlist/?search=true&keyword=${encodeURIComponent(sanitized)}`
+  console.log(`[cards:dbs] fetching DBS site: "${sanitized}"`)
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'CardPulse/1.0' },
+    signal: AbortSignal.timeout(6000),
+  })
+  if (!res.ok) throw new Error(`DBS site ${res.status}`)
+  const html = await res.text()
+
+  const cards = []
+  const cardBlockRe = /<li[^>]*class="[^"]*list-inner[^"]*"[^>]*>([\s\S]*?)<\/li>/gi
+  let match
+  while ((match = cardBlockRe.exec(html)) !== null && cards.length < 8) {
+    const block = match[1]
+    const imgMatch = block.match(/<img[^>]+src="([^"]+)"/)
+    const nameMatch = block.match(/cardName[^>]*>([^<]+)/) || block.match(/<dt[^>]*>([^<]{3,})<\/dt>/)
+    const numMatch = block.match(/cardNumber[^>]*>([^<]+)/) || block.match(/((?:BT|FB|SD|ST|D-BT)\d+-\d+[A-Z]?)/)
+    const rarityMatch = block.match(/cardRarity[^>]*>([^<]+)/) || block.match(/rarity[^>]*>([^<]+)/i)
+    if (!nameMatch) continue
+    const name = nameMatch[1].trim()
+    const number = numMatch ? numMatch[1].trim().toUpperCase() : ''
+    const rarity = rarityMatch ? rarityMatch[1].trim() : ''
+    let imageUrl = imgMatch ? imgMatch[1].trim() : null
+    if (imageUrl && imageUrl.startsWith('/')) imageUrl = `https://www.dbs-cardgame.com${imageUrl}`
+    cards.push({
+      id: `dbs-site-${number || cards.length}`, name,
+      set: number ? number.replace(/-\d+[A-Z]?$/, '') : '', number, rarity,
+      game: 'dbs', imageUrl, largeImageUrl: imageUrl,
+      searchQuery: buildSearchQuery(simplifyDbsName(name), number, rarity),
+    })
+  }
+  return cards
+}
+
+async function searchDbs(query) {
+  return withCache(`dbs:${query.toLowerCase()}`, async () => {
+    const sanitized = sanitizeQuery(query)
+    const terms = sanitized.toLowerCase().split(/\s+/)
+
+    // Try official DBS site first
+    try {
+      const siteResults = await searchDbsSite(query)
+      if (siteResults.length > 0) {
+        console.log(`[cards:dbs] site returned ${siteResults.length} results`)
+        return siteResults
+      }
+    } catch (err) {
+      console.log(`[cards:dbs] site failed: ${err.message}`)
+    }
+
+    // Try community JSON data
+    const data = await loadDbsData()
+    if (data && Array.isArray(data)) {
+      const results = data.filter((card) => {
+        const hay = `${card.name || ''} ${card.number || ''} ${card.cardNumber || ''} ${card.rarity || ''}`.toLowerCase()
+        return terms.every((t) => hay.includes(t))
+      }).slice(0, 8)
+
+      if (results.length > 0) {
+        console.log(`[cards:dbs] GitHub data matched ${results.length} cards`)
+        return results.map((card) => {
+          const num = card.number || card.cardNumber || ''
+          return {
+            id: `dbs-gh-${num || Math.random()}`,
+            name: card.name || '',
+            set: num ? num.replace(/-\d+[A-Z]?$/, '') : '',
+            number: num,
+            rarity: card.rarity || '',
+            game: 'dbs',
+            imageUrl: card.image || card.imageUrl || null,
+            largeImageUrl: card.image || card.imageUrl || null,
+            searchQuery: buildSearchQuery(simplifyDbsName(card.name || ''), num, card.rarity),
+          }
+        })
+      }
+    }
+
+    // Hardcoded popular cards fallback
+    return searchDbsFallback(query)
+  })
+}
+
+const DBS_POPULAR = [
+  { name: 'Son Goku, The Awakened Power', number: 'BT1-059', rarity: 'SPR' },
+  { name: 'Vegito, Path to Greatness', number: 'BT20-138', rarity: 'SCR' },
+  { name: 'Super Saiyan God Son Goku', number: 'BT1-032', rarity: 'SR' },
+  { name: 'Gogeta, Hero Revived', number: 'BT5-038', rarity: 'SPR' },
+  { name: 'Frieza, Emperor of Universe 7', number: 'BT9-002', rarity: 'SR' },
+  { name: 'Cell, Android Evolved', number: 'BT17-049', rarity: 'SPR' },
+  { name: 'Broly, The Legendary Super Saiyan', number: 'BT1-057', rarity: 'SR' },
+  { name: 'Vegeta, Prince of Destruction', number: 'BT15-065', rarity: 'SCR' },
+  { name: 'Gohan, Potential Unleashed', number: 'BT3-033', rarity: 'SPR' },
+  { name: 'Piccolo, Fused with Kami', number: 'BT16-079', rarity: 'SR' },
+  { name: 'Trunks, Bridge to the Future', number: 'BT3-062', rarity: 'SPR' },
+  { name: 'Beerus, God of Destruction', number: 'BT1-029', rarity: 'SR' },
+  { name: 'Gogeta BR', number: 'FB01-139', rarity: 'SCR' },
+  { name: 'Son Goku, Ultra Instinct Sign', number: 'BT9-026', rarity: 'SCR' },
+  { name: 'Son Goku, Strength of Legends', number: 'FB01-001', rarity: 'SR' },
+  { name: 'Vegeta, Saiyan Prince', number: 'FB01-028', rarity: 'SR' },
+  { name: 'Broly, Unstoppable Rage', number: 'FB01-091', rarity: 'SCR' },
+  { name: 'Gogeta, Fusion Reborn', number: 'FB02-139', rarity: 'SCR' },
+  { name: 'Vegeta, Beyond Limits', number: 'FB02-028', rarity: 'SCR' },
+  { name: 'Son Gohan, Beast Unleashed', number: 'FB02-049', rarity: 'SCR' },
+  { name: 'Goku & Vegeta, Saiyan Bond', number: 'FB09-121', rarity: 'SCR' },
+  { name: 'Super Saiyan 4 Gogeta', number: 'BT11-001', rarity: 'SCR' },
+  { name: 'Omega Shenron, Extreme Malice', number: 'BT11-110', rarity: 'SCR' },
+  { name: 'Cooler, Galactic Dynasty', number: 'BT17-059', rarity: 'SCR' },
+  { name: 'Son Goku, Mastered Ultra Instinct', number: 'BT7-077', rarity: 'SCR' },
+  { name: 'Gogeta, Display of Power', number: 'BT12-136', rarity: 'SCR' },
+  { name: 'Gogeta, Beyond Fusion', number: 'FB03-139', rarity: 'SCR' },
+  { name: 'Vegeta, Royal Pride', number: 'FB03-028', rarity: 'SCR' },
+]
+
+function searchDbsFallback(query) {
+  const sanitized = sanitizeQuery(query)
+  const terms = sanitized.toLowerCase().split(/\s+/)
+  return DBS_POPULAR.filter((card) => {
+    const hay = `${card.name} ${card.number} ${card.rarity}`.toLowerCase()
+    return terms.every((t) => hay.includes(t))
+  }).slice(0, 8).map((card) => ({
+    id: `dbs-fb-${card.number}`,
+    name: card.name,
+    set: card.number.replace(/-\d+[A-Z]?$/, ''),
+    number: card.number,
+    rarity: card.rarity,
+    game: 'dbs',
+    imageUrl: null,
+    largeImageUrl: null,
+    searchQuery: buildSearchQuery(simplifyDbsName(card.name), card.number, card.rarity),
+  }))
+}
+
+// ─── LORCANA ─────────────────────────────────────────────────────────────────
+async function searchLorcana(query) {
+  return withCache(`lor:${query.toLowerCase()}`, async () => {
+    const sanitized = sanitizeQuery(query)
+    const url = `https://api.lorcana-api.com/cards/fetch?search=Name~${encodeURIComponent(sanitized)}&limit=8`
+    console.log(`[cards:lor] fetching: ${sanitized}`)
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok) {
+      console.log(`[cards:lor] API returned ${res.status}`)
+      return []
+    }
+    const data = await res.json()
+    const items = Array.isArray(data) ? data : (data.data || data.cards || [])
+    console.log(`[cards:lor] got ${items.length} results`)
+
+    return items.slice(0, 8).map((card) => ({
+      id: `lor-${card.id || card.Name || Math.random()}`,
+      name: card.Name || card.name || '',
+      set: card.Set_Name || card.set || '',
+      number: card.Card_Num || card.number || '',
+      rarity: card.Rarity || card.rarity || '',
+      game: 'lorcana',
+      imageUrl: card.Image || card.image || null,
+      largeImageUrl: card.Image || card.image || null,
+      searchQuery: buildSearchQuery(card.Name || card.name, card.Card_Num || card.number, card.Rarity || card.rarity),
+    }))
+  })
+}
+
+// ─── GENERAL EBAY FALLBACK ────────────────────────────────────────────────────
+const LISTING_JUNK_RE = /\b(lot|bundle|collection|complete set|booster|pack|box|sealed|\d+\s*cards?|\dx|\bx\d+|buy \d|bogo|get \d free)\b/i
+
 let ebayToken = null
 let ebayTokenExp = 0
 
@@ -557,282 +596,57 @@ async function getEbayToken() {
   return ebayToken
 }
 
-// ─── DBS VIA EBAY ACTIVE LISTINGS ────────────────────────────────────────────
-// Search eBay active listings, extract unique card identities from titles,
-// and return them as autocomplete suggestions with images.
-const DBS_NUM_RE = /\b((?:BT|FB|SD|ST|D-BT|P-)\d+-\d+[A-Z]?)\b/i
-const DBS_RARITY_RE = /\b(SCR|SPR|SR|SIR|SSR|SEC|UR|RR|UC|CHR|AR|R|C)\b/
-const JUNK_RE = /\b(lot|bundle|collection|complete set|booster|pack|box|sealed|\d+\s*cards?|\dx|\bx\d+)\b/i
-
-// Variant descriptors that indicate a non-base version of a card
-const VARIANT_RE = /\b(parallel|alternate\s*art|alt\s*art|double\s*strike|foil|promo|manga|special|textured|gold)\b/i
-
-function extractDbsCard(title) {
-  const numMatch = title.match(DBS_NUM_RE)
-  const number = numMatch ? numMatch[1].toUpperCase() : ''
-  const set = number ? number.replace(/-\d+[A-Z]?$/, '') : ''
-
-  // Extract rarity
-  const rarityMatch = title.match(DBS_RARITY_RE)
-  const rarity = rarityMatch ? rarityMatch[1].toUpperCase() : ''
-
-  // Check if this is a variant listing
-  const isVariant = VARIANT_RE.test(title)
-
-  // Extract card name: strip noise from the title
-  let name = title
-    .replace(/\bdragon\s*ball\s*(super\s*)?(card\s*game|tcg|dbscg)?\b/gi, '')
-    .replace(/\bfusion\s*world\b/gi, '')
-    .replace(/\bdbs\b/gi, '')
-    .replace(DBS_NUM_RE, '')
-    .replace(DBS_RARITY_RE, '')
-    .replace(/\bpsa\s*\d+\b/gi, '')
-    .replace(/\bbgs\s*[\d.]+\b/gi, '')
-    .replace(/\bcgc\s*[\d.]+\b/gi, '')
-    .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b|\bgd\b/gi, '')
-    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b|\bparallel\b|\bdouble\s*strike\b|\bpromo\b|\btextured\b|\bmanga\b/gi, '')
-    .replace(/\bcard\b|\bsingle\b|\btrading\b|\bgame\b/gi, '')
-    .replace(/\benglish\b|\bjapanese\b/gi, '')
-    .replace(/[[\]()|#•★◆▲●◇■□△▽♦♠♣♥]/g, ' ') // strip special symbols including bullet points
-    .replace(/\s*[-–—]\s*$/g, '') // trailing dashes
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-
-  // Clean leading/trailing punctuation
-  name = name.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
-
-  // Title-case
-  name = name.replace(/\b\w/g, (c) => c.toUpperCase())
-
-  return { name, number, set, rarity, isVariant }
-}
-
-async function searchDbsEbay(query) {
-  return withCache(`dbs-ebay:${query.toLowerCase()}`, async () => {
+async function searchEbayFallback(query) {
+  return withCache(`ebay-fallback:${query.toLowerCase()}`, async () => {
     const token = await getEbayToken()
     const sanitized = sanitizeQuery(query)
-    const q = `${sanitized} dragon ball card`
-    console.log(`[cards:dbs] searching eBay active listings: "${q}"`)
+    const q = `${sanitized} card`
     const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&filter=buyingOptions:{AUCTION|FIXED_PRICE}&sort=newlyListed&limit=40`
     const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' },
       signal: AbortSignal.timeout(6000),
     })
-    if (!res.ok) {
-      console.error(`[cards:dbs] eBay search error: ${res.status}`)
-      return []
-    }
+    if (!res.ok) return []
     const data = await res.json()
     const items = data.itemSummaries || []
-    console.log(`[cards:dbs] eBay returned ${items.length} active listings`)
 
-    // Detect if the query contains a specific card number
-    const queryNumMatch = sanitized.match(DBS_NUM_RE)
-    const queryNum = queryNumMatch ? queryNumMatch[1].toUpperCase() : ''
-    if (queryNum) console.log(`[cards:dbs] filtering for card number: ${queryNum}`)
-
-    // Extract unique cards from listing titles
+    const CARD_NUM_RE = /\b((?:[A-Z]{1,4}-?\d+-\d+[A-Z]?)|(?:\d{1,3}\/\d{1,3}))\b/
     const seen = new Set()
     const cards = []
     for (const item of items) {
       const title = item.title || ''
-      if (JUNK_RE.test(title)) continue
-
-      const { name, number, set, rarity, isVariant } = extractDbsCard(title)
+      if (LISTING_JUNK_RE.test(title)) continue
+      let name = title
+        .replace(/\b(psa|bgs|cgc|sgc|beckett)\s*\d+[\d.]*/gi, '')
+        .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b/gi, '')
+        .replace(/\bcard\b|\bsingle\b|\btrading\b/gi, '')
+        .replace(/[[\]()|#•★◆▲●◇■□△▽♦♠♣♥]/g, ' ')
+        .replace(/\s{2,}/g, ' ').trim()
+      const numMatch = name.match(CARD_NUM_RE)
+      const number = numMatch ? numMatch[1] : ''
+      if (number) name = name.replace(number, '').trim()
+      name = name.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
+      name = name.replace(/\b\w/g, (c) => c.toUpperCase())
       if (!name || name.length < 3) continue
-
-      // When query contains a card number, only show listings with that exact number
-      if (queryNum && number && number !== queryNum) continue
-
-      // Deduplicate by card number (best) or lowercase name
-      const dedupeKey = number ? number.toLowerCase() : name.toLowerCase()
-      if (seen.has(dedupeKey)) continue
-      seen.add(dedupeKey)
-
+      const key = number ? number.toLowerCase() : name.toLowerCase().slice(0, 30)
+      if (seen.has(key)) continue
+      seen.add(key)
       cards.push({
-        id: `dbs-ebay-${item.itemId}`,
-        name,
-        set,
-        number,
-        rarity,
-        game: 'dbs',
+        id: `ebay-fb-${item.itemId}`, name,
+        set: number ? number.replace(/-\d+[A-Z]?$/, '') : '', number,
+        rarity: '', game: 'ebay',
         imageUrl: item.image?.imageUrl || null,
         largeImageUrl: item.image?.imageUrl || null,
-        searchQuery: buildDbsQuery({ name, number, rarity }),
-        isVariant,
+        searchQuery: number ? `${name} ${number}` : name,
+        viaEbay: true,
       })
-      if (cards.length >= 12) break // collect more, then sort and trim
+      if (cards.length >= 5) break
     }
-
-    // Sort: base versions first, variants last
-    cards.sort((a, b) => (a.isVariant ? 1 : 0) - (b.isVariant ? 1 : 0))
-
-    console.log(`[cards:dbs] extracted ${cards.length} unique cards from listings`)
     return cards
   })
 }
 
-// ─── DBS HARDCODED FALLBACK (top 200 popular cards) ─────────────────────────
-const DBS_POPULAR = [
-  { name: 'Son Goku, The Awakened Power', number: 'BT1-059', rarity: 'SPR' },
-  { name: 'Vegito, Path to Greatness', number: 'BT20-138', rarity: 'SCR' },
-  { name: 'Super Saiyan God Son Goku', number: 'BT1-032', rarity: 'SR' },
-  { name: 'Gogeta, Hero Revived', number: 'BT5-038', rarity: 'SPR' },
-  { name: 'Frieza, Emperor of Universe 7', number: 'BT9-002', rarity: 'SR' },
-  { name: 'Cell, Android Evolved', number: 'BT17-049', rarity: 'SPR' },
-  { name: 'Broly, The Legendary Super Saiyan', number: 'BT1-057', rarity: 'SR' },
-  { name: 'Vegeta, Prince of Destruction', number: 'BT15-065', rarity: 'SCR' },
-  { name: 'Gohan, Potential Unleashed', number: 'BT3-033', rarity: 'SPR' },
-  { name: 'Piccolo, Fused with Kami', number: 'BT16-079', rarity: 'SR' },
-  { name: 'Trunks, Bridge to the Future', number: 'BT3-062', rarity: 'SPR' },
-  { name: 'Beerus, God of Destruction', number: 'BT1-029', rarity: 'SR' },
-  { name: 'Bardock, Will of Iron', number: 'BT3-083', rarity: 'SR' },
-  { name: 'Android 17, Protector of Wildlife', number: 'BT14-068', rarity: 'SR' },
-  { name: 'Hit, Time Skip Strike', number: 'BT4-100', rarity: 'SPR' },
-  { name: 'Kefla, Surge of Energy', number: 'BT7-080', rarity: 'SPR' },
-  { name: 'Majin Buu, Infinite Multiplication', number: 'BT6-041', rarity: 'SR' },
-  { name: 'Gogeta BR', number: 'FB01-139', rarity: 'SCR' },
-  { name: 'Son Goku, Ultra Instinct Sign', number: 'BT9-026', rarity: 'SCR' },
-  { name: 'Vegito, Unison of Might', number: 'BT10-002', rarity: 'SPR' },
-  { name: 'Son Goku, Path to Greatness', number: 'BT6-005', rarity: 'SPR' },
-  { name: 'Super Saiyan Vegeta', number: 'BT1-056', rarity: 'SR' },
-  { name: 'Gotenks, Display of Might', number: 'BT11-002', rarity: 'SPR' },
-  { name: 'Jiren, Fist of Justice', number: 'BT5-047', rarity: 'SPR' },
-  { name: 'Whis, The Advisor', number: 'BT1-044', rarity: 'SR' },
-  { name: 'Android 18, Graceful Warrior', number: 'BT13-069', rarity: 'SPR' },
-  { name: 'Cooler, Galactic Dynasty', number: 'BT17-059', rarity: 'SCR' },
-  { name: 'Zamasu, The Invincible', number: 'BT2-056', rarity: 'SR' },
-  { name: 'Tien Shinhan, Tri-Beam Master', number: 'BT12-086', rarity: 'SR' },
-  { name: 'Caulifla, Daring Fighter', number: 'BT7-079', rarity: 'SR' },
-  { name: 'Super 17, Hell\'s Storm', number: 'BT14-129', rarity: 'SCR' },
-  { name: 'Son Goku, Strength of Legends', number: 'FB01-001', rarity: 'SR' },
-  { name: 'Vegeta, Saiyan Prince', number: 'FB01-028', rarity: 'SR' },
-  { name: 'Frieza, Galactic Tyrant', number: 'FB01-077', rarity: 'SR' },
-  { name: 'Gohan, Hidden Potential', number: 'FB01-049', rarity: 'SR' },
-  { name: 'Piccolo, Namekian Guardian', number: 'FB01-058', rarity: 'SR' },
-  { name: 'Trunks, Hope of the Future', number: 'FB01-036', rarity: 'SR' },
-  { name: 'Broly, Unstoppable Rage', number: 'FB01-091', rarity: 'SCR' },
-  { name: 'Cell, Ultimate Lifeform', number: 'FB01-083', rarity: 'SR' },
-  { name: 'Beerus, Universe 7 Destroyer', number: 'FB01-067', rarity: 'SR' },
-  { name: 'Goku Black, Dark Overload', number: 'BT3-051', rarity: 'SPR' },
-  { name: 'Krillin, Trusty Aid', number: 'BT18-011', rarity: 'SR' },
-  { name: 'Yamcha, Merciless Striker', number: 'BT19-076', rarity: 'SR' },
-  { name: 'Videl, Supporting Fighter', number: 'BT18-081', rarity: 'SR' },
-  { name: 'Pan, Ready to Fight', number: 'BT18-047', rarity: 'SR' },
-  { name: 'Android 21, Scholarly Scientist', number: 'BT20-025', rarity: 'SPR' },
-  { name: 'Son Goku, Explosion of Power', number: 'FB02-001', rarity: 'SR' },
-  { name: 'Vegeta, Beyond Limits', number: 'FB02-028', rarity: 'SCR' },
-  { name: 'Gogeta, Fusion Reborn', number: 'FB02-139', rarity: 'SCR' },
-  { name: 'Frieza, True Golden Form', number: 'FB02-077', rarity: 'SR' },
-  { name: 'Son Gohan, Beast Unleashed', number: 'FB02-049', rarity: 'SCR' },
-  { name: 'Piccolo, Orange Form', number: 'FB02-058', rarity: 'SR' },
-  { name: 'Broly, Full Power', number: 'FB02-091', rarity: 'SR' },
-  { name: 'Cell Max, Destructive Force', number: 'FB02-083', rarity: 'SR' },
-  { name: 'Gamma 1, Red Warrior', number: 'FB02-034', rarity: 'SR' },
-  { name: 'Gamma 2, Blue Warrior', number: 'FB02-035', rarity: 'SR' },
-  { name: 'Super Saiyan 4 Gogeta', number: 'BT11-001', rarity: 'SCR' },
-  { name: 'SSB Vegito, Unison Warrior', number: 'BT10-003', rarity: 'SCR' },
-  { name: 'Janemba, Agent of Destruction', number: 'BT5-086', rarity: 'SPR' },
-  { name: 'Turles, Crusher Corps Commander', number: 'BT15-111', rarity: 'SR' },
-  { name: 'Raditz, Saiyan Invader', number: 'BT18-053', rarity: 'SR' },
-  { name: 'Nappa, Saiyan Warrior', number: 'BT18-051', rarity: 'SR' },
-  { name: 'Dabura, Dark Demon', number: 'BT19-091', rarity: 'SR' },
-  { name: 'Babidi, Dark Magician', number: 'BT11-078', rarity: 'SR' },
-  { name: 'Toppo, God of Destruction Candidate', number: 'BT9-045', rarity: 'SR' },
-  { name: 'Dyspo, Lightspeed Warrior', number: 'BT9-044', rarity: 'SR' },
-  { name: 'Android 13, Fused Force', number: 'BT13-094', rarity: 'SPR' },
-  { name: 'Champa, Universe 6 Destroyer', number: 'BT7-077', rarity: 'SR' },
-  { name: 'Vados, Angelic Support', number: 'BT7-078', rarity: 'SR' },
-  { name: 'Cabba, Saiyan Pride', number: 'BT7-081', rarity: 'SR' },
-  { name: 'Son Goku, Hero of Earth', number: 'FB03-001', rarity: 'SR' },
-  { name: 'Vegeta, Royal Pride', number: 'FB03-028', rarity: 'SCR' },
-  { name: 'Gogeta, Beyond Fusion', number: 'FB03-139', rarity: 'SCR' },
-  { name: 'Frieza, Final Form', number: 'FB03-077', rarity: 'SR' },
-  { name: 'Gohan, Father-Son Kamehameha', number: 'FB03-049', rarity: 'SR' },
-  { name: 'Piccolo, Special Beam Cannon', number: 'FB03-058', rarity: 'SR' },
-  { name: 'Son Goku, Mastered Ultra Instinct', number: 'BT7-077', rarity: 'SCR' },
-  { name: 'Vegito, Absolute Annihilation', number: 'BT4-003', rarity: 'SPR' },
-  { name: 'Gogeta, Display of Power', number: 'BT12-136', rarity: 'SCR' },
-  { name: 'Son Goku, Spirit Bomb', number: 'BT8-108', rarity: 'SPR' },
-  { name: 'Cell, Return of the Terror', number: 'BT9-073', rarity: 'SPR' },
-  { name: 'Vegeta, Determined to Fight', number: 'BT18-028', rarity: 'SR' },
-  { name: 'Goku & Vegeta, Saiyan Bond', number: 'FB09-121', rarity: 'SCR' },
-  { name: 'Gotenks, Fusion Warrior', number: 'BT2-015', rarity: 'SR' },
-  { name: 'Android 16, Gentle Giant', number: 'BT2-091', rarity: 'SR' },
-  { name: 'Captain Ginyu, Ginyu Force', number: 'BT1-085', rarity: 'SR' },
-  { name: 'Majin Vegeta, Prideful Warrior', number: 'BT4-030', rarity: 'SPR' },
-  { name: 'Kid Buu, Infinite Terror', number: 'BT6-042', rarity: 'SPR' },
-  { name: 'Super Saiyan 3 Goku', number: 'BT4-005', rarity: 'SPR' },
-  { name: 'Syn Shenron, Shadow Dragon', number: 'BT11-109', rarity: 'SPR' },
-  { name: 'Omega Shenron, Extreme Malice', number: 'BT11-110', rarity: 'SCR' },
-  { name: 'Pan, Granddaughter of Goku', number: 'BT11-014', rarity: 'SR' },
-  { name: 'Giru, Machine Mutant', number: 'BT11-016', rarity: 'SR' },
-  { name: 'Uub, Potential Awakened', number: 'BT11-018', rarity: 'SR' },
-  { name: 'Great Ape Vegeta', number: 'BT3-093', rarity: 'SR' },
-  { name: 'Great Ape Bardock', number: 'BT3-084', rarity: 'SPR' },
-  { name: 'Golden Frieza, Resurrected Terror', number: 'BT1-086', rarity: 'SPR' },
-  { name: 'Mecha Frieza, Rebuilt', number: 'BT2-103', rarity: 'SR' },
-  { name: 'King Cold, Father of the Emperor', number: 'BT2-104', rarity: 'SR' },
-  { name: 'Sorbet, Frieza\'s Loyal Subject', number: 'BT1-088', rarity: 'SR' },
-]
-
-function searchDbsFallback(query) {
-  const sanitized = sanitizeQuery(query)
-  const ql = sanitized.toLowerCase()
-  const terms = ql.split(/\s+/)
-  return DBS_POPULAR.filter((card) => {
-    const hay = `${card.name} ${card.number} ${card.rarity}`.toLowerCase()
-    return terms.every((t) => hay.includes(t))
-  }).slice(0, 8).map((card) => ({
-    id: `dbs-fb-${card.number}`,
-    name: card.name,
-    set: card.number.replace(/-\d+[A-Z]?$/, ''),
-    number: card.number,
-    rarity: card.rarity,
-    game: 'dbs',
-    imageUrl: null,
-    largeImageUrl: null,
-    searchQuery: buildDbsQuery(card),
-  }))
-}
-
-async function searchDbs(query) {
-  // Primary: search eBay active listings with full query
-  try {
-    const ebayResults = await searchDbsEbay(query)
-    if (ebayResults.length > 0) return ebayResults
-  } catch (err) {
-    console.log(`[cards:dbs] eBay active listing search failed: ${err.message}`)
-  }
-
-  // Retry: try individual key words from the query (longest first)
-  // "god kamehameha" → try "kamehameha", then "god"
-  const words = sanitizeQuery(query).split(/\s+/).filter((w) => w.length >= 3)
-  if (words.length > 1) {
-    const sorted = [...words].sort((a, b) => b.length - a.length)
-    for (const word of sorted) {
-      console.log(`[cards:dbs] retrying broader search with: "${word}"`)
-      try {
-        const retry = await searchDbsEbay(word)
-        if (retry.length > 0) return retry
-      } catch (_) { /* continue */ }
-      // Also try hardcoded fallback with the single word
-      const fbRetry = searchDbsFallback(word)
-      if (fbRetry.length > 0) return fbRetry
-    }
-  }
-
-  // Final fallback: hardcoded popular cards dictionary with full query
-  console.log('[cards:dbs] falling back to hardcoded dictionary')
-  return searchDbsFallback(query)
-}
-
-// ─── PRE-WARM CACHE (cold start) ─────────────────────────────────────────────
-// Fire-and-forget: pre-fetch the 10 most popular Pokemon names so the first
-// user search for any of these is instant (served from the withCache Map).
+// ─── PRE-WARM CACHE ──────────────────────────────────────────────────────────
 const PRE_WARM_QUERIES = [
   'charizard', 'pikachu', 'mewtwo', 'eevee', 'gengar',
   'blastoise', 'venusaur', 'rayquaza', 'lugia', 'ho-oh',
@@ -845,11 +659,14 @@ function preWarmCache() {
   for (const q of PRE_WARM_QUERIES) {
     searchPokemon(q).catch((err) => console.log(`[cards] pre-warm ${q} failed: ${err.message}`))
   }
+  // Also pre-load One Piece and DBS card data
+  loadOpData().catch(() => {})
+  loadDbsData().catch(() => {})
 }
 
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  preWarmCache() // fire once on first request
+  preWarmCache()
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
@@ -883,50 +700,40 @@ export default async function handler(req, res) {
       const result = await searchPokemon(query)
       cards = result.cards || []
       jpExclusive = result.jpExclusive || false
-      console.log('[cards] pokemon results:', cards.length, jpExclusive ? '(JP exclusive)' : '')
-    } catch (err) {
-      console.error('[cards] pokemon error:', err.message)
-    }
+    } catch (err) { console.error('[cards] pokemon error:', err.message) }
     if (cards.length) attribution = 'pokemontcg.io'
   } else if (game === 'mtg') {
-    try {
-      cards = await searchMtg(query)
-      console.log('[cards] mtg results:', cards.length)
-    } catch (err) {
-      console.error('[cards] mtg error:', err.message)
-    }
+    try { cards = await searchMtg(query) } catch (err) { console.error('[cards] mtg error:', err.message) }
     if (cards.length) attribution = 'Scryfall'
+  } else if (game === 'yugioh') {
+    try { cards = await searchYugioh(query) } catch (err) { console.error('[cards] yugioh error:', err.message) }
+    if (cards.length) attribution = 'YGOProDeck'
   } else if (game === 'onepiece') {
-    try {
-      cards = await searchOnePiece(query)
-      console.log('[cards] onepiece results:', cards.length)
-    } catch (err) {
-      console.error('[cards] onepiece error:', err.message)
-    }
+    try { cards = await searchOnePiece(query) } catch (err) { console.error('[cards] onepiece error:', err.message) }
     if (cards.length) attribution = 'One Piece Card Game'
   } else if (game === 'dbs') {
-    try {
-      cards = await searchDbs(query)
-      console.log('[cards] dbs results:', cards.length)
-    } catch (err) {
-      console.error('[cards] dbs error:', err.message)
-    }
-    if (cards.length) attribution = 'eBay listings'
+    try { cards = await searchDbs(query) } catch (err) { console.error('[cards] dbs error:', err.message) }
+    if (cards.length) attribution = 'DBS Card Game'
+  } else if (game === 'lorcana') {
+    try { cards = await searchLorcana(query) } catch (err) { console.error('[cards] lorcana error:', err.message) }
+    if (cards.length) attribution = 'Lorcana'
   } else {
-    // Unknown game — try Pokemon and MTG in parallel
-    const [pkm, mtg] = await Promise.allSettled([searchPokemon(query), searchMtg(query)])
+    // No game detected — search all databases in parallel
+    console.log('[cards] no game detected, searching all databases')
+    const [pkm, mtg, ygo, lor] = await Promise.allSettled([
+      searchPokemon(query), searchMtg(query), searchYugioh(query), searchLorcana(query),
+    ])
     if (pkm.status === 'fulfilled') {
       const result = pkm.value
       cards.push(...(result.cards || []))
       if (result.jpExclusive) jpExclusive = true
-      console.log('[cards] unknown/pkm:', (result.cards || []).length)
-    } else {
-      console.error('[cards] unknown/pkm error:', pkm.reason?.message)
     }
-    if (mtg.status === 'fulfilled') { cards.push(...mtg.value); console.log('[cards] unknown/mtg:', mtg.value.length) }
-    else console.error('[cards] unknown/mtg error:', mtg.reason?.message)
+    if (mtg.status === 'fulfilled') cards.push(...mtg.value)
+    if (ygo.status === 'fulfilled') cards.push(...ygo.value)
+    if (lor.status === 'fulfilled') cards.push(...lor.value)
 
-    if (cards.length) attribution = 'pokemontcg.io & Scryfall'
+    if (cards.length) attribution = 'Multiple sources'
+    console.log(`[cards] parallel search found ${cards.length} total results`)
   }
 
   // General eBay fallback — when official databases return nothing and query is 3+ words
@@ -935,9 +742,7 @@ export default async function handler(req, res) {
     try {
       cards = await searchEbayFallback(query)
       if (cards.length) attribution = 'eBay listings'
-    } catch (err) {
-      console.error('[cards] eBay fallback error:', err.message)
-    }
+    } catch (err) { console.error('[cards] eBay fallback error:', err.message) }
   }
 
   return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
