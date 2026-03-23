@@ -503,10 +503,49 @@ function spellCorrect(query) {
   return { corrected: corrected.join(' '), changed }
 }
 
+// ─── RARITY NORMALIZATION ────────────────────────────────────────────────────
+// Normalize rarity aliases to canonical forms BEFORE any other preprocessing.
+// Order matters: longer/more specific patterns must come first.
+const RARITY_ALIASES = [
+  // DBS / Fusion World — multi-word aliases (longest first)
+  { re: /\bscr\s*(?:double\s*alt|double\s*star|\*\*)/gi, to: 'SCR' },
+  { re: /\bscr\s*(?:alt(?:ernate)?(?:\s*art)?|\+)/gi, to: 'SCR' },
+  { re: /\bsr\s*(?:alt(?:ernate)?(?:\s*art)?|\+)/gi, to: 'SR' },
+  // Pokemon — multi-word aliases (longest first)
+  { re: /\bspecial\s*illustration\s*rare\b/gi, to: 'SIR' },
+  { re: /\billustration\s*rare\b/gi, to: 'IR' },
+  { re: /\bspecial\s*art\s*rare\b/gi, to: 'SAR' },
+  { re: /\balternate\s*art\b/gi, to: 'ALT' },
+  { re: /\balt\s*art\b/gi, to: 'ALT' },
+  { re: /\bfull\s*art\b/gi, to: 'FA' },
+  { re: /\btrainer\s*gallery\b/gi, to: 'TG' },
+  // MTG
+  { re: /\bextended\s*art\b/gi, to: 'EA' },
+  // One Piece
+  { re: /\bsecret\s*(?:rare\s*)?alt\b/gi, to: 'SEC' },
+  { re: /\bleader\s*alt\b/gi, to: 'L ALT' },
+  // Single-word abbreviation aliases (must come AFTER multi-word)
+  { re: /\bsar\b/gi, to: 'SAR' },
+  { re: /\bsir\b/gi, to: 'SIR' },
+  { re: /\b(?:ir)\b/gi, to: 'IR' },
+  { re: /\bea\b/gi, to: 'EA' },
+  { re: /\btg\b/gi, to: 'TG' },
+]
+
+function normalizeRarity(raw) {
+  let q = raw
+  for (const alias of RARITY_ALIASES) {
+    const before = q
+    q = q.replace(alias.re, alias.to)
+    if (q !== before) console.log(`[rarity-norm] "${before}" → "${q}" (${alias.to})`)
+  }
+  return q
+}
+
 // ─── QUERY PREPROCESSOR ──────────────────────────────────────────────────────
 
 // Rarity codes to extract and preserve
-const RARITY_CODES = ['IMIR', 'SIR', 'SCR', 'SPR', 'SAR', 'SSR', 'SEC', 'ACE', 'UR', 'SR', 'RRR', 'RR', 'UC', 'CHR', 'AR', 'ALT', 'FA']
+const RARITY_CODES = ['IMIR', 'SIR', 'SCR', 'SPR', 'SAR', 'SSR', 'SEC', 'ACE', 'UR', 'SR', 'RRR', 'RR', 'UC', 'CHR', 'AR', 'ALT', 'FA', 'IR', 'TG', 'EA']
 
 // Set code pattern: BT27-019, FB09, OP01-112, D-BT01, SD23-01, 121/088
 const SET_CODE_RE = /\b(?:[A-Z]{1,4}-)?(?:BT|FB|OP|SD|P|D-BT|ST)\d+(?:-\d+)?\b|\b[A-Z]{1,4}\d{2,3}(?:-\d+)?\b|\b\d{3}\/\d{3}\b/gi
@@ -580,7 +619,8 @@ function cleanFullTitle(q) {
  * Returns { query, type, tokens } for logging and debugging.
  */
 function preprocessQuery(raw, grade = 'Raw') {
-  const normalised = normalize(raw)
+  const rarityNormed = normalizeRarity(raw)
+  const normalised = normalize(rarityNormed)
   const type = detectType(normalised, grade)
 
   // Short set-code queries are already specific — pass through untouched
