@@ -105,7 +105,8 @@ const GRADE_EXCLUDE = {
     'complete set', 'lot of', 'bundle', 'collection lot',
     'x2', 'x3', 'x4', 'x5', '2x', '3x', '4x', '5x',
     '2 card', '3 card', '4 card', '5 card', '10 card', '21 card',
-    'booster box', 'booster pack', 'sealed',
+    'booster box', 'booster pack', 'manga booster', 'booster 01', 'sealed',
+    'single card lot', 'parallel single',
     'buy 3 get 1', 'buy 2 get 1', 'buy 1 get 1', 'bogo', 'get 1 free', 'get one free',
     // Multi-word phrases safe for includes() (no false-positive risk)
     'gem mint', 'gem-mint', 'black label',
@@ -130,10 +131,27 @@ function gradeMatch(title, grade) {
  * For graded grades: keeps only listings whose title matches the grade.
  * Falls back to the full set if fewer than 2 items survive (avoids empty results).
  */
-// Hard graded slab pattern — runs FIRST for Raw, never bypassed
-const GRADED_RE = /\b(psa|bgs|cgc|sgc|beckett)\s*\d|\bgraded\b|\bslab\b|\bgem\s*mint\b|\bblack\s*label\b/i
+// 1. Hard graded slab pattern — runs FIRST for Raw, never bypassed
+const GRADED_RE = /\b(psa|bgs|cgc|sgc|beckett|ace|hga)\s*\d+|\b(graded|slab|gem\s*mint|black\s*label|pristine)\b/i
 
-// Additional Raw exclusion patterns (signed/autograph)
+// 2. Variant terms — exclude from ALL queries unless query itself contains the term
+const VARIANT_TERMS = [
+  { query: /\balt\b/i, title: /\b(alt(?:ernate)?|alternative)\s*art\b/i },
+  { query: /\bsuper\s*parallel\b/i, title: /\bsuper\s*parallel\b|\bsp\s*card\b/i },
+  { query: /\bfull\s*art\b/i, title: /\bfull\s*art\b/i },
+  { query: /\bSAR\b/, title: /\bSAR\b/ },
+  { query: /\bbooster\b/i, title: /\bmanga\s*booster\b|\bbooster\b/i },
+  // ARS is always excluded — sealed product SKU, never a card variant
+  { query: /(?!)/, title: /\bARS\s*\d/i },
+]
+
+// 3. Language bleed — exclude foreign language listings when language filter is set
+const LANG_EXCLUDE = {
+  English: /\b(japanese|japan|jpn|jp\s*ver|korean|korean\s*ver|chinese)\b/i,
+  Japanese: /\b(english|eng\s*ver|korean|chinese)\b/i,
+}
+
+// 4. Additional Raw exclusion patterns (signed/autograph)
 const RAW_EXCLUDE_PATTERNS = [
   /\bsigned\b/i,
   /\bautograph(?:ed)?\b/i,
@@ -141,21 +159,25 @@ const RAW_EXCLUDE_PATTERNS = [
   /\bsignature\b/i,
 ]
 
-// Variant terms to exclude when NOT in the search query
-const VARIANT_TERMS = [
-  { query: /\balt\b/i, title: /\balt(?:ernate)?\s*art\b/i },
-  { query: /\bsuper\s*alt\b/i, title: /\bsuper\s*alt(?:ernate)?\s*art\b/i },
-  { query: /\bfull\s*art\b/i, title: /\bfull\s*art\b/i },
-  { query: /\bSAR\b/, title: /\bSAR\b/i },
-]
-
-function filterItems(items, grade, searchQuery) {
+function filterItems(items, grade, searchQuery, lang) {
   if (!items?.length) return items
   const ql = (searchQuery || '').toLowerCase()
 
-  // ── Variant exclusion (all grades) ─────────────────────────────────────
-  // If the query does NOT contain a variant term, exclude comps that do
+  // ── 1. Graded slab hard block (Raw only) — runs FIRST, no bypass ──────
   let filtered = items
+  if (grade === 'Raw') {
+    filtered = items.filter((i) => {
+      const t = i.title || ''
+      if (GRADED_RE.test(t)) {
+        console.log(`[filter:slab] dropped "${t.slice(0, 70)}"`)
+        return false
+      }
+      return true
+    })
+    console.log(`[filter:slab] ${items.length} → ${filtered.length} after graded slab hard block`)
+  }
+
+  // ── 2. Variant exclusion (all grades) ─────────────────────────────────
   for (const vt of VARIANT_TERMS) {
     if (!vt.query.test(ql)) {
       const before = filtered.length
@@ -167,36 +189,53 @@ function filterItems(items, grade, searchQuery) {
         }
         return true
       })
-      if (filtered.length < before) console.log(`[filter:variant] ${before} → ${filtered.length} after "${vt.title}" exclusion`)
+      if (filtered.length < before) console.log(`[filter:variant] ${before} → ${filtered.length}`)
     }
   }
-  // If variant filter gutted results, fall back
-  if (filtered.length < 2 && items.length >= 2) filtered = items
+  // If variant filter gutted results, fall back (but keep slab exclusion)
+  if (filtered.length < 2 && grade === 'Raw') {
+    filtered = items.filter((i) => !GRADED_RE.test(i.title || ''))
+  } else if (filtered.length < 2) {
+    filtered = items
+  }
 
+  // ── 3. Language exclusion (all grades) ────────────────────────────────
+  const langRe = LANG_EXCLUDE[lang]
+  if (langRe) {
+    const before = filtered.length
+    const langFiltered = filtered.filter((i) => {
+      const t = i.title || ''
+      if (langRe.test(t)) {
+        console.log(`[filter:lang] dropped "${t.slice(0, 70)}" wrong language`)
+        return false
+      }
+      return true
+    })
+    if (langFiltered.length >= 2) {
+      filtered = langFiltered
+      console.log(`[filter:lang] ${before} → ${filtered.length} after language filter`)
+    }
+  }
+
+  // ── 4. Grade-specific filtering ───────────────────────────────────────
   const excludeTerms = GRADE_EXCLUDE[grade]
   if (excludeTerms) {
-    // Raw — hard graded slab check FIRST, then keyword/pattern checks
     const kept = filtered.filter((i) => {
       const t = (i.title || '').toLowerCase()
-      // Hard check: graded slabs are NEVER raw — no fallback, no exceptions
-      if (GRADED_RE.test(t)) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" graded slab`); return false }
-      // Keyword exclusion (lots, sealed, bundles etc)
       const hit = excludeTerms.find((kw) => t.includes(kw))
       if (hit) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched "${hit}"`); return false }
-      // Pattern exclusion (signed/autograph)
       const patHit = RAW_EXCLUDE_PATTERNS.find((re) => re.test(t))
       if (patHit) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched pattern`); return false }
       return true
     })
     console.log(`[filter:Raw] ${filtered.length} → ${kept.length} kept`)
     if (kept.length >= 2) return kept
-    // Fallback: strip only graded slabs (hard exclusion, never re-introduced)
+    // Fallback: always keep graded slab exclusion for Raw
     const safeItems = filtered.filter((i) => !GRADED_RE.test(i.title || ''))
-    console.log(`[filter:Raw] fallback: ${filtered.length} → ${safeItems.length} after slab check`)
+    console.log(`[filter:Raw] fallback: ${filtered.length} → ${safeItems.length}`)
     return safeItems
   }
   if (grade && grade !== 'Raw') {
-    // Graded — keep only titles that match the grade string
     const kept = filtered.filter((i) => gradeMatch(i.title, grade))
     console.log(`[filter:${grade}] ${filtered.length} → ${kept.length} match`)
     return kept.length >= 2 ? kept : filtered
@@ -798,11 +837,11 @@ export default async function handler(req, res) {
       const rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
 
       // Filter by grade + variant + rarity — filtered items are used for everything downstream
-      const fA = filterByRarity(filterItems(rawA, grade, processed))
-      const fB = filterByRarity(filterItems(rawB, grade, processed))
-      const fC = filterByRarity(filterItems(rawC, grade, processed))
+      const fA = filterByRarity(filterItems(rawA, grade, processed, lang))
+      const fB = filterByRarity(filterItems(rawB, grade, processed, lang))
+      const fC = filterByRarity(filterItems(rawC, grade, processed, lang))
       // Query D: only include live auctions with 1+ bids (price validated by a buyer)
-      const fDgraded = filterByRarity(filterItems(rawD, grade, processed))
+      const fDgraded = filterByRarity(filterItems(rawD, grade, processed, lang))
       console.log(`[query:D] ${rawD.length} raw auctions → ${fDgraded.length} after grade+rarity filter`)
       const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
