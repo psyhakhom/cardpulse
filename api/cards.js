@@ -323,7 +323,7 @@ function extractOpCard(title) {
     .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b|\bmanga\b/gi, '')
     .replace(/\bcard\b|\bsingle\b|\btrading\b|\bgame\b/gi, '')
     .replace(/\benglish\b|\bjapanese\b/gi, '')
-    .replace(/[[\]()|#]/g, ' ')
+    .replace(/[[\]()|#•★◆▲●◇■□△▽♦♠♣♥]/g, ' ')
     .replace(/\s*[-–—]\s*$/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
@@ -464,7 +464,7 @@ function extractCardFromTitle(title) {
     .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b/gi, '')
     .replace(/\bsingle\b|\btrading\b|\bcard\s*game\b/gi, '')
     .replace(/\benglish\b|\bjapanese\b|\bkorean\b|\bchinese\b/gi, '')
-    .replace(/[[\]()|#]/g, ' ')
+    .replace(/[[\]()|#•★◆▲●◇■□△▽♦♠♣♥]/g, ' ')
     .replace(/\s*[-–—]\s*$/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
@@ -564,6 +564,9 @@ const DBS_NUM_RE = /\b((?:BT|FB|SD|ST|D-BT|P-)\d+-\d+[A-Z]?)\b/i
 const DBS_RARITY_RE = /\b(SCR|SPR|SR|SIR|SSR|SEC|UR|RR|UC|CHR|AR|R|C)\b/
 const JUNK_RE = /\b(lot|bundle|collection|complete set|booster|pack|box|sealed|\d+\s*cards?|\dx|\bx\d+)\b/i
 
+// Variant descriptors that indicate a non-base version of a card
+const VARIANT_RE = /\b(parallel|alternate\s*art|alt\s*art|double\s*strike|foil|promo|manga|special|textured|gold)\b/i
+
 function extractDbsCard(title) {
   const numMatch = title.match(DBS_NUM_RE)
   const number = numMatch ? numMatch[1].toUpperCase() : ''
@@ -572,6 +575,9 @@ function extractDbsCard(title) {
   // Extract rarity
   const rarityMatch = title.match(DBS_RARITY_RE)
   const rarity = rarityMatch ? rarityMatch[1].toUpperCase() : ''
+
+  // Check if this is a variant listing
+  const isVariant = VARIANT_RE.test(title)
 
   // Extract card name: strip noise from the title
   let name = title
@@ -584,10 +590,10 @@ function extractDbsCard(title) {
     .replace(/\bbgs\s*[\d.]+\b/gi, '')
     .replace(/\bcgc\s*[\d.]+\b/gi, '')
     .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b|\bgd\b/gi, '')
-    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b/gi, '')
+    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b|\bparallel\b|\bdouble\s*strike\b|\bpromo\b|\btextured\b|\bmanga\b/gi, '')
     .replace(/\bcard\b|\bsingle\b|\btrading\b|\bgame\b/gi, '')
     .replace(/\benglish\b|\bjapanese\b/gi, '')
-    .replace(/[[\]()|#]/g, ' ')
+    .replace(/[[\]()|#•★◆▲●◇■□△▽♦♠♣♥]/g, ' ') // strip special symbols including bullet points
     .replace(/\s*[-–—]\s*$/g, '') // trailing dashes
     .replace(/\s{2,}/g, ' ')
     .trim()
@@ -598,7 +604,7 @@ function extractDbsCard(title) {
   // Title-case
   name = name.replace(/\b\w/g, (c) => c.toUpperCase())
 
-  return { name, number, set, rarity }
+  return { name, number, set, rarity, isVariant }
 }
 
 async function searchDbsEbay(query) {
@@ -623,6 +629,11 @@ async function searchDbsEbay(query) {
     const items = data.itemSummaries || []
     console.log(`[cards:dbs] eBay returned ${items.length} active listings`)
 
+    // Detect if the query contains a specific card number
+    const queryNumMatch = sanitized.match(DBS_NUM_RE)
+    const queryNum = queryNumMatch ? queryNumMatch[1].toUpperCase() : ''
+    if (queryNum) console.log(`[cards:dbs] filtering for card number: ${queryNum}`)
+
     // Extract unique cards from listing titles
     const seen = new Set()
     const cards = []
@@ -630,8 +641,11 @@ async function searchDbsEbay(query) {
       const title = item.title || ''
       if (JUNK_RE.test(title)) continue
 
-      const { name, number, set, rarity } = extractDbsCard(title)
+      const { name, number, set, rarity, isVariant } = extractDbsCard(title)
       if (!name || name.length < 3) continue
+
+      // When query contains a card number, only show listings with that exact number
+      if (queryNum && number && number !== queryNum) continue
 
       // Deduplicate by card number (best) or lowercase name
       const dedupeKey = number ? number.toLowerCase() : name.toLowerCase()
@@ -648,9 +662,13 @@ async function searchDbsEbay(query) {
         imageUrl: item.image?.imageUrl || null,
         largeImageUrl: item.image?.imageUrl || null,
         searchQuery: buildDbsQuery({ name, number, rarity }),
+        isVariant,
       })
-      if (cards.length >= 8) break
+      if (cards.length >= 12) break // collect more, then sort and trim
     }
+
+    // Sort: base versions first, variants last
+    cards.sort((a, b) => (a.isVariant ? 1 : 0) - (b.isVariant ? 1 : 0))
 
     console.log(`[cards:dbs] extracted ${cards.length} unique cards from listings`)
     return cards
