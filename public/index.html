@@ -459,9 +459,10 @@ function renderAc(d,q){
     if(c.isDirect){
       return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(c.name)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
     }
-    const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='var(--bd)'">`:`<div class="ac-img"></div>`;
-    const sub=[c.set,c.number,c.rarity].filter(Boolean).join(' \u00b7 ');
-    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name">${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div></div>`;
+    const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='var(--bd)'"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:` <div class="ac-img"></div>`;
+    const sub=[c.isSet?null:c.set,c.number,c.rarity].filter(Boolean).join(' \u00b7 ');
+    const nameStyle=c.isSet?' style="color:var(--a2)"':'';
+    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div></div>`;
   }).join('');
   // Attribution line
   if(d.attribution){
@@ -571,7 +572,9 @@ function normalizeApiResponse(data, q, sc) {
        'hakai','ultra instinct','god kamehameha','destructo disc',
        'special beam cannon','makankosappo'].some(k => ql.includes(k))) return 'dbs';
   if (['pokemon','charizard','pikachu','mtg','magic ','yugioh',
-       'lorcana','one piece'].some(k => ql.includes(k))) return 'tcg';
+       'lorcana','one piece',
+       'ash','misty','brock','team rocket','jessie','james','giovanni',
+       'gary','professor oak','nurse joy','gym leader','elite four','trainer'].some(k => ql.includes(k))) return 'tcg';
   return g !== 'Raw' ? 'sg' : 'sr';
 }
   const ct = cardType(q, G);
@@ -644,7 +647,7 @@ const FX={JPY:149.5,KRW:1320,CNY:7.24,USD:1};
 function cardType(q,g){
   const ql=q.toLowerCase();
   if(['dragon ball','dragonball','dbs','dbscg','fusion world','d-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8','bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16','bt17','bt18','bt19','bt20','kamehameha','final flash','galick gun','spirit bomb','instant transmission','hakai','ultra instinct','god kamehameha','destructo disc','special beam cannon','makankosappo'].some(k=>ql.includes(k)))return'dbs';
-  if(['pokemon','charizard','pikachu','mtg','magic ','yugioh','lorcana','one piece'].some(k=>ql.includes(k)))return'tcg';
+  if(['pokemon','charizard','pikachu','mtg','magic ','yugioh','lorcana','one piece','ash','misty','brock','team rocket','jessie','james','giovanni','gary','professor oak','nurse joy','gym leader','elite four','trainer'].some(k=>ql.includes(k)))return'tcg';
   return g!=='Raw'?'sg':'sr';
 }
 function jpEx(q){return['heroes','hero ','dbh','divers','xros','cross spirits'].some(k=>q.toLowerCase().includes(k));}

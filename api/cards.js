@@ -30,6 +30,9 @@ const POKEMON_KW = [
   'venusaur', 'gengar', 'snorlax', 'gyarados', 'meowth', 'lugia', 'ho-oh',
   'rayquaza', 'mew', 'umbreon', 'espeon', 'sylveon', 'gardevoir', 'lucario',
   'greninja', 'alakazam', 'bulbasaur', 'squirtle', 'jigglypuff', 'dragonite',
+  // Trainer/character names
+  'ash', 'misty', 'brock', 'team rocket', 'jessie', 'james', 'giovanni',
+  'gary', 'professor oak', 'nurse joy', 'gym leader', 'elite four', 'trainer',
 ]
 const MTG_KW = ['mtg', 'magic the gathering', 'magic:', 'planeswalker', 'mana ']
 const DBS_KW = [
@@ -80,29 +83,95 @@ function buildDbsQuery(card) {
 }
 
 // ─── POKEMON TCG API ──────────────────────────────────────────────────────────
+function mapPokemonCard(card) {
+  return {
+    id: `pkm-${card.id}`,
+    name: card.name,
+    set: card.set?.name || '',
+    number: card.number || '',
+    rarity: card.rarity || '',
+    game: 'pokemon',
+    imageUrl: card.images?.small || null,
+    largeImageUrl: card.images?.large || null,
+    searchQuery: buildPokemonQuery(card),
+  }
+}
+
+function pokemonHeaders() {
+  const apiKey = process.env.POKEMON_TCG_API_KEY
+  const headers = { Accept: 'application/json' }
+  if (apiKey) headers['X-Api-Key'] = apiKey
+  return headers
+}
+
 async function searchPokemon(query) {
   return withCache(`pkm:${query.toLowerCase()}`, async () => {
-    const apiKey = process.env.POKEMON_TCG_API_KEY
-    const headers = { Accept: 'application/json' }
-    if (apiKey) headers['X-Api-Key'] = apiKey
+    const headers = pokemonHeaders()
+    const sanitized = sanitizeQuery(query)
 
-    const q = `name:${sanitizeQuery(query)}*`
-    const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) })
-    if (!res.ok) throw new Error(`pokemontcg ${res.status}`)
-    const data = await res.json()
+    // Build the name query — handle "vs" queries specially
+    let nameQ
+    if (/\bvs\.?\b/i.test(sanitized)) {
+      const parts = sanitized.split(/\bvs\.?\b/i).map((s) => s.trim()).filter(Boolean)
+      nameQ = parts.map((p) => `name:*${p}*`).join(' ')
+      console.log(`[cards:pkm] VS query detected: "${nameQ}"`)
+    } else {
+      nameQ = `name:${sanitized}*`
+    }
 
-    return (data.data || []).map((card) => ({
-      id: `pkm-${card.id}`,
-      name: card.name,
-      set: card.set?.name || '',
-      number: card.number || '',
-      rarity: card.rarity || '',
-      game: 'pokemon',
-      imageUrl: card.images?.small || null,
-      largeImageUrl: card.images?.large || null,
-      searchQuery: buildPokemonQuery(card),
-    }))
+    // Run name search + set name search in parallel
+    const nameUrl = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(nameQ)}&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
+    const setUrl = `https://api.pokemontcg.io/v2/cards?q=set.name:"*${encodeURIComponent(sanitized)}*"&pageSize=4&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
+    const setsUrl = `https://api.pokemontcg.io/v2/sets?q=name:"*${encodeURIComponent(sanitized)}*"&pageSize=3&orderBy=-releaseDate`
+
+    const [nameRes, setRes, setsRes] = await Promise.allSettled([
+      fetch(nameUrl, { headers, signal: AbortSignal.timeout(5000) }),
+      fetch(setUrl, { headers, signal: AbortSignal.timeout(5000) }),
+      fetch(setsUrl, { headers, signal: AbortSignal.timeout(5000) }),
+    ])
+
+    // Collect cards from name search
+    let cards = []
+    if (nameRes.status === 'fulfilled' && nameRes.value.ok) {
+      const data = await nameRes.value.json()
+      cards.push(...(data.data || []).map(mapPokemonCard))
+    }
+
+    // Merge cards from set name search, deduplicating by id
+    if (setRes.status === 'fulfilled' && setRes.value.ok) {
+      const data = await setRes.value.json()
+      const seenIds = new Set(cards.map((c) => c.id))
+      for (const card of (data.data || [])) {
+        const mapped = mapPokemonCard(card)
+        if (!seenIds.has(mapped.id)) {
+          cards.push(mapped)
+          seenIds.add(mapped.id)
+        }
+      }
+    }
+
+    // Collect matching sets as "Browse set" options
+    const sets = []
+    if (setsRes.status === 'fulfilled' && setsRes.value.ok) {
+      const data = await setsRes.value.json()
+      for (const s of (data.data || [])) {
+        sets.push({
+          id: `pkm-set-${s.id}`,
+          name: `Browse: ${s.name}`,
+          set: s.name,
+          number: `${s.total || '?'} cards`,
+          rarity: s.releaseDate || '',
+          game: 'pokemon',
+          imageUrl: s.images?.symbol || null,
+          largeImageUrl: s.images?.logo || null,
+          searchQuery: `pokemon ${s.name}`,
+          isSet: true,
+        })
+      }
+    }
+
+    // Sets go at the top, then card results
+    return [...sets, ...cards]
   })
 }
 
