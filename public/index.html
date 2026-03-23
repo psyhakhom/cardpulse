@@ -19,7 +19,9 @@ header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:spa
 .pane{padding:12px 16px 32px;display:none}.pane.on{display:block}
 /* inputs */
 .sw{position:relative;margin-bottom:10px}
-.si{width:100%;background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:11px 44px 11px 13px;font-size:15px;color:var(--tx);outline:none}
+.si{width:100%;background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:11px 72px 11px 13px;font-size:15px;color:var(--tx);outline:none}
+.scl{position:absolute;right:44px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--mu);font-size:16px;line-height:1;cursor:pointer;padding:4px 6px;display:none}
+.scl.vis{display:block}
 .si:focus{border-color:var(--ac)}.si::placeholder{color:var(--mu)}
 .sb{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--ac);border:none;border-radius:7px;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .sb svg{width:15px;height:15px}
@@ -213,7 +215,8 @@ video{width:100%;height:100%;object-fit:cover;display:block}
 <!-- SEARCH -->
 <div id="p-search" class="pane on">
   <div class="sw">
-    <input class="si" id="si" placeholder="Card name · set name · set code (e.g. Son Goku BT27-019)" autocomplete="off" onkeydown="if(event.key==='Enter')doSearch()"/>
+    <input class="si" id="si" placeholder="Card name · set name · set code (e.g. Son Goku BT27-019)" autocomplete="off" onkeydown="if(event.key==='Enter')doSearch()" oninput="toggleClear()"/>
+    <button class="scl" id="scl" onclick="clearSearch()" aria-label="Clear search">×</button>
     <button class="sb" onclick="doSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
   </div>
   <div class="fr"><span class="fl">Grade</span><div class="fg" id="gc">
@@ -372,6 +375,8 @@ function camOff(){
 }
 
 // SEARCH
+function toggleClear(){document.getElementById('scl').classList.toggle('vis',document.getElementById('si').value.length>0);}
+function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');i.focus();}
 function doSearch(){const q=document.getElementById('si').value.trim();if(q)search(q,'sr');}
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
