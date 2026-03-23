@@ -344,7 +344,7 @@ function go(t){
 function pick(el,g){
   document.getElementById(g==='g'?'gc':'cc').querySelectorAll('.ch').forEach(c=>c.classList.remove('on'));
   el.classList.add('on');
-  if(g==='g')G=el.textContent; else C=el.textContent;
+  if(g==='g'){G=el.textContent.trim();console.log('[pick] grade set to',JSON.stringify(G));}else{C=el.textContent.trim();}
 }
 function pickL(el){
   document.getElementById('lc').querySelectorAll('.ch').forEach(c=>c.classList.remove('lon'));
@@ -378,6 +378,7 @@ async function search(q, elId) {
   el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
   if (USE_REAL_API) {
     try {
+      console.log('[search] grade=', JSON.stringify(G), 'lang=', JSON.stringify(L), 'q=', q);
       const params = new URLSearchParams({ q, grade: G, lang: L });
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();

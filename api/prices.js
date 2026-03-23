@@ -312,6 +312,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { q, grade = 'Raw', lang = 'English', history } = req.query
+  console.log('Grade received:', JSON.stringify(grade), '| q:', q)
 
   // History sub-route
   if (history === '1') return handleHistory(res, q, grade)
