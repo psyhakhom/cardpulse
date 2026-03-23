@@ -71,29 +71,27 @@ async function ebaySearch(
 ) {
   let filter
   if (live) {
-    const now = new Date()
-    const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-    filter = `buyingOptions:{AUCTION},itemEndDate:[${now.toISOString()}..${in24h.toISOString()}]`
+    const now = new Date().toISOString()
+    const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+    filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]`
   } else {
     filter = 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true'
   }
-  const params = new URLSearchParams({
-    q: query,
-    filter,
-    sort,
-    limit: String(limit),
+  // Build URL manually — URLSearchParams encodes curly braces which eBay rejects
+  const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filter)}&sort=${sort}&limit=${limit}`
+  if (live) console.log(`[ebay:live] ${url}`)
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
+      'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country=US',
+    },
   })
-  const res = await fetch(
-    `https://api.ebay.com/buy/browse/v1/item_summary/search?${params}`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
-        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country=US',
-      },
-    }
-  )
-  if (!res.ok) throw new Error(`eBay search failed (${res.status})`)
+  if (!res.ok) {
+    const body = live ? await res.text().catch(() => '') : ''
+    if (live) console.error(`[ebay:live] failed ${res.status}: ${body.slice(0, 200)}`)
+    throw new Error(`eBay search failed (${res.status})`)
+  }
   return res.json()
 }
 
@@ -742,9 +740,11 @@ export default async function handler(req, res) {
       const fA = filterItems(rawA, grade)
       const fB = filterItems(rawB, grade)
       const fC = filterItems(rawC, grade)
-      // Query D: only include live auctions with 3+ bids (proper price discovery)
-      const fD = filterItems(rawD, grade).filter((i) => (i.bidCount || 0) > 2)
-      console.log(`[query:D] ${rawD.length} live auctions → ${fD.length} with 3+ bids`)
+      // Query D: only include live auctions with 1+ bids (price validated by a buyer)
+      const fDgraded = filterItems(rawD, grade)
+      console.log(`[query:D] ${rawD.length} raw auctions → ${fDgraded.length} after grade filter`)
+      const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
+      console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
 
       const res = [
         { ...qs.a, stats: calcStats(fA) },
