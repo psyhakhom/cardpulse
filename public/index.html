@@ -522,6 +522,7 @@ function selectAc(i){
     imageUrl:card.largeImageUrl||card.imageUrl||null,
     searchQuery:card.searchQuery,
   };
+  console.log('[selectAc] card selected:', card.name, '| searchQuery:', card.searchQuery, '| game:', card.game);
   // Show clean display name in input
   const displayName=[card.name,card.number].filter(Boolean).join(' ');
   document.getElementById('si').value=displayName;

@@ -89,8 +89,23 @@ function buildMtgQuery(card) {
   return [card.name, card.set_name, card.collector_number].filter(Boolean).join(' ').slice(0, 60)
 }
 
+function simplifyDbsName(name) {
+  // Strip everything after colon, plus sign, or dash that follows the character name
+  // "Son Goku : DA + Evolve" → "Son Goku"
+  // "Vegeta : Limit Breaker" → "Vegeta"
+  // "Gogeta : Fusion Reborn" → "Gogeta"
+  let simplified = name
+    .replace(/\s*[:+]\s*.*/g, '') // strip from first colon or plus onward
+    .replace(/\s*[-–—]\s*(DA|Evolve|Awakening|Limit Breaker|Fusion|Super|Ultra|Power|Surge|Reborn)\b.*/gi, '') // strip descriptor suffixes after dash
+    .trim()
+  // If stripping gutted the name, fall back to original
+  return simplified.length >= 2 ? simplified : name
+}
+
 function buildDbsQuery(card) {
-  return [card.name, card.number, card.rarity].filter(Boolean).join(' ').slice(0, 60)
+  const name = simplifyDbsName(card.name || '')
+  // Card number is the most precise identifier — always anchor on it
+  return [name, card.number, card.rarity].filter(Boolean).join(' ').slice(0, 60)
 }
 
 function buildOpQuery(card) {
