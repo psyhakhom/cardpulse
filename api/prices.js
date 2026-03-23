@@ -395,7 +395,18 @@ export default async function handler(req, res) {
       totalComps: blended.totalComps,
       trend30,
       trend90: null,
-      imageUrl: deduped.find((i) => i.image?.imageUrl)?.image?.imageUrl || null,
+      imageUrl: (() => {
+        const qWords = q.trim().toLowerCase().split(/\s+/)
+        const scored = deduped
+          .filter((i) => i.image?.imageUrl)
+          .map((i) => {
+            const t = (i.title || '').toLowerCase()
+            const score = qWords.filter((w) => t.includes(w)).length
+            return { url: i.image.imageUrl, score }
+          })
+        scored.sort((a, b) => b.score - a.score)
+        return scored[0]?.url || null
+      })(),
       sourceBreakdown: results.map((r) => ({
         label: r.label,
         weight: r.weight,
