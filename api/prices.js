@@ -226,6 +226,58 @@ function calcTrend(recentAvg, allAvg) {
   return parseFloat((((recentAvg - allAvg) / allAvg) * 100).toFixed(1))
 }
 
+// ─── QUERY PREPROCESSOR ──────────────────────────────────────────────────────
+// Filler words stripped when query exceeds 60 chars. Order matters: longer
+// phrases must come before their substrings (e.g. "trading card game" before "card").
+const FILLER = [
+  'trading card game', 'special illustration rare', 'illustration rare',
+  'pre-owned', 'near mint', 'lightly played', 'heavily played',
+  'english', 'japanese', 'korean', 'chinese',
+  'special', 'holo rare', 'ultra rare', 'secret rare',
+  'common', 'uncommon', 'rare',
+  'pokemon', 'pokémon',
+]
+
+// Preserve these token patterns even if they look like filler.
+const KEEP_RE = [
+  /\b[A-Z]{2,4}\b/,           // rarity abbreviations: SIR, SCR, SR, UR, SSR
+  /\b[A-Z]{1,4}-?\d+\b/i,     // set codes: BT27, FB09-121, OP01
+  /\b\d+\/\d+\b/,             // card numbers: 121/088
+]
+
+function preprocessQuery(raw) {
+  // 1. Normalise accents: é→e, ü→u, etc.
+  let q = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  // 2. Remove any characters eBay doesn't care about
+  q = q.replace(/[^\w\s\-\/]/g, ' ').replace(/\s+/g, ' ').trim()
+
+  // 3. Only shorten if over 60 characters
+  if (q.length <= 60) return q
+
+  // Tokenise, tag each word as keep/drop
+  const tokens = q.split(/\s+/)
+  const kept = tokens.filter((tok) => {
+    // Always keep tokens that match a preserve pattern
+    if (KEEP_RE.some((re) => re.test(tok))) return true
+    // Drop if the token (lowercased) appears in any filler phrase
+    const tl = tok.toLowerCase()
+    return !FILLER.some((f) => f === tl || f.split(' ').includes(tl) && f.includes(tl))
+  })
+
+  // Also strip full multi-word filler phrases from the joined string
+  let shortened = kept.join(' ')
+  for (const phrase of FILLER) {
+    if (phrase.includes(' ')) {
+      shortened = shortened.replace(new RegExp(`\\b${phrase}\\b`, 'gi'), '')
+    }
+  }
+  shortened = shortened.replace(/\s+/g, ' ').trim()
+
+  console.log(`[preprocess] "${raw}" → "${shortened}"`)
+  return shortened || q // fall back to original if we over-stripped
+}
+
 // ─── QUERY BUILDERS ──────────────────────────────────────────────────────────
 function buildQueries(name, grade, lang) {
   const langSuffix =
@@ -376,7 +428,8 @@ export default async function handler(req, res) {
 
   try {
     const token = await getToken()
-    const queries = buildQueries(q.trim(), grade, lang)
+    const processed = preprocessQuery(q.trim())
+    const queries = buildQueries(processed, grade, lang)
 
     // Three queries in parallel — one failure doesn't kill the others
     const [dataA, dataB, dataC] = await Promise.allSettled([
@@ -402,8 +455,8 @@ export default async function handler(req, res) {
     let allItems = [...itemsA, ...itemsB, ...itemsC]
 
     // Fallback: strip last word and retry when comps are too thin
-    if ((!blended || blended.totalComps < 3) && q.trim().split(/\s+/).length > 1) {
-      const fallbackName = q.trim().split(/\s+/).slice(0, -1).join(' ')
+    if ((!blended || blended.totalComps < 3) && processed.split(/\s+/).length > 1) {
+      const fallbackName = processed.split(/\s+/).slice(0, -1).join(' ')
       const fbQueries = buildQueries(fallbackName, grade, lang)
       const [fbA, fbB, fbC] = await Promise.allSettled([
         ebaySearch(fbQueries.a.q, token, { limit: fbQueries.a.limit, sort: fbQueries.a.sort }),
