@@ -93,6 +93,7 @@ header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:spa
 .fxb strong{color:var(--a2)}
 .tmb{background:rgba(186,117,23,.12);border:1px solid rgba(186,117,23,.35);border-radius:7px;padding:6px 9px;margin-bottom:9px;font-family:monospace;font-size:9px;color:#BA7517}
 .jpb{background:rgba(255,75,75,.10);border:1px solid rgba(255,75,75,.3);border-radius:7px;padding:7px 10px;margin-bottom:10px;font-family:monospace;font-size:9px;color:#ff6b6b;line-height:1.5}
+.spb{background:rgba(232,255,71,.06);border:1px solid rgba(232,255,71,.25);border-radius:7px;padding:7px 10px;margin-top:10px;margin-bottom:2px;font-family:monospace;font-size:9px;color:var(--ac);line-height:1.6}
 .lbg{font-family:monospace;font-size:8px;padding:1px 5px;border-radius:3px;border:1px solid var(--bd);color:var(--a2);margin-left:4px}
 .div{height:1px;background:var(--bd);margin:10px 0}
 /* dots */
@@ -381,7 +382,7 @@ async function search(q, elId) {
       const data = await res.json();
       if (data.error) {
         if (res.status === 404) {
-          el.innerHTML = `<div class="emp" style="padding:32px 0"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(q)}</strong><br>Try adding more detail — set, year, or grade.</p></div>`;
+          el.innerHTML = `<div class="emp" style="padding:32px 0"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(q)}</strong><br>Try adding the set name, year, rarity,<br>or a colour like <strong style="color:var(--ac)">'silver'</strong> or <strong style="color:var(--ac)">'gold'</strong>.</p></div>`;
         } else {
           throw new Error(data.error);
         }
@@ -550,6 +551,7 @@ function renderResult(el,q,r){
   const jb=r.jx?`<div class="jpb"><strong>Japan-exclusive set.</strong> Auto-routed to Yahoo JP, Buyee, Mercari JP. Prices converted from ¥.</div>`:'';
   const conf=r.conf,cc=conf>=75?'var(--gn)':conf>=50?'var(--ac)':'#f7931e';
   const rad=17,circ=2*Math.PI*rad,dash=(conf/100)*circ;
+  const spread=r.lo>0&&(r.hi/r.lo)>5?`<div class="spb">⚠ Wide price spread detected. Results may include different variants, conditions, or lot sales. Try adding terms like <strong>'holo'</strong>, <strong>'1st edition'</strong>, <strong>'silver'</strong>, <strong>'gold'</strong>, or a specific condition to narrow results.</div>`:'';
   const ring=`<div class="crw"><div class="cr"><svg viewBox="0 0 44 44"><circle class="dot" cx="22" cy="22" r="${rad}" style="fill:none;stroke:var(--bd);stroke-width:4"/><circle cx="22" cy="22" r="${rad}" style="fill:none;stroke:${cc};stroke-width:4;stroke-linecap:round;stroke-dasharray:${dash.toFixed(1)} ${circ.toFixed(1)};transform:rotate(-90deg);transform-origin:50% 50%"/></svg><div class="cl" style="color:${cc}">${conf}%</div></div><div><div class="crt">${conf>=75?'High confidence':conf>=50?'Moderate confidence':'Low confidence'}</div><div class="crs">${r.sd.filter(s=>s.ok).length}/${r.sd.length} sources · ${r.comps.length} comps</div></div></div>`;
   const wrows=r.sd.map(s=>{
     if(!s.ok)return`<div class="wr"><div class="wrt"><span class="wsn">${dot(s.d)}${s.n}<span class="ndb">no data</span></span><span class="wpc" style="color:var(--bd)">—</span></div><div class="wtr"><div class="wf ${s.f}" style="width:0%"></div></div></div>`;
@@ -575,6 +577,7 @@ function renderResult(el,q,r){
       <div class="pb"><div class="pl">Wtd Avg</div><div class="pv av">${fP(r.avg)}</div></div>
       <div class="pb"><div class="pl">High</div><div class="pv hi">${fP(r.hi)}</div></div>
     </div>
+    ${spread}
     ${ring}
     <div class="wh"><span>Source breakdown</span><span class="wa">Wtd avg ${fP(r.avg)}</span></div>
     ${wrows}
