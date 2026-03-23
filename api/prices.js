@@ -90,26 +90,34 @@ async function ebaySearch(
 
 // ─── PRICE STATS ─────────────────────────────────────────────────────────────
 const GRADED_RE = /\b(PSA|BGS|CGC|SGC|graded|slab|black label)\b/i
+const GRADE_INCLUDE = {
+  'PSA 9':  /PSA\s*9(?!\.?\d|\s*10)/i,
+  'PSA 10': /PSA\s*10\b/i,
+  'BGS 9.5': /BGS\s*9\.5\b/i,
+}
 
 function calcStats(items, grade) {
   if (!items?.length) return null
-  let filtered = items
+  let pool = items
   if (!grade || grade === 'Raw') {
     const ungraded = items.filter((i) => !GRADED_RE.test(i.title || ''))
-    if (ungraded.length >= 3) filtered = ungraded
+    if (ungraded.length >= 3) pool = ungraded
+  } else if (GRADE_INCLUDE[grade]) {
+    const exact = items.filter((i) => GRADE_INCLUDE[grade].test(i.title || ''))
+    if (exact.length >= 3) pool = exact
   }
-  const prices = filtered
+  const prices = pool
     .map((i) => parseFloat(i.price?.value))
     .filter((p) => !isNaN(p) && p > 0)
     .sort((a, b) => a - b)
   if (prices.length < 1) return null
   const mid = Math.floor(prices.length / 2)
   const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
-  const filtered = prices.filter((p) => p <= median * 3)
-  if (filtered.length < 1) return null
-  const trimmed = filtered.length >= 6
-    ? filtered.slice(Math.floor(filtered.length * 0.1), filtered.length - Math.floor(filtered.length * 0.1))
-    : filtered
+  const clipped = prices.filter((p) => p <= median * 3)
+  if (clipped.length < 1) return null
+  const trimmed = clipped.length >= 6
+    ? clipped.slice(Math.floor(clipped.length * 0.1), clipped.length - Math.floor(clipped.length * 0.1))
+    : clipped
   const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length
   return {
     lo: parseFloat(trimmed[0].toFixed(2)),
