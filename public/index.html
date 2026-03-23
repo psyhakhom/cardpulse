@@ -437,7 +437,7 @@ function acKeydown(e){
   if(e.key==='ArrowDown'){if(open){e.preventDefault();acMove(1);}return;}
   if(e.key==='ArrowUp'){if(open){e.preventDefault();acMove(-1);}return;}
   if(e.key==='Escape'){hideAc();return;}
-  if(e.key==='Enter'){if(open&&acSel>=0){e.preventDefault();selectAc(acSel);}else{hideAc();doSearch();}}
+  if(e.key==='Enter'){clearTimeout(acTimer);if(acAbort){acAbort.abort();acAbort=null;}if(open&&acSel>=0){e.preventDefault();selectAc(acSel);}else{hideAc();doSearch();document.getElementById('si').blur();}}
 }
 async function fetchAc(q){
   if(acAbort){acAbort.abort();}
@@ -533,6 +533,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.sw'))hideAc();});
 const USE_REAL_API = true;
 
 async function search(q, elId) {
+  hideAc();
   const el = document.getElementById(elId);
   el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
   // Capture selectedCard at search time (it gets cleared on next input)
