@@ -138,8 +138,8 @@ function buildQueries(name, grade, lang) {
   const hasSetCode = /[a-z]{1,4}-?\d+/i.test(name)
   const hasCardWord = /\bcard\b/i.test(name)
   const cardSuffix = hasSetCode || hasCardWord ? '' : ' card'
-  const base = `${name}${langSuffix}${cardSuffix}`
   const gradeStr = grade && grade !== 'Raw' ? ` ${grade}` : ''
+  const base = `${name}${langSuffix}${cardSuffix}${gradeStr}`
   return {
     a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40 },
     b: {
@@ -149,7 +149,7 @@ function buildQueries(name, grade, lang) {
       limit: 20,
     },
     c: {
-      q: `${base}${gradeStr}`,
+      q: base,
       label: `Grade-exact (${grade || 'raw'})`,
       weight: 0.3,
       limit: 30,
