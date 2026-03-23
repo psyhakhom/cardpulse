@@ -18,10 +18,21 @@
 // ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
 const cache = new Map()
 const CACHE_TTL = 60 * 60 * 1000 // 1 hour
+const CACHE_MAX = 200 // max entries before forced eviction
 
 async function withCache(key, fn) {
   const hit = cache.get(key)
   if (hit && Date.now() < hit.expires) return hit.data
+  // Evict expired entries when cache is large
+  if (cache.size > CACHE_MAX) {
+    const now = Date.now()
+    for (const [k, v] of cache) { if (now >= v.expires) cache.delete(k) }
+    // If still over limit, drop oldest half
+    if (cache.size > CACHE_MAX) {
+      const keys = [...cache.keys()]
+      for (let i = 0; i < keys.length / 2; i++) cache.delete(keys[i])
+    }
+  }
   const data = await fn()
   cache.set(key, { data, expires: Date.now() + CACHE_TTL })
   return data
@@ -99,11 +110,14 @@ function buildPokemonQuery(card) {
 }
 
 function simplifyDbsName(name) {
+  // Only strip colon suffixes for eBay search optimization — keep enough
+  // to identify the card. "Son Goku : DA + Evolve" → "Son Goku"
+  // but "Kamehameha" stays as "Kamehameha" (no colon to strip)
   let simplified = name
-    .replace(/\s*[:+]\s*.*/g, '')
-    .replace(/\s*[-–—]\s*(DA|Evolve|Awakening|Limit Breaker|Fusion|Super|Ultra|Power|Surge|Reborn)\b.*/gi, '')
+    .replace(/\s*[:+]\s*.*/g, '') // strip from first colon or plus
+    .replace(/\s*[-–—]\s*(DA|Evolve|Awakening|Limit Breaker)\b.*/gi, '') // strip only generic descriptors
     .trim()
-  return simplified.length >= 2 ? simplified : name
+  return simplified.length >= 3 ? simplified : name
 }
 
 // ─── POKEMON TCG API ──────────────────────────────────────────────────────────
@@ -265,14 +279,16 @@ async function searchYugioh(query) {
       return []
     }
     const data = await res.json()
+    if (data.error) { console.log(`[cards:ygo] API error: ${data.error}`); return [] }
     const items = data.data || []
     console.log(`[cards:ygo] got ${items.length} results`)
 
     return items.slice(0, 8).map((card) => {
-      const setInfo = card.card_sets?.[0] || {}
+      const sets = Array.isArray(card.card_sets) ? card.card_sets : []
+      const setInfo = sets[0] || {}
       return {
-        id: `ygo-${card.id}`,
-        name: card.name,
+        id: `ygo-${card.id || Math.random().toString(36).slice(2)}`,
+        name: card.name || '',
         set: setInfo.set_name || '',
         number: setInfo.set_code || '',
         rarity: setInfo.set_rarity_code || setInfo.set_rarity || '',
@@ -288,10 +304,13 @@ async function searchYugioh(query) {
 // ─── ONE PIECE / OPTCG GITHUB DATA ──────────────────────────────────────────
 let opCardData = null
 let opDataLoading = null
+let opLoadFailedAt = 0
 
 async function loadOpData() {
   if (opCardData) return opCardData
   if (opDataLoading) return opDataLoading
+  // Backoff: don't retry within 60s of a failure
+  if (opLoadFailedAt && Date.now() - opLoadFailedAt < 60000) return null
 
   opDataLoading = (async () => {
     console.log('[cards:op] loading OPTCG card data from GitHub...')
@@ -302,9 +321,11 @@ async function loadOpData() {
       if (!res.ok) throw new Error(`GitHub ${res.status}`)
       opCardData = await res.json()
       console.log(`[cards:op] loaded ${Array.isArray(opCardData) ? opCardData.length : 'unknown'} cards`)
+      opDataLoading = null
       return opCardData
     } catch (err) {
       console.error(`[cards:op] failed to load card data: ${err.message}`)
+      opLoadFailedAt = Date.now()
       opDataLoading = null
       return null
     }
@@ -326,7 +347,7 @@ async function searchOnePiece(query) {
 
       if (results.length > 0) {
         return results.map((card) => ({
-          id: `op-${card.id || card.number || Math.random()}`,
+          id: `op-${card.id || card.number || Date.now()}`,
           name: card.name || '',
           set: (card.number || card.id || '').replace(/-\d+$/, ''),
           number: card.number || card.id || '',
@@ -382,10 +403,12 @@ async function searchOnePiece(query) {
 // ─── DRAGON BALL SUPER ───────────────────────────────────────────────────────
 let dbsCardData = null
 let dbsDataLoading = null
+let dbsLoadFailedAt = 0
 
 async function loadDbsData() {
   if (dbsCardData) return dbsCardData
   if (dbsDataLoading) return dbsDataLoading
+  if (dbsLoadFailedAt && Date.now() - dbsLoadFailedAt < 60000) return null
 
   dbsDataLoading = (async () => {
     console.log('[cards:dbs] loading DBS card data from GitHub...')
@@ -396,9 +419,11 @@ async function loadDbsData() {
       if (!res.ok) throw new Error(`GitHub ${res.status}`)
       dbsCardData = await res.json()
       console.log(`[cards:dbs] loaded ${Array.isArray(dbsCardData) ? dbsCardData.length : 'unknown'} cards`)
+      dbsDataLoading = null
       return dbsCardData
     } catch (err) {
       console.error(`[cards:dbs] failed to load card data: ${err.message}`)
+      dbsLoadFailedAt = Date.now()
       dbsDataLoading = null
       return null
     }
@@ -473,7 +498,7 @@ async function searchDbs(query) {
         return results.map((card) => {
           const num = card.number || card.cardNumber || ''
           return {
-            id: `dbs-gh-${num || Math.random()}`,
+            id: `dbs-gh-${num || Date.now()}`,
             name: card.name || '',
             set: num ? num.replace(/-\d+[A-Z]?$/, '') : '',
             number: num,
@@ -507,7 +532,7 @@ async function searchDbs(query) {
             return retry.map((card) => {
               const num = card.number || card.cardNumber || ''
               return {
-                id: `dbs-gh-${num || Math.random()}`,
+                id: `dbs-gh-${num || Date.now()}`,
                 name: card.name || '',
                 set: num ? num.replace(/-\d+[A-Z]?$/, '') : '',
                 number: num, rarity: card.rarity || '', game: 'dbs',
@@ -581,7 +606,7 @@ function searchDbsFallback(query) {
 async function searchLorcana(query) {
   return withCache(`lor:${query.toLowerCase()}`, async () => {
     const sanitized = sanitizeQuery(query)
-    const url = `https://api.lorcana-api.com/cards/fetch?search=Name~${encodeURIComponent(sanitized)}&limit=8`
+    const url = `https://api.lorcana-api.com/cards/fetch?search=Name%20LIKE%20${encodeURIComponent(sanitized)}&limit=8`
     console.log(`[cards:lor] fetching: ${sanitized}`)
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) {
@@ -589,11 +614,13 @@ async function searchLorcana(query) {
       return []
     }
     const data = await res.json()
+    if (data.error) { console.log(`[cards:lor] API error: ${data.error}`); return [] }
     const items = Array.isArray(data) ? data : (data.data || data.cards || [])
+    if (!items.length) return []
     console.log(`[cards:lor] got ${items.length} results`)
 
     return items.slice(0, 8).map((card) => ({
-      id: `lor-${card.id || card.Name || Math.random()}`,
+      id: `lor-${card.id || card.Name || Math.random().toString(36).slice(2)}`,
       name: card.Name || card.name || '',
       set: card.Set_Name || card.set || '',
       number: card.Card_Num || card.number || '',

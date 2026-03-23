@@ -111,7 +111,7 @@ const GRADE_EXCLUDE = {
     'booster box', 'booster pack', 'sealed',
     'buy 3 get 1', 'buy 2 get 1', 'buy 1 get 1', 'bogo', 'get 1 free', 'get one free',
     // Signed/autograph — completely different product category
-    'signed', 'autograph', 'auto ', 'oda', 'signature',
+    'signed', 'autograph', 'autographed', 'oda', 'signature',
   ],
 }
 
@@ -133,6 +133,9 @@ function gradeMatch(title, grade) {
  * For graded grades: keeps only listings whose title matches the grade.
  * Falls back to the full set if fewer than 2 items survive (avoids empty results).
  */
+// Word-boundary patterns that can't use simple .includes() matching
+const EXCLUDE_PATTERNS = [/\bauto\b/i]
+
 function filterItems(items, grade) {
   if (!items?.length) return items
   const excludeTerms = GRADE_EXCLUDE[grade]
@@ -141,8 +144,10 @@ function filterItems(items, grade) {
     const kept = items.filter((i) => {
       const t = (i.title || '').toLowerCase()
       const hit = excludeTerms.find((kw) => t.includes(kw))
-      if (hit) console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched "${hit}"`)
-      return !hit
+      if (hit) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched "${hit}"`); return false }
+      const patHit = EXCLUDE_PATTERNS.find((re) => re.test(t))
+      if (patHit) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched pattern "${patHit}"`); return false }
+      return true
     })
     console.log(`[filter:Raw] ${items.length} → ${kept.length} kept`)
     return kept.length >= 2 ? kept : items

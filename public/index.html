@@ -404,7 +404,7 @@ function camOff(){
 // SEARCH
 function toggleClear(){document.getElementById('scl').classList.toggle('vis',document.getElementById('si').value.length>0);}
 function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');selectedCard=null;hideAc();i.focus();}
-function doSearch(){const q=document.getElementById('si').value.trim();if(q){hideAc();search(q,'sr');}}
+function doSearch(){const q=document.getElementById('si').value.trim();if(q){hideAc();selectedCard=null;search(q,'sr');}}
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
 // AUTOCOMPLETE — Card Catalog
@@ -476,15 +476,10 @@ function renderAc(d,q){
     const ebayBadge=c.viaEbay?'<span style="font-family:monospace;font-size:8px;color:var(--mu);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px;flex-shrink:0">via eBay</span>':'';
     return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div>${ebayBadge}</div>`;
   }).join('');
-  // Japanese exclusive set banner
+  // Japanese exclusive set banner — suggest but don't force language change
   if(d.jpExclusive && catalogCards.length>0){
-    drop.innerHTML=`<div class="ac-attr" style="color:var(--a2);padding:6px 12px;border-bottom:1px solid var(--bd);font-size:9px">🇯🇵 Japanese exclusive set detected — language filter set to Japanese</div>`+drop.innerHTML;
-    // Auto-set language filter to Japanese
-    if(L!=='Japanese'){
-      L='Japanese';
-      const btns=document.getElementById('lc')?.querySelectorAll('.ch');
-      if(btns)btns.forEach(b=>{b.classList.toggle('lon',b.textContent==='Japanese');});
-    }
+    const langNote=L==='Japanese'?'':'  — tap Japanese in the language filter for best results';
+    drop.innerHTML=`<div class="ac-attr" style="color:var(--a2);padding:6px 12px;border-bottom:1px solid var(--bd);font-size:9px">🇯🇵 Japanese exclusive set detected${escH(langNote)}</div>`+drop.innerHTML;
   }
   // Attribution line
   if(d.attribution){
