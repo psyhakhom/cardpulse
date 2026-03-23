@@ -303,13 +303,40 @@ export default async function handler(req, res) {
     const itemsC =
       dataC.status === 'fulfilled' ? dataC.value.itemSummaries || [] : []
 
-    const results = [
+    let results = [
       { ...queries.a, stats: calcStats(itemsA) },
       { ...queries.b, stats: calcStats(itemsB) },
       { ...queries.c, stats: calcStats(itemsC) },
     ]
 
-    const blended = blend(results)
+    let blended = blend(results)
+    let allItems = [...itemsA, ...itemsB, ...itemsC]
+
+    // Fallback: strip last word and retry when comps are too thin
+    if ((!blended || blended.totalComps < 3) && q.trim().split(/\s+/).length > 1) {
+      const fallbackName = q.trim().split(/\s+/).slice(0, -1).join(' ')
+      const fbQueries = buildQueries(fallbackName, grade, lang)
+      const [fbA, fbB, fbC] = await Promise.allSettled([
+        ebaySearch(fbQueries.a.q, token, { limit: fbQueries.a.limit }),
+        ebaySearch(fbQueries.b.q, token, { limit: fbQueries.b.limit }),
+        ebaySearch(fbQueries.c.q, token, { limit: fbQueries.c.limit }),
+      ])
+      const fbItemsA = fbA.status === 'fulfilled' ? fbA.value.itemSummaries || [] : []
+      const fbItemsB = fbB.status === 'fulfilled' ? fbB.value.itemSummaries || [] : []
+      const fbItemsC = fbC.status === 'fulfilled' ? fbC.value.itemSummaries || [] : []
+      const fbResults = [
+        { ...fbQueries.a, stats: calcStats(fbItemsA) },
+        { ...fbQueries.b, stats: calcStats(fbItemsB) },
+        { ...fbQueries.c, stats: calcStats(fbItemsC) },
+      ]
+      const fbBlended = blend(fbResults)
+      if (fbBlended && fbBlended.totalComps > (blended?.totalComps || 0)) {
+        results = fbResults
+        blended = fbBlended
+        allItems = [...fbItemsA, ...fbItemsB, ...fbItemsC]
+      }
+    }
+
     if (!blended) {
       return res.status(404).json({
         error: 'Not enough sold comps found. Try a more specific search.',
@@ -320,7 +347,7 @@ export default async function handler(req, res) {
 
     // Deduplicate comps across all queries
     const seen = new Set()
-    const deduped = [...itemsA, ...itemsB, ...itemsC].filter((i) => {
+    const deduped = allItems.filter((i) => {
       const key = i.title?.toLowerCase().slice(0, 40)
       if (seen.has(key)) return false
       seen.add(key)
