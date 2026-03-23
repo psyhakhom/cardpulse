@@ -133,8 +133,14 @@ function gradeMatch(title, grade) {
  * For graded grades: keeps only listings whose title matches the grade.
  * Falls back to the full set if fewer than 2 items survive (avoids empty results).
  */
-// Word-boundary patterns that can't use simple .includes() matching
-const EXCLUDE_PATTERNS = [/\bauto\b/i]
+// Regex patterns for filtering — catches graded formats that simple .includes() misses
+const EXCLUDE_PATTERNS = [
+  /\bauto\b/i,
+  /\b(?:psa|bgs|cgc|sgc)\s*\d/i,       // "PSA10", "BGS 9.5", "CGC9", etc
+  /\bgrade[d]?\s*\d/i,                   // "graded 10", "grade 9"
+  /\b(?:mint|gem)\s*\d/i,               // "mint 9", "gem 10"
+  /\b\d+\.?\d*\s*(?:grade|slab)\b/i,    // "10 grade", "9.5 slab"
+]
 
 function filterItems(items, grade) {
   if (!items?.length) return items
