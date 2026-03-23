@@ -89,9 +89,16 @@ async function ebaySearch(
 }
 
 // ─── PRICE STATS ─────────────────────────────────────────────────────────────
-function calcStats(items) {
+const GRADED_RE = /\b(PSA|BGS|CGC|SGC|graded|slab|black label)\b/i
+
+function calcStats(items, grade) {
   if (!items?.length) return null
-  const prices = items
+  let filtered = items
+  if (!grade || grade === 'Raw') {
+    const ungraded = items.filter((i) => !GRADED_RE.test(i.title || ''))
+    if (ungraded.length >= 3) filtered = ungraded
+  }
+  const prices = filtered
     .map((i) => parseFloat(i.price?.value))
     .filter((p) => !isNaN(p) && p > 0)
     .sort((a, b) => a - b)
@@ -143,8 +150,7 @@ function buildQueries(name, grade, lang) {
   const hasCardWord = /\bcard\b/i.test(name)
   const cardSuffix = hasSetCode || hasCardWord ? '' : ' card'
   const gradeStr = grade && grade !== 'Raw' ? ` ${grade}` : ''
-  const rawExclude = (!grade || grade === 'Raw') ? ' -PSA -BGS -CGC -SGC -graded -slab' : ''
-  const base = `${name}${langSuffix}${cardSuffix}${gradeStr}${rawExclude}`
+  const base = `${name}${langSuffix}${cardSuffix}${gradeStr}`
   return {
     a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40 },
     b: {
@@ -305,9 +311,9 @@ export default async function handler(req, res) {
       dataC.status === 'fulfilled' ? dataC.value.itemSummaries || [] : []
 
     let results = [
-      { ...queries.a, stats: calcStats(itemsA) },
-      { ...queries.b, stats: calcStats(itemsB) },
-      { ...queries.c, stats: calcStats(itemsC) },
+      { ...queries.a, stats: calcStats(itemsA, grade) },
+      { ...queries.b, stats: calcStats(itemsB, grade) },
+      { ...queries.c, stats: calcStats(itemsC, grade) },
     ]
 
     let blended = blend(results)
@@ -326,9 +332,9 @@ export default async function handler(req, res) {
       const fbItemsB = fbB.status === 'fulfilled' ? fbB.value.itemSummaries || [] : []
       const fbItemsC = fbC.status === 'fulfilled' ? fbC.value.itemSummaries || [] : []
       const fbResults = [
-        { ...fbQueries.a, stats: calcStats(fbItemsA) },
-        { ...fbQueries.b, stats: calcStats(fbItemsB) },
-        { ...fbQueries.c, stats: calcStats(fbItemsC) },
+        { ...fbQueries.a, stats: calcStats(fbItemsA, grade) },
+        { ...fbQueries.b, stats: calcStats(fbItemsB, grade) },
+        { ...fbQueries.c, stats: calcStats(fbItemsC, grade) },
       ]
       const fbBlended = blend(fbResults)
       if (fbBlended && fbBlended.totalComps > (blended?.totalComps || 0)) {
