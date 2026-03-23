@@ -379,6 +379,7 @@ export default async function handler(req, res) {
     if (!blended) {
       return res.status(404).json({
         error: 'Not enough sold comps found. Try a more specific search.',
+        searchTip: 'For Dragon Ball cards, include the set code like BT27 or FB09. For Pokémon, include the set name like "Base Set" or "Scarlet & Violet".',
       })
     }
 
@@ -428,6 +429,9 @@ export default async function handler(req, res) {
       lang,
       source: 'ebay',
       timestamp: Date.now(),
+      searchTip: blended.confidence < 60 && blended.totalComps < 5
+        ? 'Try adding the set name or card number for better results'
+        : null,
     }
 
     // Log to Supabase — fire and forget, never blocks the response
