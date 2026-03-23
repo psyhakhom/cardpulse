@@ -93,7 +93,8 @@ const GRADED_RE = /\b(PSA|BGS|CGC|SGC|graded|slab|black label)\b/i
 const GRADE_INCLUDE = {
   'PSA 9':  /PSA\s*9(?!\.?\d|\s*10)/i,
   'PSA 10': /PSA\s*10\b/i,
-  'BGS 9.5': /BGS\s*9\.5\b/i,
+  'BGS 10': /BGS\s*10\b|black\s*label/i,
+  'CGC 10': /CGC\s*10\b/i,
 }
 
 function calcStats(items, grade) {
