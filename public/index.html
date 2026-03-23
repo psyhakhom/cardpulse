@@ -378,9 +378,16 @@ async function search(q, elId) {
     try {
       const params = new URLSearchParams({ q, grade: G, lang: L });
       const res = await fetch(`/api/prices?${params}`);
-      if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if (data.error) {
+        if (res.status === 404) {
+          el.innerHTML = `<div class="emp" style="padding:32px 0"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(q)}</strong><br>Try adding more detail — set, year, or grade.</p></div>`;
+        } else {
+          throw new Error(data.error);
+        }
+        return;
+      }
+      if (!res.ok) throw new Error(`API error ${res.status}`);
       const r = normalizeApiResponse(data, q);
       renderResult(el, q, r);
       saveHist(q, r);
