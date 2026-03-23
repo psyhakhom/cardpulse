@@ -95,10 +95,10 @@ function calcStats(items) {
     .map((i) => parseFloat(i.price?.value))
     .filter((p) => !isNaN(p) && p > 0)
     .sort((a, b) => a - b)
-  if (prices.length < 3) return null
-  const trim = Math.max(1, Math.floor(prices.length * 0.1))
-  const trimmed = prices.slice(trim, prices.length - trim)
-  if (trimmed.length < 2) return null
+  if (prices.length < 1) return null
+  const trimmed = prices.length >= 6
+    ? prices.slice(Math.floor(prices.length * 0.1), prices.length - Math.floor(prices.length * 0.1))
+    : prices
   const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length
   return {
     lo: parseFloat(trimmed[0].toFixed(2)),
