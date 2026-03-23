@@ -408,7 +408,7 @@ function doSearch(){const q=document.getElementById('si').value.trim();if(q){hid
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
 // AUTOCOMPLETE — Card Catalog
-let acTimer=null,acSel=-1,acList=[],selectedCard=null;
+let acTimer=null,acSel=-1,acList=[],selectedCard=null,acAbort=null;
 // Client-side cache: last 20 query results, keyed by query string
 const acCache=new Map();
 const AC_CACHE_MAX=20;
@@ -423,13 +423,14 @@ function showAcLoading(){
 }
 function acOnInput(v){
   clearTimeout(acTimer);
+  if(acAbort){acAbort.abort();acAbort=null;} // cancel in-flight request
   selectedCard=null; // clear on new typing
   const q=v.trim();
   if(q.length<3){hideAc();return;}
   // Check client cache first — instant render, no network
   const cached=acCache.get(q);
   if(cached){renderAc(cached,q);return;}
-  acTimer=setTimeout(()=>fetchAc(q),200);
+  acTimer=setTimeout(()=>fetchAc(q),350);
 }
 function acKeydown(e){
   const open=document.getElementById('ac-drop').classList.contains('open');
@@ -439,14 +440,19 @@ function acKeydown(e){
   if(e.key==='Enter'){if(open&&acSel>=0){e.preventDefault();selectAc(acSel);}else{hideAc();doSearch();}}
 }
 async function fetchAc(q){
+  if(acAbort){acAbort.abort();}
+  const ctrl=new AbortController();
+  acAbort=ctrl;
   showAcLoading();
   try{
-    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}`);
+    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}`,{signal:ctrl.signal});
+    if(ctrl.signal.aborted)return; // superseded by newer request
     if(!r.ok){hideAc();return;}
     const d=await r.json();
     acCacheSet(q,d); // store in client cache
     renderAc(d,q);
-  }catch(err){console.error('[ac] fetch error:', err);hideAc();}
+  }catch(err){if(err.name==='AbortError')return;console.error('[ac] fetch error:', err);hideAc();}
+  finally{if(acAbort===ctrl)acAbort=null;}
 }
 function renderAc(d,q){
   const drop=document.getElementById('ac-drop');
@@ -455,9 +461,14 @@ function renderAc(d,q){
   acList=catalogCards.length>0?[...catalogCards,d.ebayDirect].filter(Boolean):[d.ebayDirect].filter(Boolean);
   acSel=-1;
   if(!acList.length){hideAc();return;}
+  // Read current input value for the eBay direct text (not the debounced query)
+  const currentInput=document.getElementById('si').value.trim();
   drop.innerHTML=acList.map((c,i)=>{
     if(c.isDirect){
-      return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(c.name)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
+      const directText=`Search eBay directly for '${currentInput||q}'`;
+      // Update searchQuery to match current input
+      c.searchQuery=currentInput||q;
+      return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(directText)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
     }
     const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='var(--bd)'"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:` <div class="ac-img"></div>`;
     const sub=[c.isSet?null:c.set,c.number,c.rarity].filter(Boolean).join(' \u00b7 ');
