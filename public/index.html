@@ -23,15 +23,20 @@ header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:spa
 .scl{position:absolute;right:44px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--mu);font-size:16px;line-height:1;cursor:pointer;padding:4px 6px;display:none}
 .scl.vis{display:block}
 /* autocomplete dropdown */
-.ac-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--s1);border:1px solid var(--bd);border-radius:10px;z-index:200;overflow:hidden;display:none;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.ac-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--s1);border:1px solid var(--bd);border-radius:10px;z-index:200;overflow:hidden;display:none;box-shadow:0 4px 16px rgba(0,0,0,.4);max-height:520px;overflow-y:auto}
 .ac-drop.open{display:block}
-.ac-item{display:flex;align-items:center;padding:8px 12px;cursor:pointer;gap:9px;border-bottom:1px solid var(--bd)}
+.ac-load{display:flex;align-items:center;justify-content:center;padding:18px 0;gap:8px;color:var(--mu);font-family:monospace;font-size:10px}
+.ac-load .ac-dot{width:6px;height:6px;border-radius:50%;background:var(--ac);animation:acPulse .8s ease-in-out infinite alternate}
+.ac-load .ac-dot:nth-child(2){animation-delay:.15s}.ac-load .ac-dot:nth-child(3){animation-delay:.3s}
+@keyframes acPulse{from{opacity:.2;transform:scale(.8)}to{opacity:1;transform:scale(1.1)}}
+.ac-item{display:flex;align-items:center;padding:10px 12px;cursor:pointer;gap:10px;border-bottom:1px solid var(--bd);min-height:64px}
 .ac-item:last-of-type{border-bottom:none}
 .ac-item:hover,.ac-item.sel{background:var(--s2)}
-.ac-img{width:30px;height:42px;object-fit:contain;border-radius:3px;flex-shrink:0;background:var(--bd)}
-.ac-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ac-sub{font-family:monospace;font-size:9px;color:var(--mu);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ac-badge{font-family:monospace;font-size:8px;padding:1px 4px;border-radius:3px;background:var(--s2);border:1px solid var(--bd);color:var(--ac);white-space:nowrap;flex-shrink:0}
+.ac-img{width:60px;height:84px;object-fit:contain;border-radius:4px;flex-shrink:0;background:var(--bd)}
+.ac-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-sub{font-family:monospace;font-size:10px;color:var(--mu);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-badge{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--s2);border:1px solid var(--bd);white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:3px}
+.ac-badge.pkm{color:#ffcb05;border-color:#ffcb05}.ac-badge.mtg{color:#cba135;border-color:#cba135}.ac-badge.dbs{color:#ff6b35;border-color:#ff6b35}.ac-badge.dir{color:var(--mu);border-color:var(--bd)}
 .ac-attr{font-family:monospace;font-size:8px;color:var(--mu);padding:4px 12px 5px;text-align:right}
 .si:focus{border-color:var(--ac)}.si::placeholder{color:var(--mu)}
 .sb{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--ac);border:none;border-radius:7px;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -118,6 +123,9 @@ a.ct2:hover{text-decoration:underline}
 .div{height:1px;background:var(--bd);margin:10px 0}
 /* dots */
 .dot{display:inline-block;width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.dot.live-pulse{background:var(--gn);animation:livePulse 1.5s ease-in-out infinite}
+.wf.live-pulse{background:var(--gn)}
+@keyframes livePulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(79,255,176,.6)}50%{opacity:.7;box-shadow:0 0 6px 3px rgba(79,255,176,.3)}}
 .de{background:#e53238}.dt{background:#1a9cdc}.d1{background:#f7931e}.dp{background:#a855f7}.dg{background:#22c55e}.df{background:#3b82f6}
 .dy{background:#ff4b4b}.dm{background:#e91e8c}.ds{background:#f472b6}.db{background:#ff8c00}
 .fe{background:#e53238}.ft{background:#1a9cdc}.f1{background:#f7931e}.fp{background:#a855f7}.fg2{background:#22c55e}.ff{background:#3b82f6}
@@ -395,18 +403,36 @@ function camOff(){
 
 // SEARCH
 function toggleClear(){document.getElementById('scl').classList.toggle('vis',document.getElementById('si').value.length>0);}
-function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');hideAc();i.focus();}
+function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');selectedCard=null;hideAc();i.focus();}
 function doSearch(){const q=document.getElementById('si').value.trim();if(q){hideAc();search(q,'sr');}}
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
-// AUTOCOMPLETE
-let acTimer=null,acSel=-1,acList=[],acOverrideImage=null;
+// AUTOCOMPLETE — Card Catalog
+let acTimer=null,acSel=-1,acList=[],selectedCard=null;
+// Client-side cache: last 20 query results, keyed by query string
+const acCache=new Map();
+const AC_CACHE_MAX=20;
+function acCacheSet(k,v){if(acCache.size>=AC_CACHE_MAX){const oldest=acCache.keys().next().value;acCache.delete(oldest);}acCache.set(k,v);}
+const GAME_ICONS={
+  pokemon:'<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="2" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>',
+  mtg:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 19h20L12 2z"/><circle cx="12" cy="14" r="2" fill="currentColor"/></svg>',
+  dbs:'<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 5l2 4 4.5.7-3.3 3.1.8 4.5L12 15l-4 2.3.8-4.5L5.5 9.7 10 9z"/></svg>',
+  direct:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>',
+};
+function showAcLoading(){
+  const drop=document.getElementById('ac-drop');
+  drop.innerHTML='<div class="ac-load"><span class="ac-dot"></span><span class="ac-dot"></span><span class="ac-dot"></span></div>';
+  drop.classList.add('open');
+}
 function acOnInput(v){
-  console.log('[ac] input fired, value:', JSON.stringify(v));
   clearTimeout(acTimer);
+  selectedCard=null; // clear on new typing
   const q=v.trim();
   if(q.length<3){hideAc();return;}
-  acTimer=setTimeout(()=>fetchAc(q),400);
+  // Check client cache first — instant render, no network
+  const cached=acCache.get(q);
+  if(cached){renderAc(cached,q);return;}
+  acTimer=setTimeout(()=>fetchAc(q),200);
 }
 function acKeydown(e){
   const open=document.getElementById('ac-drop').classList.contains('open');
@@ -416,30 +442,38 @@ function acKeydown(e){
   if(e.key==='Enter'){if(open&&acSel>=0){e.preventDefault();selectAc(acSel);}else{hideAc();doSearch();}}
 }
 async function fetchAc(q){
-  console.log('[ac] fetching /api/cards?q='+encodeURIComponent(q));
+  showAcLoading();
   try{
     const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}`);
-    console.log('[ac] response status:', r.status);
-    if(!r.ok){console.warn('[ac] non-ok response, hiding');hideAc();return;}
+    if(!r.ok){hideAc();return;}
     const d=await r.json();
-    console.log('[ac] data:', JSON.stringify(d).slice(0,300));
+    acCacheSet(q,d); // store in client cache
     renderAc(d,q);
   }catch(err){console.error('[ac] fetch error:', err);hideAc();}
 }
 function renderAc(d,q){
   const drop=document.getElementById('ac-drop');
-  acList=[...(d.cards||[]),d.ebayDirect].filter(Boolean);
+  const catalogCards=(d.cards||[]);
+  // If no catalog results, only show the eBay direct option
+  acList=catalogCards.length>0?[...catalogCards,d.ebayDirect].filter(Boolean):[d.ebayDirect].filter(Boolean);
   acSel=-1;
-  console.log('[ac] renderAc acList.length:', acList.length, 'drop el:', drop);
   if(!acList.length){hideAc();return;}
   drop.innerHTML=acList.map((c,i)=>{
-    if(c.isDirect)return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu)">${escH(c.name)}</div></div></div>`;
+    if(c.isDirect){
+      return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(c.name)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
+    }
     const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='var(--bd)'">`:`<div class="ac-img"></div>`;
-    const badge=c.rarity?`<span class="ac-badge">${escH(c.rarity.slice(0,12))}</span>`:'';
-    const sub=[c.set,c.number].filter(Boolean).join(' · ');
+    const gameCls=c.game==='pokemon'?'pkm':c.game==='mtg'?'mtg':c.game==='dbs'?'dbs':'dir';
+    const icon=GAME_ICONS[c.game]||'';
+    const badge=`<span class="ac-badge ${gameCls}">${icon}</span>`;
+    const sub=[c.set,c.number,c.rarity].filter(Boolean).join(' \u00b7 ');
     return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name">${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div>${badge}</div>`;
   }).join('');
-  if(d.attribution)drop.innerHTML+=`<div class="ac-attr">powered by ${escH(d.attribution)}</div>`;
+  // Attribution line
+  if(d.attribution){
+    const attrText=d.game==='pokemon'?'Powered by pokemontcg.io':d.game==='mtg'?'Powered by Scryfall':`Powered by ${d.attribution}`;
+    drop.innerHTML+=`<div class="ac-attr">${escH(attrText)}</div>`;
+  }
   drop.classList.add('open');
 }
 function hideAc(){document.getElementById('ac-drop').classList.remove('open');acSel=-1;}
@@ -449,13 +483,34 @@ function acMove(dir){
   if(acSel>=0)items[acSel].classList.remove('sel');
   acSel=Math.max(0,Math.min(items.length-1,acSel+dir));
   items[acSel].classList.add('sel');
+  items[acSel].scrollIntoView({block:'nearest'});
 }
 function selectAc(i){
   const card=acList[i];if(!card)return;
-  document.getElementById('si').value=card.searchQuery;
-  acOverrideImage=card.largeImageUrl||null;
+  if(card.isDirect){
+    // Direct eBay search — no selectedCard, use free text
+    selectedCard=null;
+    document.getElementById('si').value=card.searchQuery;
+    toggleClear();hideAc();
+    search(card.searchQuery,'sr');
+    return;
+  }
+  // Store full card metadata for the search flow
+  selectedCard={
+    name:card.name,
+    set:card.set,
+    number:card.number,
+    rarity:card.rarity,
+    game:card.game,
+    imageUrl:card.largeImageUrl||card.imageUrl||null,
+    searchQuery:card.searchQuery,
+  };
+  // Show clean display name in input
+  const displayName=[card.name,card.number].filter(Boolean).join(' ');
+  document.getElementById('si').value=displayName;
   toggleClear();hideAc();
-  search(card.searchQuery,'sr');
+  // Run search using the optimized eBay query
+  search(selectedCard.searchQuery,'sr');
 }
 // Close dropdown when clicking outside the search wrapper
 document.addEventListener('click',e=>{if(!e.target.closest('.sw'))hideAc();});
@@ -467,10 +522,15 @@ const USE_REAL_API = true;
 async function search(q, elId) {
   const el = document.getElementById(elId);
   el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
+  // Capture selectedCard at search time (it gets cleared on next input)
+  const sc = selectedCard;
   if (USE_REAL_API) {
     try {
-      console.log('[search] grade=', JSON.stringify(G), 'lang=', JSON.stringify(L), 'q=', q);
-      const params = new URLSearchParams({ q, grade: G, lang: L });
+      // When a catalog card was selected, bypass preprocessor with exact query
+      const searchQ = sc ? sc.searchQuery : q;
+      console.log('[search] grade=', JSON.stringify(G), 'lang=', JSON.stringify(L), 'q=', searchQ, sc ? '(catalog)' : '(free text)');
+      const params = new URLSearchParams({ q: searchQ, grade: G, lang: L });
+      if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
       if (data.error) {
@@ -482,9 +542,9 @@ async function search(q, elId) {
         return;
       }
       if (!res.ok) throw new Error(`API error ${res.status}`);
-      const r = normalizeApiResponse(data, q);
-      renderResult(el, q, r);
-      saveHist(q, r);
+      const r = normalizeApiResponse(data, q, sc);
+      renderResult(el, sc ? sc.name : q, r);
+      saveHist(sc ? sc.name : q, r);
     } catch(err) {
       el.innerHTML = `<div class="ld"><p style="color:var(--rd);text-align:center;font-family:monospace;font-size:11px">Could not load prices.<br>${escH(err.message)}</p></div>`;
     }
@@ -504,7 +564,7 @@ async function search(q, elId) {
  * This means the frontend never needs to change when
  * the backend changes — only this adapter function does.
  */
-function normalizeApiResponse(data, q) {
+function normalizeApiResponse(data, q, sc) {
   function cardType(q, g) {
   const ql = q.toLowerCase();
   if (['dragon ball','dragonball','dbs','dbscg','fusion world',
@@ -522,8 +582,7 @@ function normalizeApiResponse(data, q) {
 
   // Map the three eBay query strategies into the source breakdown format
   const sd = (data.sourceBreakdown || []).map((s, i) => {
-    const colors = ['de', 'de', 'de']; // all eBay queries use the same eBay red dot
-    const fills  = ['fe', 'fe', 'fe'];
+    const isLive = s.live === true;
     return {
       n:  s.label,
       ok: s.available,
@@ -531,8 +590,8 @@ function normalizeApiResponse(data, q) {
       aU: s.avg,
       aN: s.avg,   // USD only — no native currency for eBay
       c:  'USD',
-      d:  colors[i] || 'de',
-      f:  fills[i]  || 'fe',
+      d:  isLive ? 'live-pulse' : 'de',
+      f:  isLive ? 'live-pulse' : 'fe',
     };
   });
 
@@ -562,7 +621,7 @@ function normalizeApiResponse(data, q) {
     jx,
     showFX:  false,
     l:       L,
-    img:     (() => { const ov=acOverrideImage; acOverrideImage=null; return ov || data.imageUrl || getImg(q); })(),
+    img:     sc?.imageUrl || data.imageUrl || getImg(q),
     comps,
     searchTip: data.searchTip || null,
     multipleProducts: data.multipleProducts || false,

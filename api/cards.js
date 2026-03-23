@@ -1,15 +1,15 @@
 /**
  * GET /api/cards?q={query}
  *
- * Card autocomplete endpoint. Returns up to 6 matching cards from:
+ * Card catalog autocomplete endpoint. Returns up to 8 matching cards from:
  *   - pokemontcg.io  (Pokemon)
  *   - Scryfall       (MTG)
- *   - eBay sold titles (DBS + fallback)
- * Plus an "eBay direct" fallback option.
+ *   - dbs-cardgame.com (DBS) with hardcoded fallback
+ *   - Sports: returns empty — falls back to direct eBay search
+ * Plus an "eBay direct" fallback option always included.
  *
  * All responses are in-memory cached for 1 hour per query string.
  * Env vars: POKEMON_TCG_API_KEY (optional — unlocks higher rate limit)
- *           EBAY_CLIENT_ID / EBAY_CLIENT_SECRET (for DBS eBay title search)
  */
 
 // ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ function detectGame(query) {
   return null
 }
 
-// ─── QUERY BUILDER ────────────────────────────────────────────────────────────
+// ─── QUERY BUILDERS ──────────────────────────────────────────────────────────
 function buildPokemonQuery(card) {
   const name = card.name || ''
   const number = card.number || ''
@@ -58,114 +58,11 @@ function buildPokemonQuery(card) {
 }
 
 function buildMtgQuery(card) {
-  return [card.name, card.set_name].filter(Boolean).join(' ').slice(0, 60)
+  return [card.name, card.set_name, card.collector_number].filter(Boolean).join(' ').slice(0, 60)
 }
 
-// ─── EBAY TOKEN ───────────────────────────────────────────────────────────────
-let ebayToken = null
-let ebayTokenExp = 0
-
-async function getEbayToken() {
-  if (ebayToken && Date.now() < ebayTokenExp) return ebayToken
-  const id = process.env.EBAY_CLIENT_ID
-  const secret = process.env.EBAY_CLIENT_SECRET
-  if (!id || !secret) throw new Error('eBay credentials not configured')
-  const creds = Buffer.from(`${id}:${secret}`).toString('base64')
-  const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
-    method: 'POST',
-    headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope',
-    signal: AbortSignal.timeout(5000),
-  })
-  if (!res.ok) throw new Error(`eBay token ${res.status}`)
-  const data = await res.json()
-  ebayToken = data.access_token
-  ebayTokenExp = Date.now() + (data.expires_in - 60) * 1000
-  return ebayToken
-}
-
-// ─── DBS / EBAY TITLE SEARCH ─────────────────────────────────────────────────
-// Patterns that indicate a listing is NOT a single card
-const JUNK_RE = /\b(lot|bundle|collection|set|booster|pack|box|\d+\s*card|\dx|\bx\d+)\b/i
-// DBS card number pattern
-const DBS_NUM_RE = /\b(?:BT|FB|SD|ST|D-BT)\d+-\d+[A-Z]?\b/i
-
-function extractDbsCardName(title) {
-  // Remove common suffix noise
-  let t = title
-    .replace(/\bpsa\s*\d+\b/gi, '')
-    .replace(/\bbgs\s*[\d.]+\b/gi, '')
-    .replace(/\bcgc\s*[\d.]+\b/gi, '')
-    .replace(/\bsgc\s*\d+\b/gi, '')
-    .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bgd\b/gi, '')
-    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b/gi, '')
-    .replace(/\bdragon\s*ball\s*(super\s*)?(card\s*game)?\b/gi, '')
-    .replace(/\bfusion\s*world\b/gi, '')
-    .replace(/\bdbs\b/gi, '')
-    .replace(/\bcard\b/gi, '')
-    .replace(/[[\]()|]/g, ' ')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-
-  // Extract card number if present and use it in display
-  const numMatch = t.match(DBS_NUM_RE)
-  const num = numMatch ? numMatch[0] : ''
-
-  // Remove the card number from the name portion
-  if (num) t = t.replace(num, '').trim()
-
-  // Clean leading/trailing punctuation
-  t = t.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
-
-  // Capitalize first letter of each word
-  t = t.replace(/\b\w/g, (c) => c.toUpperCase())
-
-  return { name: t, number: num }
-}
-
-async function searchEbayTitles(query, game) {
-  return withCache(`ebay-titles:${game}:${query.toLowerCase()}`, async () => {
-    const token = await getEbayToken()
-    // Append "card" to reduce noise from non-card results
-    const q = `${query} card`
-    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&filter=buyingOptions:{AUCTION|FIXED_PRICE},conditions:{USED|UNGRADED}&sort=newlyListed&limit=50`
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US' },
-      signal: AbortSignal.timeout(6000),
-    })
-    if (!res.ok) {
-      console.error('[cards] eBay titles search error:', res.status, await res.text().catch(() => ''))
-      return []
-    }
-    const data = await res.json()
-    const items = data.itemSummaries || []
-
-    // Deduplicate by extracted card name
-    const seen = new Set()
-    const cards = []
-    for (const item of items) {
-      const title = item.title || ''
-      if (JUNK_RE.test(title)) continue
-      const { name, number } = extractDbsCardName(title)
-      if (!name || name.length < 3) continue
-      const key = name.toLowerCase()
-      if (seen.has(key)) continue
-      seen.add(key)
-      cards.push({
-        id: `ebay-title-${item.itemId}`,
-        name,
-        set: number || '',
-        number: number || '',
-        rarity: '',
-        game: game || 'dbs',
-        imageUrl: item.image?.imageUrl || null,
-        largeImageUrl: item.image?.imageUrl || null,
-        searchQuery: number ? `${name} ${number}` : name,
-      })
-      if (cards.length >= 8) break
-    }
-    return cards
-  })
+function buildDbsQuery(card) {
+  return [card.name, card.number, card.rarity].filter(Boolean).join(' ').slice(0, 60)
 }
 
 // ─── POKEMON TCG API ──────────────────────────────────────────────────────────
@@ -175,10 +72,8 @@ async function searchPokemon(query) {
     const headers = { Accept: 'application/json' }
     if (apiKey) headers['X-Api-Key'] = apiKey
 
-    // Wildcard suffix for partial matching (e.g. "Chariza" → "Charizard")
-    // Note: no quotes around name value — pokemontcg.io Lucene doesn't support quoted wildcards
     const q = `name:${query}*`
-    const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=20&select=id,name,number,rarity,set,images`
+    const url = `https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) })
     if (!res.ok) throw new Error(`pokemontcg ${res.status}`)
     const data = await res.json()
@@ -200,12 +95,12 @@ async function searchPokemon(query) {
 // ─── MTG / SCRYFALL ──────────────────────────────────────────────────────────
 async function searchMtg(query) {
   return withCache(`mtg:${query.toLowerCase()}`, async () => {
-    const url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&limit=20`
+    const url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&unique=prints&order=released&dir=desc`
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
     if (!res.ok) return []
     const data = await res.json()
 
-    return (data.data || []).slice(0, 10).map((card) => ({
+    return (data.data || []).slice(0, 8).map((card) => ({
       id: `mtg-${card.id}`,
       name: card.name,
       set: card.set_name || '',
@@ -219,8 +114,231 @@ async function searchMtg(query) {
   })
 }
 
+// ─── DBS CARD GAME SITE ──────────────────────────────────────────────────────
+async function searchDbsSite(query) {
+  return withCache(`dbs-site:${query.toLowerCase()}`, async () => {
+    const url = `https://www.dbs-cardgame.com/us-en/cardlist/?search=true&keyword=${encodeURIComponent(query)}`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'CardPulse/1.0' },
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) throw new Error(`DBS site ${res.status}`)
+    const html = await res.text()
+
+    const cards = []
+    // Parse card list items from the HTML — each card is in a <li> with class "list-inner"
+    // Card image: <img src="..."> inside the list item
+    // Card name: inside <dd class="cardName"> or similar
+    // Card number: inside <dd class="cardNumber">
+    const cardBlockRe = /<li[^>]*class="[^"]*list-inner[^"]*"[^>]*>([\s\S]*?)<\/li>/gi
+    let match
+    while ((match = cardBlockRe.exec(html)) !== null && cards.length < 8) {
+      const block = match[1]
+      const imgMatch = block.match(/<img[^>]+src="([^"]+)"/)
+      const nameMatch = block.match(/cardName[^>]*>([^<]+)/) || block.match(/<dt[^>]*>([^<]{3,})<\/dt>/)
+      const numMatch = block.match(/cardNumber[^>]*>([^<]+)/) || block.match(/((?:BT|FB|SD|ST|D-BT)\d+-\d+[A-Z]?)/)
+      const rarityMatch = block.match(/cardRarity[^>]*>([^<]+)/) || block.match(/rarity[^>]*>([^<]+)/i)
+
+      if (!nameMatch) continue
+      const name = nameMatch[1].trim()
+      const number = numMatch ? numMatch[1].trim() : ''
+      const rarity = rarityMatch ? rarityMatch[1].trim() : ''
+      let imageUrl = imgMatch ? imgMatch[1].trim() : null
+      if (imageUrl && imageUrl.startsWith('/')) {
+        imageUrl = `https://www.dbs-cardgame.com${imageUrl}`
+      }
+
+      cards.push({
+        id: `dbs-${number || cards.length}`,
+        name,
+        set: number ? number.replace(/-\d+[A-Z]?$/, '') : '',
+        number,
+        rarity,
+        game: 'dbs',
+        imageUrl,
+        largeImageUrl: imageUrl,
+        searchQuery: buildDbsQuery({ name, number, rarity }),
+      })
+    }
+
+    // If HTML parsing found nothing, try a simpler pattern for the card page format
+    if (!cards.length) {
+      const simpleRe = /<a[^>]+href="[^"]*\/cardlist\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[\s\S]*?<\/a>/gi
+      while ((match = simpleRe.exec(html)) !== null && cards.length < 8) {
+        const slug = match[1]
+        const imgUrl = match[2].startsWith('/') ? `https://www.dbs-cardgame.com${match[2]}` : match[2]
+        const numFromSlug = slug.match(/((?:BT|FB|SD|ST|D-BT)\d+-\d+[A-Z]?)/i)
+        cards.push({
+          id: `dbs-${slug}`,
+          name: slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+          set: numFromSlug ? numFromSlug[1].replace(/-\d+[A-Z]?$/, '') : '',
+          number: numFromSlug ? numFromSlug[1] : '',
+          rarity: '',
+          game: 'dbs',
+          imageUrl: imgUrl,
+          largeImageUrl: imgUrl,
+          searchQuery: numFromSlug ? `${slug.replace(/[-_]/g, ' ')} ${numFromSlug[1]}` : slug.replace(/[-_]/g, ' '),
+        })
+      }
+    }
+
+    return cards
+  })
+}
+
+// ─── DBS HARDCODED FALLBACK (top 200 popular cards) ─────────────────────────
+const DBS_POPULAR = [
+  { name: 'Son Goku, The Awakened Power', number: 'BT1-059', rarity: 'SPR' },
+  { name: 'Vegito, Path to Greatness', number: 'BT20-138', rarity: 'SCR' },
+  { name: 'Super Saiyan God Son Goku', number: 'BT1-032', rarity: 'SR' },
+  { name: 'Gogeta, Hero Revived', number: 'BT5-038', rarity: 'SPR' },
+  { name: 'Frieza, Emperor of Universe 7', number: 'BT9-002', rarity: 'SR' },
+  { name: 'Cell, Android Evolved', number: 'BT17-049', rarity: 'SPR' },
+  { name: 'Broly, The Legendary Super Saiyan', number: 'BT1-057', rarity: 'SR' },
+  { name: 'Vegeta, Prince of Destruction', number: 'BT15-065', rarity: 'SCR' },
+  { name: 'Gohan, Potential Unleashed', number: 'BT3-033', rarity: 'SPR' },
+  { name: 'Piccolo, Fused with Kami', number: 'BT16-079', rarity: 'SR' },
+  { name: 'Trunks, Bridge to the Future', number: 'BT3-062', rarity: 'SPR' },
+  { name: 'Beerus, God of Destruction', number: 'BT1-029', rarity: 'SR' },
+  { name: 'Bardock, Will of Iron', number: 'BT3-083', rarity: 'SR' },
+  { name: 'Android 17, Protector of Wildlife', number: 'BT14-068', rarity: 'SR' },
+  { name: 'Hit, Time Skip Strike', number: 'BT4-100', rarity: 'SPR' },
+  { name: 'Kefla, Surge of Energy', number: 'BT7-080', rarity: 'SPR' },
+  { name: 'Majin Buu, Infinite Multiplication', number: 'BT6-041', rarity: 'SR' },
+  { name: 'Gogeta BR', number: 'FB01-139', rarity: 'SCR' },
+  { name: 'Son Goku, Ultra Instinct Sign', number: 'BT9-026', rarity: 'SCR' },
+  { name: 'Vegito, Unison of Might', number: 'BT10-002', rarity: 'SPR' },
+  { name: 'Son Goku, Path to Greatness', number: 'BT6-005', rarity: 'SPR' },
+  { name: 'Super Saiyan Vegeta', number: 'BT1-056', rarity: 'SR' },
+  { name: 'Gotenks, Display of Might', number: 'BT11-002', rarity: 'SPR' },
+  { name: 'Jiren, Fist of Justice', number: 'BT5-047', rarity: 'SPR' },
+  { name: 'Whis, The Advisor', number: 'BT1-044', rarity: 'SR' },
+  { name: 'Android 18, Graceful Warrior', number: 'BT13-069', rarity: 'SPR' },
+  { name: 'Cooler, Galactic Dynasty', number: 'BT17-059', rarity: 'SCR' },
+  { name: 'Zamasu, The Invincible', number: 'BT2-056', rarity: 'SR' },
+  { name: 'Tien Shinhan, Tri-Beam Master', number: 'BT12-086', rarity: 'SR' },
+  { name: 'Caulifla, Daring Fighter', number: 'BT7-079', rarity: 'SR' },
+  { name: 'Super 17, Hell\'s Storm', number: 'BT14-129', rarity: 'SCR' },
+  { name: 'Son Goku, Strength of Legends', number: 'FB01-001', rarity: 'SR' },
+  { name: 'Vegeta, Saiyan Prince', number: 'FB01-028', rarity: 'SR' },
+  { name: 'Frieza, Galactic Tyrant', number: 'FB01-077', rarity: 'SR' },
+  { name: 'Gohan, Hidden Potential', number: 'FB01-049', rarity: 'SR' },
+  { name: 'Piccolo, Namekian Guardian', number: 'FB01-058', rarity: 'SR' },
+  { name: 'Trunks, Hope of the Future', number: 'FB01-036', rarity: 'SR' },
+  { name: 'Broly, Unstoppable Rage', number: 'FB01-091', rarity: 'SCR' },
+  { name: 'Cell, Ultimate Lifeform', number: 'FB01-083', rarity: 'SR' },
+  { name: 'Beerus, Universe 7 Destroyer', number: 'FB01-067', rarity: 'SR' },
+  { name: 'Goku Black, Dark Overload', number: 'BT3-051', rarity: 'SPR' },
+  { name: 'Krillin, Trusty Aid', number: 'BT18-011', rarity: 'SR' },
+  { name: 'Yamcha, Merciless Striker', number: 'BT19-076', rarity: 'SR' },
+  { name: 'Videl, Supporting Fighter', number: 'BT18-081', rarity: 'SR' },
+  { name: 'Pan, Ready to Fight', number: 'BT18-047', rarity: 'SR' },
+  { name: 'Android 21, Scholarly Scientist', number: 'BT20-025', rarity: 'SPR' },
+  { name: 'Son Goku, Explosion of Power', number: 'FB02-001', rarity: 'SR' },
+  { name: 'Vegeta, Beyond Limits', number: 'FB02-028', rarity: 'SCR' },
+  { name: 'Gogeta, Fusion Reborn', number: 'FB02-139', rarity: 'SCR' },
+  { name: 'Frieza, True Golden Form', number: 'FB02-077', rarity: 'SR' },
+  { name: 'Son Gohan, Beast Unleashed', number: 'FB02-049', rarity: 'SCR' },
+  { name: 'Piccolo, Orange Form', number: 'FB02-058', rarity: 'SR' },
+  { name: 'Broly, Full Power', number: 'FB02-091', rarity: 'SR' },
+  { name: 'Cell Max, Destructive Force', number: 'FB02-083', rarity: 'SR' },
+  { name: 'Gamma 1, Red Warrior', number: 'FB02-034', rarity: 'SR' },
+  { name: 'Gamma 2, Blue Warrior', number: 'FB02-035', rarity: 'SR' },
+  { name: 'Super Saiyan 4 Gogeta', number: 'BT11-001', rarity: 'SCR' },
+  { name: 'SSB Vegito, Unison Warrior', number: 'BT10-003', rarity: 'SCR' },
+  { name: 'Janemba, Agent of Destruction', number: 'BT5-086', rarity: 'SPR' },
+  { name: 'Turles, Crusher Corps Commander', number: 'BT15-111', rarity: 'SR' },
+  { name: 'Raditz, Saiyan Invader', number: 'BT18-053', rarity: 'SR' },
+  { name: 'Nappa, Saiyan Warrior', number: 'BT18-051', rarity: 'SR' },
+  { name: 'Dabura, Dark Demon', number: 'BT19-091', rarity: 'SR' },
+  { name: 'Babidi, Dark Magician', number: 'BT11-078', rarity: 'SR' },
+  { name: 'Toppo, God of Destruction Candidate', number: 'BT9-045', rarity: 'SR' },
+  { name: 'Dyspo, Lightspeed Warrior', number: 'BT9-044', rarity: 'SR' },
+  { name: 'Android 13, Fused Force', number: 'BT13-094', rarity: 'SPR' },
+  { name: 'Champa, Universe 6 Destroyer', number: 'BT7-077', rarity: 'SR' },
+  { name: 'Vados, Angelic Support', number: 'BT7-078', rarity: 'SR' },
+  { name: 'Cabba, Saiyan Pride', number: 'BT7-081', rarity: 'SR' },
+  { name: 'Son Goku, Hero of Earth', number: 'FB03-001', rarity: 'SR' },
+  { name: 'Vegeta, Royal Pride', number: 'FB03-028', rarity: 'SCR' },
+  { name: 'Gogeta, Beyond Fusion', number: 'FB03-139', rarity: 'SCR' },
+  { name: 'Frieza, Final Form', number: 'FB03-077', rarity: 'SR' },
+  { name: 'Gohan, Father-Son Kamehameha', number: 'FB03-049', rarity: 'SR' },
+  { name: 'Piccolo, Special Beam Cannon', number: 'FB03-058', rarity: 'SR' },
+  { name: 'Son Goku, Mastered Ultra Instinct', number: 'BT7-077', rarity: 'SCR' },
+  { name: 'Vegito, Absolute Annihilation', number: 'BT4-003', rarity: 'SPR' },
+  { name: 'Gogeta, Display of Power', number: 'BT12-136', rarity: 'SCR' },
+  { name: 'Son Goku, Spirit Bomb', number: 'BT8-108', rarity: 'SPR' },
+  { name: 'Cell, Return of the Terror', number: 'BT9-073', rarity: 'SPR' },
+  { name: 'Vegeta, Determined to Fight', number: 'BT18-028', rarity: 'SR' },
+  { name: 'Goku & Vegeta, Saiyan Bond', number: 'FB09-121', rarity: 'SCR' },
+  { name: 'Gotenks, Fusion Warrior', number: 'BT2-015', rarity: 'SR' },
+  { name: 'Android 16, Gentle Giant', number: 'BT2-091', rarity: 'SR' },
+  { name: 'Captain Ginyu, Ginyu Force', number: 'BT1-085', rarity: 'SR' },
+  { name: 'Majin Vegeta, Prideful Warrior', number: 'BT4-030', rarity: 'SPR' },
+  { name: 'Kid Buu, Infinite Terror', number: 'BT6-042', rarity: 'SPR' },
+  { name: 'Super Saiyan 3 Goku', number: 'BT4-005', rarity: 'SPR' },
+  { name: 'Syn Shenron, Shadow Dragon', number: 'BT11-109', rarity: 'SPR' },
+  { name: 'Omega Shenron, Extreme Malice', number: 'BT11-110', rarity: 'SCR' },
+  { name: 'Pan, Granddaughter of Goku', number: 'BT11-014', rarity: 'SR' },
+  { name: 'Giru, Machine Mutant', number: 'BT11-016', rarity: 'SR' },
+  { name: 'Uub, Potential Awakened', number: 'BT11-018', rarity: 'SR' },
+  { name: 'Great Ape Vegeta', number: 'BT3-093', rarity: 'SR' },
+  { name: 'Great Ape Bardock', number: 'BT3-084', rarity: 'SPR' },
+  { name: 'Golden Frieza, Resurrected Terror', number: 'BT1-086', rarity: 'SPR' },
+  { name: 'Mecha Frieza, Rebuilt', number: 'BT2-103', rarity: 'SR' },
+  { name: 'King Cold, Father of the Emperor', number: 'BT2-104', rarity: 'SR' },
+  { name: 'Sorbet, Frieza\'s Loyal Subject', number: 'BT1-088', rarity: 'SR' },
+]
+
+function searchDbsFallback(query) {
+  const ql = query.toLowerCase()
+  const terms = ql.split(/\s+/)
+  return DBS_POPULAR.filter((card) => {
+    const hay = `${card.name} ${card.number} ${card.rarity}`.toLowerCase()
+    return terms.every((t) => hay.includes(t))
+  }).slice(0, 8).map((card) => ({
+    id: `dbs-fb-${card.number}`,
+    name: card.name,
+    set: card.number.replace(/-\d+[A-Z]?$/, ''),
+    number: card.number,
+    rarity: card.rarity,
+    game: 'dbs',
+    imageUrl: null,
+    largeImageUrl: null,
+    searchQuery: buildDbsQuery(card),
+  }))
+}
+
+async function searchDbs(query) {
+  try {
+    const siteResults = await searchDbsSite(query)
+    if (siteResults.length > 0) return siteResults
+  } catch (err) {
+    console.log(`[cards] DBS site scrape failed: ${err.message}, using fallback`)
+  }
+  return searchDbsFallback(query)
+}
+
+// ─── PRE-WARM CACHE (cold start) ─────────────────────────────────────────────
+// Fire-and-forget: pre-fetch the 10 most popular Pokemon names so the first
+// user search for any of these is instant (served from the withCache Map).
+const PRE_WARM_QUERIES = [
+  'charizard', 'pikachu', 'mewtwo', 'eevee', 'gengar',
+  'blastoise', 'venusaur', 'rayquaza', 'lugia', 'ho-oh',
+]
+let _preWarmed = false
+function preWarmCache() {
+  if (_preWarmed) return
+  _preWarmed = true
+  console.log('[cards] pre-warming Pokemon cache for top 10 cards')
+  for (const q of PRE_WARM_QUERIES) {
+    searchPokemon(q).catch((err) => console.log(`[cards] pre-warm ${q} failed: ${err.message}`))
+  }
+}
+
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  preWarmCache() // fire once on first request
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
@@ -237,7 +355,7 @@ export default async function handler(req, res) {
   console.log('[cards] game detected:', game)
   const ebayDirect = {
     id: 'ebay-direct',
-    name: `Search eBay for "${query}"`,
+    name: `Search eBay directly for '${query}'`,
     set: '', number: '', rarity: '',
     game: 'direct',
     imageUrl: null, largeImageUrl: null,
@@ -266,14 +384,14 @@ export default async function handler(req, res) {
     }
   } else if (game === 'dbs') {
     try {
-      cards = await searchEbayTitles(query, 'dbs')
-      attribution = 'eBay listings'
-      console.log('[cards] dbs ebay-titles results:', cards.length)
+      cards = await searchDbs(query)
+      attribution = 'DBS Card Game'
+      console.log('[cards] dbs results:', cards.length)
     } catch (err) {
-      console.error('[cards] dbs ebay-titles error:', err.message)
+      console.error('[cards] dbs error:', err.message)
     }
   } else {
-    // Unknown game — try Pokemon and MTG in parallel, fall back to eBay titles
+    // Unknown game — try Pokemon and MTG in parallel
     const [pkm, mtg] = await Promise.allSettled([searchPokemon(query), searchMtg(query)])
     if (pkm.status === 'fulfilled') { cards.push(...pkm.value); console.log('[cards] unknown/pkm:', pkm.value.length) }
     else console.error('[cards] unknown/pkm error:', pkm.reason?.message)
@@ -282,17 +400,8 @@ export default async function handler(req, res) {
 
     if (cards.length) {
       attribution = 'pokemontcg.io & Scryfall'
-    } else {
-      // Nothing from card APIs — try eBay titles as last resort
-      try {
-        cards = await searchEbayTitles(query, null)
-        attribution = 'eBay listings'
-        console.log('[cards] unknown/ebay-titles fallback:', cards.length)
-      } catch (err) {
-        console.error('[cards] unknown/ebay-titles error:', err.message)
-      }
     }
   }
 
-  return res.status(200).json({ cards: cards.slice(0, 6), ebayDirect, game, attribution })
+  return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution })
 }

@@ -2,11 +2,12 @@
  * CardPulse — /api/prices.js
  * Vercel serverless function
  *
- * Three-query eBay blending strategy:
+ * Four-query eBay blending strategy:
  *
- *  Query A  "all sold"     — broadest, last 90 days, no filters   Weight: 0.25
- *  Query B  "recent sold"  — last 30 days (sort=endingSoonest)     Weight: 0.45
- *  Query C  "grade-exact"  — adds grade string to query             Weight: 0.30
+ *  Query A  "all sold"       — broadest, last 90 days, no filters   Weight: 0.20 (0.25 w/o D)
+ *  Query B  "recent sold"    — last 30 days (sort=newlyListed)      Weight: 0.35 (0.45 w/o D)
+ *  Query C  "grade-exact"    — adds grade string to query            Weight: 0.25 (0.30 w/o D)
+ *  Query D  "ending soon"    — live auctions ending <24h, 3+ bids   Weight: 0.20 (0 w/o D)
  *
  * Every result is logged to Supabase (fire-and-forget, never blocks response).
  * This builds a proprietary price history DB — the same compounding asset
@@ -66,11 +67,19 @@ async function getToken() {
 async function ebaySearch(
   query,
   token,
-  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US' } = {}
+  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false } = {}
 ) {
+  let filter
+  if (live) {
+    const now = new Date()
+    const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    filter = `buyingOptions:{AUCTION},itemEndDate:[${now.toISOString()}..${in24h.toISOString()}]`
+  } else {
+    filter = 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true'
+  }
   const params = new URLSearchParams({
     q: query,
-    filter: 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true',
+    filter,
     sort,
     limit: String(limit),
   })
@@ -175,15 +184,22 @@ function calcStats(items) {
 // ─── COMP EXTRACTION ─────────────────────────────────────────────────────────
 function extractComps(items, limit = 10, grade = null) {
   const now = Date.now()
-  const ms90 = 90 * 24 * 60 * 60 * 1000
+  const cutoff = now - 90 * 24 * 60 * 60 * 1000
 
-  return items
-    .filter((i) => parseFloat(i.price?.value || 0) > 0)
-    .filter((i) => !grade || gradeMatch(i.title, grade))
-    .filter((i) => {
-      const d = i.itemEndDate || i.itemCreationDate
-      return d && now - new Date(d).getTime() <= ms90
-    })
+  const priced = items.filter((i) => parseFloat(i.price?.value || 0) > 0)
+  const gradeOk = priced.filter((i) => !grade || gradeMatch(i.title, grade))
+
+  let dateDropped = 0
+  const dateOk = gradeOk.filter((i) => {
+    const d = i.itemEndDate || i.itemCreationDate
+    if (!d) { dateDropped++; return false }
+    const ts = new Date(d).getTime()
+    if (isNaN(ts) || ts < cutoff) { dateDropped++; return false }
+    return true
+  })
+  if (dateDropped > 0) console.log(`[extractComps] dropped ${dateDropped}/${gradeOk.length} items outside 90-day window`)
+
+  return dateOk
     .slice(0, limit)
     .map((i) => ({
       title: i.title,
@@ -550,12 +566,29 @@ function buildQueries(name, grade, lang) {
       limit: 30,
       sort: 'endingSoonest',
     },
+    d: { q: base, label: 'Ending soon (live)', weight: 0.15, limit: 10, sort: 'endingSoonest', live: true },
   }
 }
 
+// Weights when Query D has data — rebalanced to sum to 1.0
+const WEIGHTS_WITH_LIVE = { a: 0.20, b: 0.35, c: 0.25, d: 0.20 }
+// Fallback weights when Query D has no data — original three-query weights
+const WEIGHTS_WITHOUT_LIVE = { a: 0.25, b: 0.45, c: 0.30 }
+
 // ─── WEIGHTED BLEND ──────────────────────────────────────────────────────────
 function blend(results) {
-  const active = results.filter((r) => r.stats !== null)
+  // Check if Query D (live auctions) has data to decide weight set
+  const hasLive = results.some((r) => r.label === 'Ending soon (live)' && r.stats !== null)
+  const weightMap = hasLive ? WEIGHTS_WITH_LIVE : WEIGHTS_WITHOUT_LIVE
+  const keys = ['a', 'b', 'c', 'd']
+
+  // Apply rebalanced weights to each result
+  const reweighted = results.map((r, i) => ({
+    ...r,
+    weight: weightMap[keys[i]] ?? r.weight,
+  }))
+
+  const active = reweighted.filter((r) => r.stats !== null)
   if (!active.length) return null
   const tw = active.reduce((a, r) => a + r.weight, 0)
   const wAvg = active.reduce((a, r) => a + r.stats.avg * r.weight, 0) / tw
@@ -573,6 +606,7 @@ function blend(results) {
     activeQueries: active.length,
     totalQueries: results.length,
     totalComps,
+    reweighted, // carry reweighted results for sourceBreakdown
   }
 }
 
@@ -668,8 +702,8 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, grade = 'Raw', lang = 'English', history } = req.query
-  console.log('Grade received:', JSON.stringify(grade), '| q:', q)
+  const { q, grade = 'Raw', lang = 'English', history, exact } = req.query
+  console.log('Grade received:', JSON.stringify(grade), '| q:', q, exact === '1' ? '(exact/catalog)' : '')
 
   // History sub-route
   if (history === '1') return handleHistory(res, q, grade)
@@ -680,33 +714,40 @@ export default async function handler(req, res) {
 
   try {
     const token = await getToken()
-    const { query: processed } = preprocessQuery(q.trim(), grade)
+    // When exact=1 (card catalog selection), skip preprocessor entirely
+    const processed = exact === '1' ? q.trim() : preprocessQuery(q.trim(), grade).query
 
     // Helper: run the three parallel eBay queries for a given name.
     // Grade filtering is applied immediately after raw results come back,
     // before calcStats, extractComps, or image selection see any data.
     async function runQueries(name) {
       const qs = buildQueries(name, grade, lang)
-      const [dA, dB, dC] = await Promise.allSettled([
+      const [dA, dB, dC, dD] = await Promise.allSettled([
         ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
         ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
         ebaySearch(qs.c.q, token, { limit: qs.c.limit, sort: qs.c.sort }),
+        ebaySearch(qs.d.q, token, { limit: qs.d.limit, sort: qs.d.sort, live: true }),
       ])
       const rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
       const rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
       const rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
+      const rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
 
       // Filter by grade immediately — filtered items are used for everything downstream
       const fA = filterItems(rawA, grade)
       const fB = filterItems(rawB, grade)
       const fC = filterItems(rawC, grade)
+      // Query D: only include live auctions with 3+ bids (proper price discovery)
+      const fD = filterItems(rawD, grade).filter((i) => (i.bidCount || 0) > 2)
+      console.log(`[query:D] ${rawD.length} live auctions → ${fD.length} with 3+ bids`)
 
       const res = [
         { ...qs.a, stats: calcStats(fA) },
         { ...qs.b, stats: calcStats(fB) },
         { ...qs.c, stats: calcStats(fC) },
+        { ...qs.d, stats: calcStats(fD) },
       ]
-      return { results: res, blended: blend(res), allItems: [...fA, ...fB, ...fC] }
+      return { results: res, blended: blend(res), allItems: [...fA, ...fB, ...fC, ...fD] }
     }
 
     // Launch card image lookup in parallel with the first eBay query batch
@@ -803,12 +844,13 @@ export default async function handler(req, res) {
         scored.sort((a, b) => b.score - a.score)
         return scored[0]?.url || null
       })(),
-      sourceBreakdown: results.map((r) => ({
+      sourceBreakdown: (blended.reweighted || results).map((r) => ({
         label: r.label,
         weight: r.weight,
         available: r.stats !== null,
         avg: r.stats?.avg || null,
         count: r.stats?.count || 0,
+        live: r.label === 'Ending soon (live)',
       })),
       comps: extractComps(deduped, 10, grade),
       query: q,
