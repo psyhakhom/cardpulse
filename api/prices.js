@@ -89,25 +89,40 @@ async function ebaySearch(
 }
 
 // ─── PRICE STATS ─────────────────────────────────────────────────────────────
-const GRADED_RE = /\b(PSA|BGS|CGC|SGC|graded|slab|black label)\b/i
+const RAW_EXCLUDE = ['psa', 'bgs', 'cgc', 'sgc', 'beckett', 'graded', 'slab', 'black label']
 const GRADE_INCLUDE = {
-  'PSA 9':  /PSA\s*9(?!\.?\d|\s*10)/i,
-  'PSA 10': /PSA\s*10\b/i,
-  'BGS 10': /BGS\s*10\b|black\s*label/i,
-  'CGC 10': /CGC\s*10\b/i,
+  'PSA 9':  (t) => /psa\s*9(?![\d.]|\s*10)/i.test(t),
+  'PSA 10': (t) => /psa\s*10\b/i.test(t),
+  'BGS 10': (t) => /bgs\s*10\b/i.test(t) || t.toLowerCase().includes('black label'),
+  'CGC 10': (t) => /cgc\s*10\b/i.test(t),
 }
 
-function calcStats(items, grade) {
-  if (!items?.length) return null
-  let pool = items
+function filterByGrade(items, grade, label) {
+  if (!items?.length) return items
+  const tag = label ? `[${label}]` : '[filterByGrade]'
   if (!grade || grade === 'Raw') {
-    const ungraded = items.filter((i) => !GRADED_RE.test(i.title || ''))
-    if (ungraded.length >= 3) pool = ungraded
-  } else if (GRADE_INCLUDE[grade]) {
-    const exact = items.filter((i) => GRADE_INCLUDE[grade].test(i.title || ''))
-    if (exact.length >= 3) pool = exact
+    const filtered = items.filter((i) => {
+      const t = (i.title || '').toLowerCase()
+      return !RAW_EXCLUDE.some((kw) => t.includes(kw))
+    })
+    console.log(`${tag} Raw filter: ${items.length} in → ${filtered.length} after removing graded (${items.length - filtered.length} removed)`)
+    if (filtered.length >= 3) return filtered
+    console.log(`${tag} Raw filter: fewer than 3 remain, using full set`)
+    return items
   }
-  const prices = pool
+  if (GRADE_INCLUDE[grade]) {
+    const filtered = items.filter((i) => GRADE_INCLUDE[grade](i.title || ''))
+    console.log(`${tag} ${grade} filter: ${items.length} in → ${filtered.length} match`)
+    if (filtered.length >= 3) return filtered
+    console.log(`${tag} ${grade} filter: fewer than 3 remain, using full set`)
+    return items
+  }
+  return items
+}
+
+function calcStats(items) {
+  if (!items?.length) return null
+  const prices = items
     .map((i) => parseFloat(i.price?.value))
     .filter((p) => !isNaN(p) && p > 0)
     .sort((a, b) => a - b)
@@ -320,9 +335,9 @@ export default async function handler(req, res) {
       dataC.status === 'fulfilled' ? dataC.value.itemSummaries || [] : []
 
     let results = [
-      { ...queries.a, stats: calcStats(itemsA, grade) },
-      { ...queries.b, stats: calcStats(itemsB, grade) },
-      { ...queries.c, stats: calcStats(itemsC, grade) },
+      { ...queries.a, stats: calcStats(filterByGrade(itemsA, grade, 'A')) },
+      { ...queries.b, stats: calcStats(filterByGrade(itemsB, grade, 'B')) },
+      { ...queries.c, stats: calcStats(filterByGrade(itemsC, grade, 'C')) },
     ]
 
     let blended = blend(results)
@@ -341,9 +356,9 @@ export default async function handler(req, res) {
       const fbItemsB = fbB.status === 'fulfilled' ? fbB.value.itemSummaries || [] : []
       const fbItemsC = fbC.status === 'fulfilled' ? fbC.value.itemSummaries || [] : []
       const fbResults = [
-        { ...fbQueries.a, stats: calcStats(fbItemsA, grade) },
-        { ...fbQueries.b, stats: calcStats(fbItemsB, grade) },
-        { ...fbQueries.c, stats: calcStats(fbItemsC, grade) },
+        { ...fbQueries.a, stats: calcStats(filterByGrade(fbItemsA, grade, 'fbA')) },
+        { ...fbQueries.b, stats: calcStats(filterByGrade(fbItemsB, grade, 'fbB')) },
+        { ...fbQueries.c, stats: calcStats(filterByGrade(fbItemsC, grade, 'fbC')) },
       ]
       const fbBlended = blend(fbResults)
       if (fbBlended && fbBlended.totalComps > (blended?.totalComps || 0)) {
