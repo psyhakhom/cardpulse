@@ -464,6 +464,16 @@ function renderAc(d,q){
     const nameStyle=c.isSet?' style="color:var(--a2)"':'';
     return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div></div>`;
   }).join('');
+  // Japanese exclusive set banner
+  if(d.jpExclusive && catalogCards.length>0){
+    drop.innerHTML=`<div class="ac-attr" style="color:var(--a2);padding:6px 12px;border-bottom:1px solid var(--bd);font-size:9px">🇯🇵 Japanese exclusive set detected — language filter set to Japanese</div>`+drop.innerHTML;
+    // Auto-set language filter to Japanese
+    if(L!=='Japanese'){
+      L='Japanese';
+      const btns=document.getElementById('lc')?.querySelectorAll('.ch');
+      if(btns)btns.forEach(b=>{b.classList.toggle('lon',b.textContent==='Japanese');});
+    }
+  }
   // Attribution line
   if(d.attribution){
     const attrText=d.game==='pokemon'?'Powered by pokemontcg.io':d.game==='mtg'?'Powered by Scryfall':`Powered by ${d.attribution}`;

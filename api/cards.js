@@ -83,7 +83,26 @@ function buildDbsQuery(card) {
 }
 
 // ─── POKEMON TCG API ──────────────────────────────────────────────────────────
+// Japanese exclusive sets — when detected, flag results so frontend can auto-set language
+const JP_EXCLUSIVE_SETS = [
+  'ash vs team rocket', 'tag team gx', 'dream league', 'alter genesis',
+  'remix bout', 'miraculous intermezzo', 'shiny star v', 'eevee heroes',
+  'vmax climax', 'battle region', 'dark phantasma', 'lost abyss',
+  'incandescent arcana', 'paradigm trigger', 'vstar universe', 'triplet beat',
+  'snow hazard', 'clay burst', 'ruler of the black flame', 'raging surf',
+  'ancient roar', 'future flash', 'wild force', 'cyber judge',
+  'crimson haze', 'mask of change', 'night wanderer', 'stellar miracle',
+  'superelectric breaker', 'paradise dragona', 'terastal festival',
+]
+
+function isJpExclusiveSet(setName) {
+  if (!setName) return false
+  const sl = setName.toLowerCase()
+  return JP_EXCLUSIVE_SETS.some((jp) => sl.includes(jp))
+}
+
 function mapPokemonCard(card) {
+  const jpExclusive = isJpExclusiveSet(card.set?.name)
   return {
     id: `pkm-${card.id}`,
     name: card.name,
@@ -94,6 +113,7 @@ function mapPokemonCard(card) {
     imageUrl: card.images?.small || null,
     largeImageUrl: card.images?.large || null,
     searchQuery: buildPokemonQuery(card),
+    jpExclusive,
   }
 }
 
@@ -170,8 +190,28 @@ async function searchPokemon(query) {
       }
     }
 
+    // If no cards found, retry with a direct set.name match (catches JP exclusives like "Ash vs Team Rocket")
+    if (!cards.length && !sets.length) {
+      console.log(`[cards:pkm] no results, retrying with direct set.name:"${sanitized}"`)
+      const directSetUrl = `https://api.pokemontcg.io/v2/cards?q=set.name:"${encodeURIComponent(sanitized)}"&pageSize=8&orderBy=-set.releaseDate&select=id,name,number,rarity,set,images`
+      try {
+        const directRes = await fetch(directSetUrl, { headers, signal: AbortSignal.timeout(5000) })
+        if (directRes.ok) {
+          const data = await directRes.json()
+          cards.push(...(data.data || []).map(mapPokemonCard))
+          console.log(`[cards:pkm] direct set.name retry found ${cards.length} cards`)
+        }
+      } catch (err) {
+        console.log(`[cards:pkm] direct set.name retry failed: ${err.message}`)
+      }
+    }
+
+    // Also flag if the query itself matches a known JP exclusive set
+    const queryIsJp = JP_EXCLUSIVE_SETS.some((jp) => sanitized.toLowerCase().includes(jp))
+    const jpExclusive = queryIsJp || cards.some((c) => c.jpExclusive) || sets.some((s) => isJpExclusiveSet(s.set))
+
     // Sets go at the top, then card results
-    return [...sets, ...cards]
+    return { cards: [...sets, ...cards], jpExclusive }
   })
 }
 
@@ -522,11 +562,14 @@ export default async function handler(req, res) {
 
   let cards = []
   let attribution = null
+  let jpExclusive = false
 
   if (game === 'pokemon') {
     try {
-      cards = await searchPokemon(query)
-      console.log('[cards] pokemon results:', cards.length)
+      const result = await searchPokemon(query)
+      cards = result.cards || []
+      jpExclusive = result.jpExclusive || false
+      console.log('[cards] pokemon results:', cards.length, jpExclusive ? '(JP exclusive)' : '')
     } catch (err) {
       console.error('[cards] pokemon error:', err.message)
     }
@@ -550,13 +593,19 @@ export default async function handler(req, res) {
   } else {
     // Unknown game — try Pokemon and MTG in parallel
     const [pkm, mtg] = await Promise.allSettled([searchPokemon(query), searchMtg(query)])
-    if (pkm.status === 'fulfilled') { cards.push(...pkm.value); console.log('[cards] unknown/pkm:', pkm.value.length) }
-    else console.error('[cards] unknown/pkm error:', pkm.reason?.message)
+    if (pkm.status === 'fulfilled') {
+      const result = pkm.value
+      cards.push(...(result.cards || []))
+      if (result.jpExclusive) jpExclusive = true
+      console.log('[cards] unknown/pkm:', (result.cards || []).length)
+    } else {
+      console.error('[cards] unknown/pkm error:', pkm.reason?.message)
+    }
     if (mtg.status === 'fulfilled') { cards.push(...mtg.value); console.log('[cards] unknown/mtg:', mtg.value.length) }
     else console.error('[cards] unknown/mtg error:', mtg.reason?.message)
 
     if (cards.length) attribution = 'pokemontcg.io & Scryfall'
   }
 
-  return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution })
+  return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
 }
