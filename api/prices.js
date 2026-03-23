@@ -135,7 +135,10 @@ function buildQueries(name, grade, lang) {
   const langSuffix =
     { Japanese: ' japanese', Korean: ' korean', Chinese: ' chinese' }[lang] ||
     ''
-  const base = `${name}${langSuffix} card`
+  const hasSetCode = /[a-z]{1,4}-?\d+/i.test(name)
+  const hasCardWord = /\bcard\b/i.test(name)
+  const cardSuffix = hasSetCode || hasCardWord ? '' : ' card'
+  const base = `${name}${langSuffix}${cardSuffix}`
   const gradeStr = grade && grade !== 'Raw' ? ` ${grade}` : ''
   return {
     a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40 },
