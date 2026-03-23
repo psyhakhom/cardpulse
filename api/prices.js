@@ -130,56 +130,78 @@ function gradeMatch(title, grade) {
  * For graded grades: keeps only listings whose title matches the grade.
  * Falls back to the full set if fewer than 2 items survive (avoids empty results).
  */
-// Hard sanity check: always exclude graded slabs from Raw, even in fallback
-const GRADED_SLAB_RE = /\b(?:psa|bgs|cgc|sgc)\s*\d/i
+// Hard graded slab pattern — runs FIRST for Raw, never bypassed
+const GRADED_RE = /\b(psa|bgs|cgc|sgc|beckett)\s*\d|\bgraded\b|\bslab\b|\bgem\s*mint\b|\bblack\s*label\b/i
 
-// Regex patterns with word boundaries — avoids false positives on card names
-const EXCLUDE_PATTERNS = [
-  // Graded slabs — word-boundary to avoid matching set codes like FB09
-  /\bpsa\b/i,
-  /\bbgs\b/i,
-  /\bcgc\b/i,
-  /\bsgc\b/i,
-  /\bbeckett\b/i,
-  /\bgraded\b/i,
-  /\bslab\b/i,
-  // Graded with numeric grade (catches "PSA10", "BGS 9.5", "CGC9" etc)
-  /\b(?:psa|bgs|cgc|sgc)\s*\d/i,
-  /\bgrade[d]?\s*\d/i,
-  // Signed/autograph — word-boundary so "Sign" in card names doesn't match
+// Additional Raw exclusion patterns (signed/autograph)
+const RAW_EXCLUDE_PATTERNS = [
   /\bsigned\b/i,
   /\bautograph(?:ed)?\b/i,
   /\bauto\b/i,
   /\bsignature\b/i,
 ]
 
-function filterItems(items, grade) {
+// Variant terms to exclude when NOT in the search query
+const VARIANT_TERMS = [
+  { query: /\balt\b/i, title: /\balt(?:ernate)?\s*art\b/i },
+  { query: /\bsuper\s*alt\b/i, title: /\bsuper\s*alt(?:ernate)?\s*art\b/i },
+  { query: /\bfull\s*art\b/i, title: /\bfull\s*art\b/i },
+  { query: /\bSAR\b/, title: /\bSAR\b/i },
+]
+
+function filterItems(items, grade, searchQuery) {
   if (!items?.length) return items
+  const ql = (searchQuery || '').toLowerCase()
+
+  // ── Variant exclusion (all grades) ─────────────────────────────────────
+  // If the query does NOT contain a variant term, exclude comps that do
+  let filtered = items
+  for (const vt of VARIANT_TERMS) {
+    if (!vt.query.test(ql)) {
+      const before = filtered.length
+      filtered = filtered.filter((i) => {
+        const t = i.title || ''
+        if (vt.title.test(t)) {
+          console.log(`[filter:variant] dropped "${t.slice(0, 70)}" matched "${vt.title}"`)
+          return false
+        }
+        return true
+      })
+      if (filtered.length < before) console.log(`[filter:variant] ${before} → ${filtered.length} after "${vt.title}" exclusion`)
+    }
+  }
+  // If variant filter gutted results, fall back
+  if (filtered.length < 2 && items.length >= 2) filtered = items
+
   const excludeTerms = GRADE_EXCLUDE[grade]
   if (excludeTerms) {
-    // Raw — exclude graded/variant listings
-    const kept = items.filter((i) => {
+    // Raw — hard graded slab check FIRST, then keyword/pattern checks
+    const kept = filtered.filter((i) => {
       const t = (i.title || '').toLowerCase()
+      // Hard check: graded slabs are NEVER raw — no fallback, no exceptions
+      if (GRADED_RE.test(t)) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" graded slab`); return false }
+      // Keyword exclusion (lots, sealed, bundles etc)
       const hit = excludeTerms.find((kw) => t.includes(kw))
       if (hit) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched "${hit}"`); return false }
-      const patHit = EXCLUDE_PATTERNS.find((re) => re.test(t))
-      if (patHit) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched pattern "${patHit}"`); return false }
+      // Pattern exclusion (signed/autograph)
+      const patHit = RAW_EXCLUDE_PATTERNS.find((re) => re.test(t))
+      if (patHit) { console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched pattern`); return false }
       return true
     })
-    console.log(`[filter:Raw] ${items.length} → ${kept.length} kept`)
+    console.log(`[filter:Raw] ${filtered.length} → ${kept.length} kept`)
     if (kept.length >= 2) return kept
-    // Fallback to full set but ALWAYS strip graded slabs — they are never Raw
-    const safeItems = items.filter((i) => !GRADED_SLAB_RE.test(i.title || ''))
-    console.log(`[filter:Raw] fallback: ${items.length} → ${safeItems.length} after slab sanity check`)
+    // Fallback: strip only graded slabs (hard exclusion, never re-introduced)
+    const safeItems = filtered.filter((i) => !GRADED_RE.test(i.title || ''))
+    console.log(`[filter:Raw] fallback: ${filtered.length} → ${safeItems.length} after slab check`)
     return safeItems
   }
   if (grade && grade !== 'Raw') {
     // Graded — keep only titles that match the grade string
-    const kept = items.filter((i) => gradeMatch(i.title, grade))
-    console.log(`[filter:${grade}] ${items.length} → ${kept.length} match`)
-    return kept.length >= 2 ? kept : items
+    const kept = filtered.filter((i) => gradeMatch(i.title, grade))
+    console.log(`[filter:${grade}] ${filtered.length} → ${kept.length} match`)
+    return kept.length >= 2 ? kept : filtered
   }
-  return items
+  return filtered
 }
 
 function calcStats(items) {
@@ -775,12 +797,12 @@ export default async function handler(req, res) {
       const rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
       const rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
 
-      // Filter by grade, then by rarity — filtered items are used for everything downstream
-      const fA = filterByRarity(filterItems(rawA, grade))
-      const fB = filterByRarity(filterItems(rawB, grade))
-      const fC = filterByRarity(filterItems(rawC, grade))
+      // Filter by grade + variant + rarity — filtered items are used for everything downstream
+      const fA = filterByRarity(filterItems(rawA, grade, processed))
+      const fB = filterByRarity(filterItems(rawB, grade, processed))
+      const fC = filterByRarity(filterItems(rawC, grade, processed))
       // Query D: only include live auctions with 1+ bids (price validated by a buyer)
-      const fDgraded = filterByRarity(filterItems(rawD, grade))
+      const fDgraded = filterByRarity(filterItems(rawD, grade, processed))
       console.log(`[query:D] ${rawD.length} raw auctions → ${fDgraded.length} after grade+rarity filter`)
       const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
