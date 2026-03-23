@@ -112,6 +112,8 @@ const GRADE_EXCLUDE = {
     '2 card', '3 card', '4 card', '5 card', '10 card', '21 card',
     'booster box', 'booster pack', 'sealed',
     'buy 3 get 1', 'buy 2 get 1', 'buy 1 get 1', 'bogo', 'get 1 free', 'get one free',
+    // Signed/autograph — completely different product category
+    'signed', 'autograph', 'auto ', 'oda', 'signature',
   ],
 }
 
@@ -557,11 +559,13 @@ function buildQueries(name, grade, lang) {
   const cardSuffix = hasSetCode || hasCardWord ? '' : ' card'
   const gradeStr = grade && grade !== 'Raw' ? ` ${grade}` : ''
   const base = `${name}${langSuffix}${cardSuffix}${gradeStr}`
+  // For Raw, Query C uses "near mint" to find ungraded NM listings (different from A/B)
+  const gradeExactQ = grade === 'Raw' ? `${name}${langSuffix}${cardSuffix} near mint` : base
   return {
     a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40, sort: 'endingSoonest' },
     b: { q: base, label: 'Recent sold (30d)', weight: 0.45, limit: 15, sort: 'newlyListed' },
     c: {
-      q: base,
+      q: gradeExactQ,
       label: `Grade-exact (${grade || 'raw'})`,
       weight: 0.3,
       limit: 30,
