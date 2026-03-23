@@ -44,8 +44,8 @@ header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:spa
 .shim{position:absolute;inset:0;background:linear-gradient(90deg,var(--s2) 25%,var(--bd) 50%,var(--s2) 75%);background-size:200% 100%;animation:sh 1.4s infinite}
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .rb{padding:13px}
-.rt{font-size:13px;font-weight:700;margin-bottom:2px;line-height:1.3}
-.rm{font-family:monospace;font-size:9px;color:var(--mu);margin-bottom:10px}
+.rt{font-size:13px;font-weight:700;margin-bottom:5px;line-height:1.3;word-break:break-word}
+.rm{font-family:monospace;font-size:9px;color:var(--mu);margin-bottom:13px}
 /* price grid */
 .pg{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:10px}
 .pb{background:var(--s2);border-radius:8px;padding:7px 5px;text-align:center}
@@ -81,6 +81,7 @@ header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:spa
 .cr2{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd)}
 .cr2:last-child{border-bottom:none}
 .cl2{flex:1;min-width:0;display:flex;align-items:center;gap:7px}
+.ctw{min-width:0;overflow:hidden;flex:1}
 .ct2{font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cd2{font-family:monospace;font-size:9px;color:var(--mu);margin-top:1px;display:flex;align-items:center;gap:3px}
 .cp2{font-family:monospace;font-size:11px;color:var(--ac);flex-shrink:0;margin-left:7px}
@@ -550,7 +551,7 @@ function renderResult(el,q,r){
   }).join('');
   const crows=r.comps.map(c=>{
     const nd=c.c!=='USD'?`<span style="font-size:8px;color:var(--mu);margin-left:3px">${fmtN(c.pN,c.c)}</span>`:'';
-    return`<div class="cr2"><div class="cl2"><img class="cth" src="${c.th}" loading="lazy" onerror="this.style.display='none'"/><div><div class="ct2">${escH(c.title)}</div><div class="cd2">${dot(c.k==='p130'?'d1':c.k==='yJP'?'dy':c.k==='mJP'?'dm':c.k==='sak'?'ds':c.k==='buy'?'db':c.k==='tcg'?'dt':c.k==='fan'?'df':c.k==='gld'?'dg':c.k==='pwcc'?'dp':'de')}${c.n} · ${fD(c.date)}</div></div></div><div class="cp2">${fP(c.pU)}${nd}</div></div>`;
+    return`<div class="cr2"><div class="cl2"><img class="cth" src="${c.th}" loading="lazy" onerror="this.style.display='none'"/><div class="ctw"><div class="ct2">${escH(c.title)}</div><div class="cd2">${dot(c.k==='p130'?'d1':c.k==='yJP'?'dy':c.k==='mJP'?'dm':c.k==='sak'?'ds':c.k==='buy'?'db':c.k==='tcg'?'dt':c.k==='fan'?'df':c.k==='gld'?'dg':c.k==='pwcc'?'dp':'de')}${c.n} · ${fD(c.date)}</div></div></div><div class="cp2">${fP(c.pU)}${nd}</div></div>`;
   }).join('');
   const lb=(r.l!=='English'||r.jx)?`<span class="lbg">${r.jx?'JP Exclusive':r.l}</span>`:'';
   const ctl=r.ct==='dbs'?'Dragon Ball TCG':r.ct==='tcg'?'TCG':r.ct==='sg'?'Graded Sports':'Sports Raw';
