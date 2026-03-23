@@ -238,6 +238,90 @@ async function searchMtg(query) {
   })
 }
 
+// ─── GENERAL EBAY FALLBACK ────────────────────────────────────────────────────
+// When official card databases return nothing, search eBay active listings
+// and extract card suggestions from listing titles. Works for any card game.
+const LISTING_NOISE_RE = /\b(psa|bgs|cgc|sgc|beckett)\s*\d+[\d.]*/gi
+const LISTING_JUNK_RE = /\b(lot|bundle|collection|complete set|booster|pack|box|sealed|\d+\s*cards?|\dx|\bx\d+|buy \d|bogo|get \d free)\b/i
+const CARD_NUM_GENERAL_RE = /\b((?:[A-Z]{1,4}-?\d+-\d+[A-Z]?)|(?:\d{1,3}\/\d{1,3}))\b/
+
+function extractCardFromTitle(title) {
+  let name = title
+    .replace(LISTING_NOISE_RE, '')
+    .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b|\bgd\b/gi, '')
+    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b/gi, '')
+    .replace(/\bsingle\b|\btrading\b|\bcard\s*game\b/gi, '')
+    .replace(/\benglish\b|\bjapanese\b|\bkorean\b|\bchinese\b/gi, '')
+    .replace(/[[\]()|#]/g, ' ')
+    .replace(/\s*[-–—]\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+
+  const numMatch = name.match(CARD_NUM_GENERAL_RE)
+  const number = numMatch ? numMatch[1] : ''
+  if (number) name = name.replace(number, '').trim()
+
+  name = name.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
+  // Title-case
+  name = name.replace(/\b\w/g, (c) => c.toUpperCase())
+
+  return { name, number }
+}
+
+async function searchEbayFallback(query) {
+  return withCache(`ebay-fallback:${query.toLowerCase()}`, async () => {
+    const token = await getEbayToken()
+    const sanitized = sanitizeQuery(query)
+    const q = `${sanitized} card`
+    console.log(`[cards:fallback] searching eBay active listings: "${q}"`)
+    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&filter=buyingOptions:{AUCTION|FIXED_PRICE}&sort=newlyListed&limit=40`
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+      },
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) {
+      console.error(`[cards:fallback] eBay search error: ${res.status}`)
+      return []
+    }
+    const data = await res.json()
+    const items = data.itemSummaries || []
+    console.log(`[cards:fallback] eBay returned ${items.length} active listings`)
+
+    const seen = new Set()
+    const cards = []
+    for (const item of items) {
+      const title = item.title || ''
+      if (LISTING_JUNK_RE.test(title)) continue
+
+      const { name, number } = extractCardFromTitle(title)
+      if (!name || name.length < 3) continue
+
+      const dedupeKey = number ? number.toLowerCase() : name.toLowerCase().slice(0, 30)
+      if (seen.has(dedupeKey)) continue
+      seen.add(dedupeKey)
+
+      cards.push({
+        id: `ebay-fb-${item.itemId}`,
+        name,
+        set: number ? number.replace(/-\d+[A-Z]?$/, '') : '',
+        number,
+        rarity: '',
+        game: 'ebay',
+        imageUrl: item.image?.imageUrl || null,
+        largeImageUrl: item.image?.imageUrl || null,
+        searchQuery: number ? `${name} ${number}` : name,
+        viaEbay: true,
+      })
+      if (cards.length >= 5) break
+    }
+    console.log(`[cards:fallback] extracted ${cards.length} unique cards`)
+    return cards
+  })
+}
+
 // ─── EBAY TOKEN ───────────────────────────────────────────────────────────────
 let ebayToken = null
 let ebayTokenExp = 0
@@ -605,6 +689,17 @@ export default async function handler(req, res) {
     else console.error('[cards] unknown/mtg error:', mtg.reason?.message)
 
     if (cards.length) attribution = 'pokemontcg.io & Scryfall'
+  }
+
+  // General eBay fallback — when official databases return nothing and query is 3+ words
+  if (!cards.length && query.split(/\s+/).length >= 3) {
+    console.log('[cards] no catalog results, trying eBay fallback')
+    try {
+      cards = await searchEbayFallback(query)
+      if (cards.length) attribution = 'eBay listings'
+    } catch (err) {
+      console.error('[cards] eBay fallback error:', err.message)
+    }
   }
 
   return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })

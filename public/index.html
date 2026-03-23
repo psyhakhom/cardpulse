@@ -462,7 +462,8 @@ function renderAc(d,q){
     const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='var(--bd)'"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:` <div class="ac-img"></div>`;
     const sub=[c.isSet?null:c.set,c.number,c.rarity].filter(Boolean).join(' \u00b7 ');
     const nameStyle=c.isSet?' style="color:var(--a2)"':'';
-    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div></div>`;
+    const ebayBadge=c.viaEbay?'<span style="font-family:monospace;font-size:8px;color:var(--mu);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px;flex-shrink:0">via eBay</span>':'';
+    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div>${ebayBadge}</div>`;
   }).join('');
   // Japanese exclusive set banner
   if(d.jpExclusive && catalogCards.length>0){
