@@ -345,10 +345,14 @@ function pick(el,g){
   document.getElementById(g==='g'?'gc':'cc').querySelectorAll('.ch').forEach(c=>c.classList.remove('on'));
   el.classList.add('on');
   if(g==='g'){G=el.textContent.trim();console.log('[pick] grade set to',JSON.stringify(G));}else{C=el.textContent.trim();}
+  const q=document.getElementById('si').value.trim();
+  if(q)search(q,'sr');
 }
 function pickL(el){
   document.getElementById('lc').querySelectorAll('.ch').forEach(c=>c.classList.remove('lon'));
   el.classList.add('lon'); L=el.textContent;
+  const q=document.getElementById('si').value.trim();
+  if(q)search(q,'sr');
 }
 
 // CAMERA (scan tab)
