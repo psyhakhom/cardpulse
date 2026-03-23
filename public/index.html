@@ -403,6 +403,17 @@ async function search(q, elId) {
  * the backend changes — only this adapter function does.
  */
 function normalizeApiResponse(data, q) {
+  function cardType(q, g) {
+  const ql = q.toLowerCase();
+  if (['dragon ball','dragonball','dbs','dbscg','fusion world',
+       'd-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8',
+       'bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16',
+       'bt17','bt18','bt19','bt20','fb0','fb1','fb2','fb3',
+       'gogeta','goku','vegeta','frieza'].some(k => ql.includes(k))) return 'dbs';
+  if (['pokemon','charizard','pikachu','mtg','magic ','yugioh',
+       'lorcana','one piece'].some(k => ql.includes(k))) return 'tcg';
+  return g !== 'Raw' ? 'sg' : 'sr';
+}
   const ct = cardType(q, G);
   const jx = ct === 'dbs' && jpEx(q);
 
