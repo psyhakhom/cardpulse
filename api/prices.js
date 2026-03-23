@@ -91,9 +91,18 @@ async function ebaySearch(
 // ─── PRICE STATS ─────────────────────────────────────────────────────────────
 // ─── GRADE FILTERING ─────────────────────────────────────────────────────────
 const GRADE_EXCLUDE = {
-  'Raw': ['psa', 'bgs', 'cgc', 'sgc', 'beckett', 'graded', 'slab', 'black label',
-          'gem mint', 'gem-mint', 'gold alt art', 'gold parallel',
-          'parallel scr', 'rainbow rare', 'hyper rare'],
+  'Raw': [
+    // Graded slabs
+    'psa', 'bgs', 'cgc', 'sgc', 'beckett', 'graded', 'slab', 'black label',
+    'gem mint', 'gem-mint',
+    // Variant listings that skew single-card prices
+    'gold alt art', 'gold parallel', 'parallel scr', 'rainbow rare', 'hyper rare',
+    // Multi-card lots and sealed product
+    'complete set', 'lot of', 'bundle', 'collection lot',
+    'x2', 'x3', 'x4', 'x5', '2x', '3x', '4x', '5x',
+    '2 card', '3 card', '4 card', '5 card', '10 card', '21 card',
+    'booster box', 'booster pack', 'sealed',
+  ],
 }
 
 function gradeMatch(title, grade) {
