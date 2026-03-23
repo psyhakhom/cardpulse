@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CardPulse</title>
+<style>
+:root{--bg:#0a0a0f;--s1:#13131a;--s2:#1c1c27;--bd:#2a2a3a;--ac:#e8ff47;--a2:#47c8ff;--a3:#ff6b6b;--tx:#f0f0f8;--mu:#6b6b85;--gn:#4fffb0;--rd:#ff5e5e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif}
+#app{max-width:480px;margin:0 auto;display:flex;flex-direction:column;min-height:100vh}
+header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--bd);background:var(--bg);position:sticky;top:0;z-index:10}
+.logo{font-size:19px;font-weight:800;letter-spacing:-1px}.logo b{color:var(--ac)}
+.logo-sub{font-family:monospace;font-size:9px;color:var(--mu);margin-top:1px}
+.htag{font-family:monospace;font-size:9px;color:var(--mu);background:var(--s2);border:1px solid var(--bd);padding:2px 7px;border-radius:20px}
+.tabs{display:flex;border-bottom:1px solid var(--bd);background:var(--bg);position:sticky;top:46px;z-index:10}
+.tab{flex:1;padding:7px 2px;font-size:10px;font-weight:700;letter-spacing:.04em;background:none;border:none;color:var(--mu);cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase}
+.tab.on{color:var(--ac);border-bottom-color:var(--ac)}
+.pane{padding:12px 16px 32px;display:none}.pane.on{display:block}
+/* inputs */
+.sw{position:relative;margin-bottom:10px}
+.si{width:100%;background:var(--s1);border:1px solid var(--bd);border-radius:10px;padding:11px 44px 11px 13px;font-size:15px;color:var(--tx);outline:none}
+.si:focus{border-color:var(--ac)}.si::placeholder{color:var(--mu)}
+.sb{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--ac);border:none;border-radius:7px;width:30px;height:30px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.sb svg{width:15px;height:15px}
+/* filter chips */
+.fr{display:flex;gap:5px;margin-bottom:9px;flex-wrap:wrap;align-items:center}
+.fl{font-family:monospace;font-size:9px;color:var(--mu);min-width:26px}
+.fg{display:flex;gap:3px;flex-wrap:wrap}
+.ch{font-family:monospace;font-size:10px;padding:3px 8px;background:var(--s1);border:1px solid var(--bd);border-radius:20px;color:var(--mu);cursor:pointer;white-space:nowrap}
+.ch.on{background:var(--ac);border-color:var(--ac);color:#000;font-weight:700}
+.ch.lon{background:var(--a2);border-color:var(--a2);color:#000;font-weight:700}
+/* loading */
+.ld{display:flex;flex-direction:column;align-items:center;padding:36px 0;gap:10px}
+.sp{width:30px;height:30px;border:2px solid var(--bd);border-top-color:var(--ac);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ld p{font-family:monospace;font-size:10px;color:var(--mu)}
+/* result card */
+.rc{background:var(--s1);border:1px solid var(--bd);border-radius:13px;overflow:hidden;margin-bottom:10px;animation:fu .2s ease}
+@keyframes fu{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.rh{position:relative;background:var(--s2);display:flex;align-items:center;justify-content:center;min-height:150px;overflow:hidden}
+.rh img{width:100%;max-height:200px;object-fit:contain;display:block;transition:opacity .3s}
+.rhl{position:absolute;bottom:5px;right:7px;font-family:monospace;font-size:8px;color:var(--mu);background:rgba(0,0,0,.6);padding:2px 5px;border-radius:3px}
+.shim{position:absolute;inset:0;background:linear-gradient(90deg,var(--s2) 25%,var(--bd) 50%,var(--s2) 75%);background-size:200% 100%;animation:sh 1.4s infinite}
+@keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.rb{padding:13px}
+.rt{font-size:13px;font-weight:700;margin-bottom:2px;line-height:1.3}
+.rm{font-family:monospace;font-size:9px;color:var(--mu);margin-bottom:10px}
+/* price grid */
+.pg{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:10px}
+.pb{background:var(--s2);border-radius:8px;padding:7px 5px;text-align:center}
+.pb .pl{font-family:monospace;font-size:8px;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px}
+.pb .pv{font-size:17px;font-weight:800}
+.pv.lo{color:var(--a2)}.pv.av{color:var(--ac);font-size:21px}.pv.hi{color:var(--a3)}
+/* confidence ring */
+.crw{display:flex;align-items:center;gap:9px;background:var(--s2);border-radius:9px;padding:9px 11px;margin-bottom:10px}
+.cr{position:relative;width:42px;height:42px;flex-shrink:0}
+.cr svg{width:42px;height:42px;transform:rotate(-90deg)}
+.cr .cl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:10px;font-weight:700}
+.crt{font-size:12px;font-weight:700;margin-bottom:2px}
+.crs{font-family:monospace;font-size:9px;color:var(--mu);line-height:1.5}
+/* source breakdown */
+.wh{font-family:monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;display:flex;justify-content:space-between}
+.wh .wa{font-size:10px;color:var(--ac);text-transform:none}
+.wr{margin-bottom:5px}
+.wrt{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.wsn{font-family:monospace;font-size:10px;color:var(--tx);display:flex;align-items:center;gap:5px}
+.wsp{font-family:monospace;font-size:9px;color:var(--mu);display:flex;align-items:center;gap:5px}
+.wpc{font-family:monospace;font-size:9px;color:var(--mu);min-width:26px;text-align:right}
+.wtr{height:2px;background:var(--bd);border-radius:2px;overflow:hidden}
+.wf{height:100%;border-radius:2px;transition:width .5s}
+.ndb{font-family:monospace;font-size:8px;color:var(--mu);background:var(--s2);border:1px solid var(--bd);padding:1px 4px;border-radius:3px;margin-left:4px}
+/* trends */
+.tr{display:flex;gap:5px;margin-bottom:10px}
+.tb{flex:1;background:var(--s2);border-radius:8px;padding:7px 9px;display:flex;align-items:center;justify-content:space-between}
+.tl{font-family:monospace;font-size:9px;color:var(--mu)}
+.tv{font-family:monospace;font-size:11px;font-weight:500}
+.tv.up{color:var(--gn)}.tv.dn{color:var(--rd)}.tv.fl{color:var(--mu)}
+/* comps */
+.ch2{font-family:monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;display:flex;justify-content:space-between}
+.cr2{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--bd)}
+.cr2:last-child{border-bottom:none}
+.cl2{flex:1;min-width:0;display:flex;align-items:center;gap:7px}
+.ct2{font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cd2{font-family:monospace;font-size:9px;color:var(--mu);margin-top:1px;display:flex;align-items:center;gap:3px}
+.cp2{font-family:monospace;font-size:11px;color:var(--ac);flex-shrink:0;margin-left:7px}
+.cth{width:26px;height:36px;border-radius:3px;object-fit:cover;background:var(--s2);border:1px solid var(--bd);flex-shrink:0}
+/* add btn */
+.acb{width:100%;margin-top:9px;padding:9px;background:none;border:1px solid var(--ac);border-radius:9px;color:var(--ac);font-size:11px;font-weight:700;cursor:pointer}
+/* banners */
+.fxb{background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:6px 9px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;font-family:monospace;font-size:9px;color:var(--mu)}
+.fxb strong{color:var(--a2)}
+.tmb{background:rgba(186,117,23,.12);border:1px solid rgba(186,117,23,.35);border-radius:7px;padding:6px 9px;margin-bottom:9px;font-family:monospace;font-size:9px;color:#BA7517}
+.jpb{background:rgba(255,75,75,.10);border:1px solid rgba(255,75,75,.3);border-radius:7px;padding:7px 10px;margin-bottom:10px;font-family:monospace;font-size:9px;color:#ff6b6b;line-height:1.5}
+.lbg{font-family:monospace;font-size:8px;padding:1px 5px;border-radius:3px;border:1px solid var(--bd);color:var(--a2);margin-left:4px}
+.div{height:1px;background:var(--bd);margin:10px 0}
+/* dots */
+.dot{display:inline-block;width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.de{background:#e53238}.dt{background:#1a9cdc}.d1{background:#f7931e}.dp{background:#a855f7}.dg{background:#22c55e}.df{background:#3b82f6}
+.dy{background:#ff4b4b}.dm{background:#e91e8c}.ds{background:#f472b6}.db{background:#ff8c00}
+.fe{background:#e53238}.ft{background:#1a9cdc}.f1{background:#f7931e}.fp{background:#a855f7}.fg2{background:#22c55e}.ff{background:#3b82f6}
+.fy{background:#ff4b4b}.fm{background:#e91e8c}.fs{background:#f472b6}.fb{background:#ff8c00}
+/* camera */
+.cw{background:var(--s1);border:1px solid var(--bd);border-radius:13px;overflow:hidden;margin-bottom:11px;position:relative;aspect-ratio:4/3}
+video{width:100%;height:100%;object-fit:cover;display:block}
+.co{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.cf{width:175px;height:110px;position:relative;border:2px solid var(--ac);border-radius:8px;box-shadow:0 0 0 2000px rgba(0,0,0,.5)}
+.cfl{position:absolute;left:0;right:0;height:2px;background:var(--ac);top:0;animation:sc 1.8s ease-in-out infinite}
+@keyframes sc{0%,100%{top:0}50%{top:calc(100% - 2px)}}
+.chi{font-family:monospace;font-size:9px;color:var(--ac);letter-spacing:.05em}
+.cp{position:absolute;inset:0;background:var(--s2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px}
+.cp p{font-family:monospace;font-size:10px;color:var(--mu)}
+.csb{background:var(--ac);color:#000;border:none;border-radius:9px;padding:8px 18px;font-weight:700;font-size:12px;cursor:pointer}
+.od{display:flex;align-items:center;gap:9px;margin:7px 0 10px;font-family:monospace;font-size:9px;color:var(--mu)}
+.od::before,.od::after{content:'';flex:1;height:1px;background:var(--bd)}
+/* history */
+.hi{background:var(--s1);border:1px solid var(--bd);border-radius:11px;padding:11px 13px;margin-bottom:7px;display:flex;align-items:center;cursor:pointer;animation:fu .2s ease}
+.hi:active{border-color:var(--ac)}
+.hn{font-size:11px;font-weight:700}
+.hm{font-family:monospace;font-size:9px;color:var(--mu);margin-top:2px}
+.hp{font-family:monospace;font-size:12px;color:var(--ac);font-weight:700}
+.ht{font-family:monospace;font-size:9px;color:var(--mu);margin-top:2px}
+.clb{width:100%;background:none;border:1px solid var(--bd);border-radius:9px;padding:8px;color:var(--mu);font-family:monospace;font-size:10px;cursor:pointer;margin-top:5px}
+.emp{text-align:center;padding:36px 0}
+.emp p{font-family:monospace;font-size:10px;color:var(--mu);margin-top:7px;line-height:1.6}
+/* collection */
+.colhd{background:var(--s2);border:1px solid var(--bd);border-radius:11px;padding:13px 15px;margin-bottom:12px}
+.cvl{font-family:monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px}
+.ctot{font-size:30px;font-weight:800;letter-spacing:-1px;color:var(--ac);margin-bottom:7px}
+.cst{display:flex;gap:14px}
+.css{font-family:monospace;font-size:9px;color:var(--mu)}
+.css span{color:var(--tx);font-weight:700}
+.cac{display:flex;gap:7px;margin-bottom:12px}
+.cbtn{flex:1;padding:9px 6px;border-radius:9px;border:1px solid var(--bd);background:var(--s1);color:var(--tx);font-size:10px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px}
+.cbtn svg{width:13px;height:13px;flex-shrink:0}
+.cbtn.pr{background:var(--ac);border-color:var(--ac);color:#000}
+.ci{background:var(--s1);border:1px solid var(--bd);border-radius:11px;padding:9px 11px;margin-bottom:7px;display:flex;align-items:center;gap:9px;animation:fu .2s ease}
+.cith{width:30px;height:41px;border-radius:3px;object-fit:cover;background:var(--s2);border:1px solid var(--bd);flex-shrink:0}
+.cii{flex:1;min-width:0}
+.cin{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cim{font-family:monospace;font-size:9px;color:var(--mu);margin-top:2px}
+.cip{text-align:right;flex-shrink:0}
+.civ{font-family:monospace;font-size:12px;color:var(--ac);font-weight:700}
+.cipa{font-family:monospace;font-size:9px;color:var(--mu);margin-top:2px}
+.cig{font-family:monospace;font-size:9px;margin-top:1px}
+.cig.up{color:var(--gn)}.cig.dn{color:var(--rd)}
+.cdel{background:none;border:none;color:var(--mu);cursor:pointer;padding:3px;font-size:15px;flex-shrink:0}
+/* TCG GROUP CARDS */
+.tcg-group{background:var(--s1);border:1px solid var(--bd);border-radius:13px;overflow:hidden;margin-bottom:12px;animation:fu .25s ease}
+.tcg-group-header{padding:13px 14px 10px;display:flex;align-items:center;justify-content:space-between;cursor:pointer}
+.tcg-group-left{display:flex;align-items:center;gap:10px}
+.tcg-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.tcg-group-name{font-size:14px;font-weight:700}
+.tcg-group-sub{font-family:monospace;font-size:9px;color:var(--mu);margin-top:2px}
+.tcg-group-right{text-align:right}
+.tcg-group-val{font-family:monospace;font-size:16px;font-weight:700;color:var(--ac)}
+.tcg-group-gain{font-family:monospace;font-size:9px;margin-top:2px}
+.tcg-group-gain.up{color:var(--gn)}.tcg-group-gain.dn{color:var(--rd)}
+.tcg-divider{height:1px;background:var(--bd);margin:0 14px}
+.tcg-top3{padding:10px 14px 13px}
+.tcg-top3-label{font-family:monospace;font-size:9px;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.tcg-top3-cards{display:flex;gap:8px}
+.tcg-card-slot{flex:1;background:var(--s2);border-radius:9px;padding:8px 7px;display:flex;flex-direction:column;align-items:center;gap:5px;min-width:0}
+.tcg-card-img{width:100%;aspect-ratio:2.5/3.5;object-fit:cover;border-radius:5px;background:var(--bd);display:block}
+.tcg-card-name{font-size:9px;font-weight:700;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.tcg-card-price{font-family:monospace;font-size:10px;color:var(--ac);font-weight:700}
+.tcg-card-grade{font-family:monospace;font-size:8px;color:var(--mu)}
+.tcg-see-all{display:block;width:100%;padding:8px;background:none;border:none;border-top:1px solid var(--bd);font-family:monospace;font-size:10px;color:var(--mu);cursor:pointer;text-align:center}
+.tcg-see-all:hover{color:var(--tx)}
+/* expanded card list inside group */
+.tcg-expanded{display:none;padding:0 14px 10px}
+.tcg-expanded.open{display:block}
+/* scan overlay for collection */
+.csw{background:var(--s1);border:2px solid var(--ac);border-radius:13px;overflow:hidden;margin-bottom:12px;position:relative}
+.cso{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;pointer-events:none}
+.csf{width:210px;height:130px;position:relative;border:2px solid var(--ac);border-radius:7px;box-shadow:0 0 0 2000px rgba(0,0,0,.5)}
+.csfl{position:absolute;left:0;right:0;height:2px;background:var(--ac);top:0;animation:sc 1.6s ease-in-out infinite}
+.csst{font-family:monospace;font-size:9px;color:var(--ac);letter-spacing:.05em}
+.csct{font-family:monospace;font-size:10px;font-weight:700;color:var(--tx);background:rgba(0,0,0,.7);padding:3px 9px;border-radius:20px}
+.cssp{pointer-events:all;background:rgba(0,0,0,.7);border:1px solid var(--a3);color:var(--a3);font-family:monospace;font-size:9px;padding:5px 14px;border-radius:20px;cursor:pointer}
+/* modal */
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:100;padding:18px}
+.mob{background:var(--s1);border:1px solid var(--bd);border-radius:14px;padding:18px;width:100%;max-width:300px}
+.mot{font-size:14px;font-weight:700;margin-bottom:4px}
+.mos{font-family:monospace;font-size:9px;color:var(--mu);margin-bottom:12px}
+.moi{width:100%;background:var(--s2);border:1px solid var(--bd);border-radius:9px;padding:9px 12px;font-size:15px;color:var(--tx);outline:none;margin-bottom:10px}
+.moi:focus{border-color:var(--ac)}
+.mobs{display:flex;gap:7px}
+.mobs button{flex:1;padding:9px;border-radius:9px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:11px;font-weight:700;cursor:pointer}
+.mobs button.ok{background:var(--ac);border-color:var(--ac);color:#000}
+</style>
+</head>
+<body>
+<div id="app">
+<header>
+  <div>
+    <div class="logo">Card<b>Pulse</b></div>
+    <div class="logo-sub">Real-time pricing · 6 sources</div>
+  </div>
+  <div class="htag">v1.0 · LIVE</div>
+</header>
+<div class="tabs">
+  <button class="tab on" onclick="go('search')">Search</button>
+  <button class="tab" onclick="go('scan')">Scan</button>
+  <button class="tab" onclick="go('collection')">Collection</button>
+  <button class="tab" onclick="go('history')">History</button>
+</div>
+
+<!-- SEARCH -->
+<div id="p-search" class="pane on">
+  <div class="sw">
+    <input class="si" id="si" placeholder="Player · year · set · card #" autocomplete="off" onkeydown="if(event.key==='Enter')doSearch()"/>
+    <button class="sb" onclick="doSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
+  </div>
+  <div class="fr"><span class="fl">Grade</span><div class="fg" id="gc">
+    <button class="ch on" onclick="pick(this,'g')">Raw</button>
+    <button class="ch" onclick="pick(this,'g')">PSA 9</button>
+    <button class="ch" onclick="pick(this,'g')">PSA 10</button>
+    <button class="ch" onclick="pick(this,'g')">BGS 9.5</button>
+  </div></div>
+  <div class="fr"><span class="fl">Cond</span><div class="fg" id="cc">
+    <button class="ch on" onclick="pick(this,'c')">Any</button>
+    <button class="ch" onclick="pick(this,'c')">NM</button>
+    <button class="ch" onclick="pick(this,'c')">EX</button>
+    <button class="ch" onclick="pick(this,'c')">VG</button>
+  </div></div>
+  <div class="fr"><span class="fl">Lang</span><div class="fg" id="lc">
+    <button class="ch lon" onclick="pickL(this)">English</button>
+    <button class="ch" onclick="pickL(this)">Japanese</button>
+    <button class="ch" onclick="pickL(this)">Korean</button>
+    <button class="ch" onclick="pickL(this)">Chinese</button>
+    <button class="ch" onclick="pickL(this)">Other</button>
+  </div></div>
+  <div id="sr"></div>
+</div>
+
+<!-- SCAN -->
+<div id="p-scan" class="pane">
+  <div class="cw">
+    <video id="sv" autoplay playsinline muted></video>
+    <div class="co" id="so" style="display:none">
+      <div class="cf"><div class="cfl"></div></div>
+      <div class="chi">ALIGN BARCODE OR CARD TEXT</div>
+    </div>
+    <div class="cp" id="sp">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <p>Camera off</p>
+      <button class="csb" onclick="camOn()">Enable Camera</button>
+    </div>
+  </div>
+  <div class="od">or type manually</div>
+  <div class="sw">
+    <input class="si" id="ssi" placeholder="Enter card details..." autocomplete="off" onkeydown="if(event.key==='Enter')doScanSearch()"/>
+    <button class="sb" onclick="doScanSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
+  </div>
+  <div id="ssr"></div>
+</div>
+
+<!-- COLLECTION -->
+<div id="p-collection" class="pane">
+  <div class="colhd">
+    <div class="cvl">Portfolio value</div>
+    <div class="ctot" id="ctot">$0.00</div>
+    <div class="cst">
+      <div class="css"><span id="ccount">0</span> cards</div>
+      <div class="css">Paid <span id="cpaid">$0.00</span></div>
+      <div class="css" id="cgain"></div>
+    </div>
+  </div>
+  <div class="cac">
+    <button class="cbtn pr" onclick="startCollScan()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      Scan cards
+    </button>
+    <button class="cbtn" onclick="go('search');showHint()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      Manual add
+    </button>
+    <button class="cbtn" onclick="exportCSV()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      CSV
+    </button>
+  </div>
+  <div id="coll-scan-section" style="display:none">
+    <div class="csw">
+      <video id="cv" autoplay playsinline muted style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block"></video>
+      <div class="cso">
+        <div class="csf"><div class="csfl"></div></div>
+        <div class="csst" id="csst">HOLD CARD IN FRAME</div>
+        <div class="csct" id="csct">0 cards scanned</div>
+        <button class="cssp" onclick="stopCollScan()">Done scanning</button>
+      </div>
+    </div>
+    <div class="od">or add manually</div>
+    <div class="sw">
+      <input class="si" id="cmi" placeholder="Card name · grade" autocomplete="off" onkeydown="if(event.key==='Enter')addManual()"/>
+      <button class="sb" onclick="addManual()"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+    </div>
+  </div>
+  <div id="cl"></div>
+</div>
+
+<!-- HISTORY -->
+<div id="p-history" class="pane">
+  <div id="hl"></div>
+</div>
+
+<!-- MODAL -->
+<div class="mo" id="modal" style="display:none">
+  <div class="mob">
+    <div class="mot" id="mtitle">Add to collection</div>
+    <div class="mos">What did you pay? (optional)</div>
+    <input type="number" class="moi" id="mpaid" placeholder="e.g. 45.00" step="0.01" min="0"/>
+    <div class="mobs">
+      <button onclick="closeModal(false)">Skip</button>
+      <button class="ok" onclick="closeModal(true)">Add card</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// STATE
+let G='Raw',C='Any',L='English',stream=null,collStream=null,collN=0,pending=null,hintShown=false;
+let hist=JSON.parse(localStorage.getItem('cph')||'[]');
+let coll=JSON.parse(localStorage.getItem('cpc')||'[]');
+
+// NAV
+function go(t){
+  ['search','scan','collection','history'].forEach((n,i)=>{
+    document.getElementById('p-'+n).classList.toggle('on',n===t);
+    document.querySelectorAll('.tab')[i].classList.toggle('on',n===t);
+  });
+  if(t==='history')renderHist();
+  if(t==='collection')renderColl();
+  if(t!=='scan'&&stream)camOff();
+  if(t!=='collection'&&collStream)stopCollScan();
+}
+
+// FILTERS
+function pick(el,g){
+  document.getElementById(g==='g'?'gc':'cc').querySelectorAll('.ch').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on');
+  if(g==='g')G=el.textContent; else C=el.textContent;
+}
+function pickL(el){
+  document.getElementById('lc').querySelectorAll('.ch').forEach(c=>c.classList.remove('lon'));
+  el.classList.add('lon'); L=el.textContent;
+}
+
+// CAMERA (scan tab)
+async function camOn(){
+  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    document.getElementById('sv').srcObject=stream;
+    document.getElementById('sp').style.display='none';
+    document.getElementById('so').style.display='flex';
+  }catch(e){alert('Camera unavailable. Use text search.');}
+}
+function camOff(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  document.getElementById('sp').style.display='flex';
+  document.getElementById('so').style.display='none';
+}
+
+// SEARCH
+function doSearch(){const q=document.getElementById('si').value.trim();if(q)search(q,'sr');}
+function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
+
+// Toggle between real API and mock data.
+// Set USE_REAL_API = true once your Vercel backend is deployed.
+const USE_REAL_API = false;
+
+async function search(q, elId) {
+  const el = document.getElementById(elId);
+  el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
+  if (USE_REAL_API) {
+    try {
+      const params = new URLSearchParams({ q, grade: G, lang: L });
+      const res = await fetch(`/api/prices?${params}`);
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const r = normalizeApiResponse(data, q);
+      renderResult(el, q, r);
+      saveHist(q, r);
+    } catch(err) {
+      el.innerHTML = `<div class="ld"><p style="color:var(--rd);text-align:center;font-family:monospace;font-size:11px">Could not load prices.<br>${escH(err.message)}</p></div>`;
+    }
+  } else {
+    // Mock mode — remove this block once USE_REAL_API = true
+    setTimeout(() => {
+      const r = price(q, G, C, L);
+      renderResult(el, q, r);
+      saveHist(q, r);
+    }, 1100 + Math.random() * 700);
+  }
+}
+
+/**
+ * Normalise the real API response into the same shape
+ * that renderResult() and the rest of the UI expect.
+ * This means the frontend never needs to change when
+ * the backend changes — only this adapter function does.
+ */
+function normalizeApiResponse(data, q) {
+  const ct = cardType(q, G);
+  const jx = ct === 'dbs' && jpEx(q);
+
+  // Map the three eBay query strategies into the source breakdown format
+  const sd = (data.sourceBreakdown || []).map((s, i) => {
+    const colors = ['de', 'de', 'de']; // all eBay queries use the same eBay red dot
+    const fills  = ['fe', 'fe', 'fe'];
+    return {
+      n:  s.label,
+      ok: s.available,
+      ew: s.available ? Math.round(s.weight * 100) : 0,
+      aU: s.avg,
+      aN: s.avg,   // USD only — no native currency for eBay
+      c:  'USD',
+      d:  colors[i] || 'de',
+      f:  fills[i]  || 'fe',
+    };
+  });
+
+  // Comps from real API
+  const comps = (data.comps || []).map(c => ({
+    title: c.title,
+    pU:    c.price,
+    pN:    c.price,
+    c:     'USD',
+    k:     'ebay',
+    n:     'eBay',
+    date:  c.date ? new Date(c.date).getTime() : Date.now(),
+    th:    c.image || null,
+    url:   c.url   || null,
+  }));
+
+  return {
+    lo:      data.lo,
+    avg:     data.avg,
+    hi:      data.hi,
+    t30:     data.trend30 || 0,
+    t90:     data.trend90 || 0,
+    conf:    data.confidence,
+    ct,
+    sd,
+    thin:    false,
+    jx,
+    showFX:  false,
+    l:       L,
+    img:     data.imageUrl || getImg(q),
+    comps,
+  };
+}
+
+// SOURCE CONFIG
+const SC={
+  en_sr:[{k:'ebay',n:'eBay',w:.55,d:'de',f:'fe',c:'USD'},{k:'p130',n:'130point',w:.25,d:'d1',f:'f1',c:'USD'},{k:'pwcc',n:'PWCC',w:.20,d:'dp',f:'fp',c:'USD'}],
+  en_sg:[{k:'ebay',n:'eBay',w:.40,d:'de',f:'fe',c:'USD'},{k:'p130',n:'130point',w:.30,d:'d1',f:'f1',c:'USD'},{k:'pwcc',n:'PWCC',w:.20,d:'dp',f:'fp',c:'USD'},{k:'gld',n:'Goldin',w:.10,d:'dg',f:'fg2',c:'USD'}],
+  en_tcg:[{k:'tcg',n:'TCGPlayer',w:.50,d:'dt',f:'ft',c:'USD'},{k:'ebay',n:'eBay',w:.30,d:'de',f:'fe',c:'USD'},{k:'fan',n:'Fanatics',w:.20,d:'df',f:'ff',c:'USD'}],
+  en_dbs:[{k:'tcg',n:'TCGPlayer',w:.35,d:'dt',f:'ft',c:'USD'},{k:'yJP',n:'Yahoo JP',w:.30,d:'dy',f:'fy',c:'JPY'},{k:'ebay',n:'eBay',w:.25,d:'de',f:'fe',c:'USD'},{k:'mJP',n:'Mercari JP',w:.10,d:'dm',f:'fm',c:'JPY'}],
+  ja_sr:[{k:'yJP',n:'Yahoo JP',w:.55,d:'dy',f:'fy',c:'JPY'},{k:'mJP',n:'Mercari JP',w:.25,d:'dm',f:'fm',c:'JPY'},{k:'ebay',n:'eBay (intl)',w:.20,d:'de',f:'fe',c:'USD'}],
+  ja_sg:[{k:'yJP',n:'Yahoo JP',w:.45,d:'dy',f:'fy',c:'JPY'},{k:'p130',n:'130point',w:.25,d:'d1',f:'f1',c:'USD'},{k:'mJP',n:'Mercari JP',w:.20,d:'dm',f:'fm',c:'JPY'},{k:'pwcc',n:'PWCC',w:.10,d:'dp',f:'fp',c:'USD'}],
+  ja_tcg:[{k:'yJP',n:'Yahoo JP',w:.40,d:'dy',f:'fy',c:'JPY'},{k:'sak',n:'Sakura',w:.30,d:'ds',f:'fs',c:'JPY'},{k:'mJP',n:'Mercari JP',w:.20,d:'dm',f:'fm',c:'JPY'},{k:'ebay',n:'eBay (intl)',w:.10,d:'de',f:'fe',c:'USD'}],
+  ja_dbs:[{k:'yJP',n:'Yahoo JP',w:.45,d:'dy',f:'fy',c:'JPY'},{k:'buy',n:'Buyee',w:.25,d:'db',f:'fb',c:'JPY'},{k:'mJP',n:'Mercari JP',w:.20,d:'dm',f:'fm',c:'JPY'},{k:'ebay',n:'eBay (intl)',w:.10,d:'de',f:'fe',c:'USD'}],
+  oth:[{k:'ebay',n:'eBay (intl)',w:1,d:'de',f:'fe',c:'USD'}]
+};
+const FX={JPY:149.5,KRW:1320,CNY:7.24,USD:1};
+
+function cardType(q,g){
+  const ql=q.toLowerCase();
+  if(['dragon ball','dragonball','dbs','dbscg','fusion world','d-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8','bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16','bt17','bt18','bt19','bt20'].some(k=>ql.includes(k)))return'dbs';
+  if(['pokemon','charizard','pikachu','mtg','magic ','yugioh','lorcana','one piece'].some(k=>ql.includes(k)))return'tcg';
+  return g!=='Raw'?'sg':'sr';
+}
+function jpEx(q){return['heroes','hero ','dbh','divers','xros','cross spirits'].some(k=>q.toLowerCase().includes(k));}
+function cfgKey(l,ct,jx){
+  if(jx)return'ja_dbs';
+  const lk=l==='Japanese'?'ja':l==='Korean'||l==='Chinese'||l==='Other'?'oth':'en';
+  return lk==='oth'?'oth':lk+'_'+ct;
+}
+function toUSD(p,c){return c==='USD'?p:p/(FX[c]||1);}
+function fmtN(p,c){if(c==='JPY')return'¥'+Math.round(p).toLocaleString();if(c==='KRW')return'₩'+Math.round(p).toLocaleString();return'$'+p.toFixed(2);}
+function fP(v){return'$'+v.toFixed(2);}
+function fD(d){const df=Math.floor((Date.now()-d)/86400000);return df===0?'Today':df===1?'Yesterday':df+'d ago';}
+function getImg(q){return'https://picsum.photos/seed/'+(Math.abs(q.split('').reduce((a,c)=>a+c.charCodeAt(0),0))%1000)+'/300/420';}
+
+function srcData(baseUSD,k,c){
+  const av={ebay:1,p130:.85,pwcc:.7,tcg:.9,gld:.6,fan:.75,yJP:.8,mJP:.7,sak:.75,buy:.7};
+  if(Math.random()>(av[k]||.7))return null;
+  const va={ebay:.12,p130:.08,pwcc:.1,tcg:.06,gld:.15,fan:.1,yJP:.14,mJP:.13,sak:.09,buy:.12};
+  const bi={ebay:1,p130:1.02,pwcc:1.05,tcg:.95,gld:1.1,fan:.98,yJP:.92,mJP:.9,sak:.94,buy:.91};
+  const fx=FX[c]||1,bn=baseUSD*fx,v=va[k]||.1,b=bi[k]||1;
+  const na=Array.from({length:8},()=>bn*b*(1-v+Math.random()*v*2)).sort((a,b)=>a-b).slice(1,-1);
+  const avg=na.reduce((a,c)=>a+c,0)/na.length;
+  return{aN:avg,lN:na[0],hN:na[na.length-1],aU:toUSD(avg,c),lU:toUSD(na[0],c),hU:toUSD(na[na.length-1],c),c};
+}
+
+function price(q,g,cond,l){
+  const ct=cardType(q,g),jx=ct==='dbs'&&jpEx(q),ck=cfgKey(l,ct,jx),srcs=SC[ck];
+  const thin=l!=='English'&&l!=='Japanese'&&!jx;
+  const base=(ct==='tcg'||ct==='dbs'?15+Math.random()*120:8+Math.random()*180)*(g==='PSA 10'?3.2:g==='PSA 9'?1.8:g==='BGS 9.5'?2.4:1);
+  const sr=srcs.map(s=>({...s,data:srcData(base,s.k,s.c)}));
+  const ac=sr.filter(s=>s.data);
+  const tw=ac.reduce((a,s)=>a+s.w,0)||1;
+  const wA=ac.reduce((a,s)=>a+s.data.aU*s.w,0)/tw;
+  const wL=ac.reduce((a,s)=>a+s.data.lU*s.w,0)/tw;
+  const wH=ac.reduce((a,s)=>a+s.data.hU*s.w,0)/tw;
+  const sd=sr.map(s=>({...s,ok:!!s.data,ew:s.data?Math.round(s.w/tw*100):0,aU:s.data?s.data.aU:null,aN:s.data?s.data.aN:null}));
+  const t30=parseFloat(((Math.random()-.45)*28).toFixed(1));
+  const t90=parseFloat(((Math.random()-.42)*40).toFixed(1));
+  const cds=['NM-MT','NM','EX-MT','EX','VG-EX','VG'];
+  const comps=Array.from({length:10},(_,i)=>{
+    const src=ac[i%ac.length],da=Math.floor(i*3.2+Math.random()*4),pN=src.data.aN*(.8+Math.random()*.4);
+    return{title:q.split(' ').slice(0,4).join(' ')+' '+(g==='Raw'?cds[Math.floor(Math.random()*cds.length)]:g),
+      pU:toUSD(pN,src.c),pN,c:src.c,k:src.k,n:src.n,date:Date.now()-da*86400000,
+      th:'https://picsum.photos/seed/'+(Math.floor(Math.random()*9000)+1000)+'/60/84'};
+  }).sort((a,b)=>b.date-a.date);
+  const conf=Math.min(100,thin?30:Math.round(ac.length/srcs.length*70+30));
+  return{lo:wL,avg:wA,hi:wH,t30,t90,comps,conf,ct,sd,thin,jx,showFX:ac.some(s=>s.c==='JPY'),l,img:getImg(q)};
+}
+
+function dot(cls){return'<span class="dot '+cls+'"></span>';}
+function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function renderResult(el,q,r){
+  const t3c=r.t30>0?'up':r.t30<0?'dn':'fl',t9c=r.t90>0?'up':r.t90<0?'dn':'fl';
+  const t3a=r.t30>0?'↑':r.t30<0?'↓':'→',t9a=r.t90>0?'↑':r.t90<0?'↓':'→';
+  const fx=r.showFX?`<div class="fxb"><span>¥ → $ at <strong>¥149.5</strong> · All prices in USD</span><span style="font-size:8px;text-align:right">Rate updates<br>at search time</span></div>`:'';
+  const tm=r.thin?`<div class="tmb">⚠ Thin market — limited comps for ${r.l} cards.</div>`:'';
+  const jb=r.jx?`<div class="jpb"><strong>Japan-exclusive set.</strong> Auto-routed to Yahoo JP, Buyee, Mercari JP. Prices converted from ¥.</div>`:'';
+  const conf=r.conf,cc=conf>=75?'var(--gn)':conf>=50?'var(--ac)':'#f7931e';
+  const rad=17,circ=2*Math.PI*rad,dash=(conf/100)*circ;
+  const ring=`<div class="crw"><div class="cr"><svg viewBox="0 0 44 44"><circle class="dot" cx="22" cy="22" r="${rad}" style="fill:none;stroke:var(--bd);stroke-width:4"/><circle cx="22" cy="22" r="${rad}" style="fill:none;stroke:${cc};stroke-width:4;stroke-linecap:round;stroke-dasharray:${dash.toFixed(1)} ${circ.toFixed(1)};transform:rotate(-90deg);transform-origin:50% 50%"/></svg><div class="cl" style="color:${cc}">${conf}%</div></div><div><div class="crt">${conf>=75?'High confidence':conf>=50?'Moderate confidence':'Low confidence'}</div><div class="crs">${r.sd.filter(s=>s.ok).length}/${r.sd.length} sources · ${r.comps.length} comps</div></div></div>`;
+  const wrows=r.sd.map(s=>{
+    if(!s.ok)return`<div class="wr"><div class="wrt"><span class="wsn">${dot(s.d)}${s.n}<span class="ndb">no data</span></span><span class="wpc" style="color:var(--bd)">—</span></div><div class="wtr"><div class="wf ${s.f}" style="width:0%"></div></div></div>`;
+    const ns=s.c!=='USD'?` <span style="font-size:8px;color:var(--mu)">(${fmtN(s.aN,s.c)})</span>`:'';
+    return`<div class="wr"><div class="wrt"><span class="wsn">${dot(s.d)}${s.n}</span><span class="wsp">${fP(s.aU)}${ns}<span class="wpc">${s.ew}%</span></span></div><div class="wtr"><div class="wf ${s.f}" style="width:${s.ew}%"></div></div></div>`;
+  }).join('');
+  const crows=r.comps.map(c=>{
+    const nd=c.c!=='USD'?`<span style="font-size:8px;color:var(--mu);margin-left:3px">${fmtN(c.pN,c.c)}</span>`:'';
+    return`<div class="cr2"><div class="cl2"><img class="cth" src="${c.th}" loading="lazy" onerror="this.style.display='none'"/><div><div class="ct2">${escH(c.title)}</div><div class="cd2">${dot(c.k==='p130'?'d1':c.k==='yJP'?'dy':c.k==='mJP'?'dm':c.k==='sak'?'ds':c.k==='buy'?'db':c.k==='tcg'?'dt':c.k==='fan'?'df':c.k==='gld'?'dg':c.k==='pwcc'?'dp':'de')}${c.n} · ${fD(c.date)}</div></div></div><div class="cp2">${fP(c.pU)}${nd}</div></div>`;
+  }).join('');
+  const lb=(r.l!=='English'||r.jx)?`<span class="lbg">${r.jx?'JP Exclusive':r.l}</span>`:'';
+  const ctl=r.ct==='dbs'?'Dragon Ball TCG':r.ct==='tcg'?'TCG':r.ct==='sg'?'Graded Sports':'Sports Raw';
+  const cardData=JSON.stringify({name:q,grade:G,cond:C,lang:L,avg:r.avg,lo:r.lo,hi:r.hi,imageUrl:r.img,ct:r.ct}).replace(/"/g,'&quot;');
+  el.innerHTML=`<div class="rc">
+    <div class="rh" id="rh"><div class="shim" id="shim"></div>
+    <img src="${r.img}" style="opacity:0" onload="this.style.opacity='1';var s=document.getElementById('shim');if(s)s.remove()" onerror="this.style.display='none'"/>
+    <div class="rhl">${ctl}</div></div>
+    <div class="rb">${jb}${fx}${tm}
+    <div class="rt">${escH(q)}${lb}</div>
+    <div class="rm">${G} · ${C==='Any'?'All conditions':C}</div>
+    <div class="pg">
+      <div class="pb"><div class="pl">Low</div><div class="pv lo">${fP(r.lo)}</div></div>
+      <div class="pb"><div class="pl">Wtd Avg</div><div class="pv av">${fP(r.avg)}</div></div>
+      <div class="pb"><div class="pl">High</div><div class="pv hi">${fP(r.hi)}</div></div>
+    </div>
+    ${ring}
+    <div class="wh"><span>Source breakdown</span><span class="wa">Wtd avg ${fP(r.avg)}</span></div>
+    ${wrows}
+    <div class="div"></div>
+    <div class="tr">
+      <div class="tb"><span class="tl">30-day</span><span class="tv ${t3c}">${t3a} ${Math.abs(r.t30)}%</span></div>
+      <div class="tb"><span class="tl">90-day</span><span class="tv ${t9c}">${t9a} ${Math.abs(r.t90)}%</span></div>
+    </div>
+    <div class="div"></div>
+    <div class="ch2"><span>Recent sold comps</span><span>${r.comps.length} results</span></div>
+    ${crows}
+    <button class="acb" onclick='promptAdd("${cardData}")'>+ Add to collection</button>
+    </div></div>`;
+}
+
+// HISTORY
+function saveHist(q,r){
+  const e={q,g:G,c:C,l:L,avg:r.avg,img:r.img,t:Date.now()};
+  hist=[e,...hist.filter(h=>h.q!==q)].slice(0,50);
+  localStorage.setItem('cph',JSON.stringify(hist));
+}
+function renderHist(){
+  const el=document.getElementById('hl');
+  if(!hist.length){el.innerHTML='<div class="emp"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg><p>No searches yet</p></div>';return;}
+  el.innerHTML=hist.map(h=>{
+    const m=Math.floor((Date.now()-h.t)/60000),ts=m<1?'just now':m<60?m+'m ago':Math.floor(m/60)+'h ago';
+    const th=h.img?`<img src="${h.img}" style="width:30px;height:41px;object-fit:cover;border-radius:3px;border:1px solid var(--bd);flex-shrink:0;margin-right:9px" onerror="this.style.display='none'"/>`:'';
+    const lb=(h.l&&h.l!=='English')?`<span class="lbg">${h.l}</span>`:'';
+    return`<div class="hi" onclick="loadH('${h.q.replace(/'/g,"\\'")}','${h.g}','${h.c}','${h.l||'English'}')">${th}<div style="flex:1;min-width:0"><div class="hn">${escH(h.q)}${lb}</div><div class="hm">${h.g} · ${h.c}</div></div><div style="text-align:right;flex-shrink:0"><div class="hp">${fP(h.avg)}</div><div class="ht">${ts}</div></div></div>`;
+  }).join('')+'<button class="clb" onclick="clearHist()">Clear history</button>';
+}
+function loadH(q,g,c,l){
+  go('search');
+  document.getElementById('si').value=q;
+  document.getElementById('gc').querySelectorAll('.ch').forEach(x=>x.classList.toggle('on',x.textContent===g));
+  document.getElementById('cc').querySelectorAll('.ch').forEach(x=>x.classList.toggle('on',x.textContent===c));
+  document.getElementById('lc').querySelectorAll('.ch').forEach(x=>x.classList.toggle('lon',x.textContent===l));
+  G=g;C=c;L=l||'English';
+  search(q,'sr');
+}
+function clearHist(){hist=[];localStorage.removeItem('cph');renderHist();}
+
+// COLLECTION
+function saveColl(){localStorage.setItem('cpc',JSON.stringify(coll));}
+
+// Map card types to display groups
+const TCG_GROUPS={
+  pokemon: {label:'Pokémon',   icon:'🔴', color:'#e8ff47', keys:['pokemon','charizard','pikachu','mewtwo','eevee','bulbasaur','squirtle','blastoise','venusaur','snorlax','gengar','lugia','ho-oh','rayquaza','mew']},
+  dragonball:{label:'Dragon Ball',icon:'🟠',color:'#ff8c00',keys:['dragon ball','dragonball','dbs','dbscg','fusion world','d-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8','bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16','bt17','bt18','bt19','bt20','heroes','divers','goku','vegeta','frieza','gohan','piccolo']},
+  gundam:    {label:'Gundam',   icon:'🔵', color:'#47c8ff', keys:['gundam','mobile suit','gundanium','zaku','gm ','rx-78','wing zero','deathscythe','heavyarms','sandrock','tallgeese']},
+  mtg:       {label:'Magic: The Gathering',icon:'🟣',color:'#a855f7',keys:['mtg','magic the gathering','magic: the gathering',' mtg ','planeswalker','mana ']},
+  yugioh:    {label:'Yu-Gi-Oh!',icon:'🟡',color:'#f7931e',keys:['yugioh','yu-gi-oh','yu gi oh','blue-eyes','dark magician','exodia','pot of greed','monster reborn']},
+  onepiece:  {label:'One Piece',icon:'🔴',color:'#ff6b6b',keys:['one piece','luffy','zoro','nami','sanji','chopper','robin','franky','brook','op-01','op-02','op-03','op-04','op-05','op-06']},
+  lorcana:   {label:'Lorcana',  icon:'⭐', color:'#4fffb0', keys:['lorcana','disney lorcana']},
+  sports:    {label:'Sports Cards',icon:'🏆',color:'#6b6b85',keys:[]}, // catch-all for sports
+};
+
+function getGroup(card){
+  const q=(card.name||'').toLowerCase();
+  // explicit ct from card
+  if(card.ct==='dbs')return'dragonball';
+  for(const[gk,gv]of Object.entries(TCG_GROUPS)){
+    if(gk==='sports')continue;
+    if(gv.keys.some(k=>q.includes(k)))return gk;
+  }
+  if(card.ct==='sr'||card.ct==='sg')return'sports';
+  return'other';
+}
+
+function renderColl(){
+  const tot=coll.reduce((a,c)=>a+c.avg,0);
+  const totP=coll.reduce((a,c)=>a+(c.paid||0),0);
+  const gain=tot-totP;
+  document.getElementById('ctot').textContent=fP(tot);
+  document.getElementById('ccount').textContent=coll.length;
+  document.getElementById('cpaid').textContent=fP(totP);
+  const ge=document.getElementById('cgain');
+  if(totP>0){const pct=((gain/totP)*100).toFixed(1);ge.innerHTML=`<span style="color:${gain>=0?'var(--gn)':'var(--rd)'}">${gain>=0?'+':''}${fP(gain)} (${gain>=0?'+':''}${pct}%)</span>`;}
+  else ge.innerHTML='';
+
+  const el=document.getElementById('cl');
+  if(!coll.length){
+    el.innerHTML=`<div class="emp"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--mu)" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg><p>No cards yet.<br>Scan cards or search<br>and tap "+ Add to collection".</p></div>`;
+    return;
+  }
+
+  // Group cards
+  const groups={};
+  coll.forEach((c,i)=>{
+    const gk=getGroup(c);
+    if(!groups[gk])groups[gk]={cards:[],indices:[]};
+    groups[gk].cards.push(c);
+    groups[gk].indices.push(i);
+  });
+
+  el.innerHTML=Object.entries(groups).map(([gk,{cards,indices}])=>{
+    const gv=TCG_GROUPS[gk]||{label:gk,icon:'🃏',color:'var(--mu)'};
+    const groupVal=cards.reduce((a,c)=>a+c.avg,0);
+    const groupPaid=cards.reduce((a,c)=>a+(c.paid||0),0);
+    const groupGain=groupVal-groupPaid;
+    const gainHTML=groupPaid>0
+      ?`<div class="tcg-group-gain ${groupGain>=0?'up':'dn'}">${groupGain>=0?'↑':'↓'} ${fP(Math.abs(groupGain))}</div>`
+      :'';
+
+    // Top 3 by value
+    const top3=[...cards].sort((a,b)=>b.avg-a.avg).slice(0,3);
+    const top3HTML=top3.map(c=>`
+      <div class="tcg-card-slot">
+        ${c.imageUrl?`<img class="tcg-card-img" src="${c.imageUrl}" onerror="this.style.background='var(--bd)'"/>`:`<div class="tcg-card-img"></div>`}
+        <div class="tcg-card-name">${escH(c.name.split(' ').slice(0,3).join(' '))}</div>
+        <div class="tcg-card-price">${fP(c.avg)}</div>
+        <div class="tcg-card-grade">${c.grade}</div>
+      </div>`).join('');
+
+    // Full expanded card list
+    const expandedHTML=indices.map(i=>{
+      const c=coll[i];
+      const g=c.paid?c.avg-c.paid:null;
+      const gh=g!==null?`<div class="cig ${g>=0?'up':'dn'}">${g>=0?'↑':'↓'} ${fP(Math.abs(g))}</div>`:'';
+      const ph=c.paid?`<div class="cipa">paid ${fP(c.paid)}</div>`:'';
+      const th=c.imageUrl?`<img class="cith" src="${c.imageUrl}" onerror="this.style.display='none'"/>`:`<div class="cith"></div>`;
+      return`<div class="ci">${th}<div class="cii"><div class="cin">${escH(c.name)}</div><div class="cim">${c.grade}${c.lang!=='English'?' · '+c.lang:''}</div></div><div class="cip"><div class="civ">${fP(c.avg)}</div>${ph}${gh}</div><button class="cdel" onclick="delColl(${i})">×</button></div>`;
+    }).join('');
+
+    return`<div class="tcg-group" id="grp-${gk}">
+      <div class="tcg-group-header" onclick="toggleGroup('${gk}')">
+        <div class="tcg-group-left">
+          <div class="tcg-icon" style="background:${gv.color}22;border:1px solid ${gv.color}44">${gv.icon}</div>
+          <div>
+            <div class="tcg-group-name">${gv.label}</div>
+            <div class="tcg-group-sub">${cards.length} card${cards.length!==1?'s':''}</div>
+          </div>
+        </div>
+        <div class="tcg-group-right">
+          <div class="tcg-group-val">${fP(groupVal)}</div>
+          ${gainHTML}
+        </div>
+      </div>
+      <div class="tcg-divider"></div>
+      <div class="tcg-top3">
+        <div class="tcg-top3-label">Top 3 by value</div>
+        <div class="tcg-top3-cards">${top3HTML}</div>
+      </div>
+      <button class="tcg-see-all" onclick="toggleGroup('${gk}')">See all ${cards.length} cards ▾</button>
+      <div class="tcg-expanded" id="exp-${gk}">${expandedHTML}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleGroup(gk){
+  const el=document.getElementById('exp-'+gk);
+  const btn=document.querySelector(`#grp-${gk} .tcg-see-all`);
+  const open=el.classList.toggle('open');
+  const count=document.querySelectorAll(`#exp-${gk} .ci`).length;
+  if(btn)btn.textContent=open?`Hide cards ▴`:`See all ${count} cards ▾`;
+}
+
+function delColl(i){coll.splice(i,1);saveColl();renderColl();}
+
+// MODAL
+function promptAdd(data){
+  const card=typeof data==='string'?JSON.parse(data.replace(/&quot;/g,'"')):data;
+  pending=card;
+  document.getElementById('mtitle').textContent=(card.name||'').slice(0,38);
+  document.getElementById('mpaid').value='';
+  document.getElementById('modal').style.display='flex';
+  setTimeout(()=>document.getElementById('mpaid').focus(),80);
+}
+function closeModal(save){
+  const paid=save?parseFloat(document.getElementById('mpaid').value)||0:0;
+  document.getElementById('modal').style.display='none';
+  if(pending){
+    coll.unshift({...pending,paid:paid||null,added:Date.now()});
+    saveColl();
+    const btn=document.querySelector('.acb');
+    if(btn){btn.textContent='✓ Added to collection';btn.style.color='var(--gn)';btn.style.borderColor='var(--gn)';setTimeout(()=>{btn.textContent='+ Add to collection';btn.style.color='';btn.style.borderColor='';},2200);}
+    pending=null;
+  }
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal(false);});
+
+// COLLECTION SCAN
+async function startCollScan(){
+  document.getElementById('coll-scan-section').style.display='block';
+  collN=0;updCSC();
+  try{
+    collStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    document.getElementById('cv').srcObject=collStream;
+    runScanLoop();
+  }catch(e){alert('Camera unavailable. Use manual add below.');}
+}
+function stopCollScan(){
+  if(collStream){collStream.getTracks().forEach(t=>t.stop());collStream=null;}
+  document.getElementById('coll-scan-section').style.display='none';
+  collN=0;
+}
+function updCSC(){document.getElementById('csct').textContent=collN+' card'+(collN!==1?'s':'')+' scanned';}
+function setCSS(m){const e=document.getElementById('csst');if(e)e.textContent=m;}
+function runScanLoop(){
+  if(!collStream)return;
+  setCSS('HOLD CARD IN FRAME');
+  setTimeout(()=>{
+    if(!collStream)return;
+    setCSS('SCANNING…');
+    setTimeout(()=>{
+      if(!collStream)return;
+      // Production: replace with ZXing barcode decode or Tesseract OCR on video frame
+      const mock=[
+        {name:'Charizard Base Set Holo 1st Ed',grade:'Raw',cond:'NM-MT',lang:'English',ct:'tcg'},
+        {name:'Pikachu Illustrator CGC 9',grade:'Raw',cond:'NM',lang:'Japanese',ct:'tcg'},
+        {name:'Mewtwo Base Set Holo',grade:'PSA 9',cond:'Any',lang:'English',ct:'tcg'},
+        {name:'Dragon Ball Heroes BM-001 SR',grade:'Raw',cond:'NM',lang:'Japanese',ct:'dbs'},
+        {name:'Dragon Ball Fusion World BT-01',grade:'Raw',cond:'NM-MT',lang:'English',ct:'dbs'},
+        {name:'Goku Ultra Instinct SP',grade:'PSA 10',cond:'Any',lang:'Japanese',ct:'dbs'},
+        {name:'Gundam RX-78-2 MS-01 SR',grade:'Raw',cond:'NM',lang:'Japanese',ct:'tcg'},
+        {name:'Gundam Wing Zero MS-07 R',grade:'Raw',cond:'NM-MT',lang:'English',ct:'tcg'},
+        {name:'Blue-Eyes White Dragon LOB',grade:'Raw',cond:'EX',lang:'English',ct:'tcg'},
+        {name:'Dark Magician MRD Ultra Rare',grade:'PSA 9',cond:'Any',lang:'English',ct:'tcg'},
+        {name:'Black Lotus Alpha MTG',grade:'Raw',cond:'VG',lang:'English',ct:'tcg'},
+        {name:'Luffy OP-01 Leader Rare',grade:'Raw',cond:'NM',lang:'Japanese',ct:'tcg'},
+        {name:'2003 Topps Chrome Tom Brady RC',grade:'Raw',cond:'NM',lang:'English',ct:'sr'},
+        {name:'2018 Prizm Luka Doncic RC',grade:'PSA 9',cond:'Any',lang:'English',ct:'sg'},
+      ];
+      const card=mock[Math.floor(Math.random()*mock.length)];
+      setCSS('CARD FOUND — PRICING…');
+      const r=price(card.name,card.grade,card.cond,card.lang);
+      coll.unshift({name:card.name,grade:card.grade,cond:card.cond,lang:card.lang,ct:card.ct,avg:r.avg,lo:r.lo,hi:r.hi,imageUrl:r.img,paid:null,added:Date.now()});
+      saveColl();collN++;updCSC();renderColl();
+      setCSS('ADDED ✓ — NEXT CARD');
+      setTimeout(()=>{if(collStream)runScanLoop();},1500);
+    },700+Math.random()*500);
+  },2200+Math.random()*1500);
+}
+function addManual(){
+  const q=document.getElementById('cmi').value.trim();if(!q)return;
+  document.getElementById('cmi').value='';
+  const r=price(q,'Raw','Any','English');
+  promptAdd({name:q,grade:'Raw',cond:'Any',lang:'English',ct:r.ct,avg:r.avg,lo:r.lo,hi:r.hi,imageUrl:r.img});
+}
+function showHint(){
+  if(hintShown)return;hintShown=true;
+  document.getElementById('sr').innerHTML=`<div style="background:rgba(232,255,71,.06);border:1px solid rgba(232,255,71,.2);border-radius:9px;padding:11px 13px;font-family:monospace;font-size:10px;color:var(--mu);line-height:1.6">Search any card, then tap <strong style="color:var(--ac)">+ Add to collection</strong> in the result.</div>`;
+}
+function exportCSV(){
+  if(!coll.length){alert('No cards in collection yet.');return;}
+  const rows=[['Name','Grade','Condition','Language','Market Value','Paid','Gain/Loss','Date Added']];
+  coll.forEach(c=>{
+    const gain=c.paid?(c.avg-c.paid).toFixed(2):'';
+    rows.push(['"'+c.name.replace(/"/g,'""')+'"',c.grade,c.cond,c.lang,c.avg.toFixed(2),c.paid?c.paid.toFixed(2):'',gain,new Date(c.added).toLocaleDateString()]);
+  });
+  const csv=rows.map(r=>r.join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='cardpulse-collection.csv';a.click();
+}
+</script>
+</body>
+</html>

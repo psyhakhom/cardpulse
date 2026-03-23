@@ -1,0 +1,333 @@
+/**
+ * CardPulse — /api/prices.js
+ * Vercel serverless function
+ *
+ * Three-query eBay blending strategy:
+ *
+ *  Query A  "all sold"     — broadest, last 90 days, no filters   Weight: 0.25
+ *  Query B  "recent sold"  — last 30 days (sort=endingSoonest)     Weight: 0.45
+ *  Query C  "grade-exact"  — adds grade string to query             Weight: 0.30
+ *
+ * Every result is logged to Supabase (fire-and-forget, never blocks response).
+ * This builds a proprietary price history DB — the same compounding asset
+ * that makes Card Ladder and Collctr defensible.
+ *
+ * Env vars (Vercel dashboard → Settings → Environment Variables):
+ *   EBAY_CLIENT_ID        — eBay App ID
+ *   EBAY_CLIENT_SECRET    — eBay Cert ID
+ *   SUPABASE_URL          — Supabase project URL
+ *   SUPABASE_SERVICE_KEY  — service_role key (not anon key)
+ *
+ * Supabase table — run once in SQL editor:
+ *
+ *   create table price_history (
+ *     id          bigserial primary key,
+ *     queried_at  timestamptz not null default now(),
+ *     card_name   text        not null,
+ *     grade       text        not null default 'Raw',
+ *     lang        text        not null default 'English',
+ *     price_lo    numeric(10,2),
+ *     price_avg   numeric(10,2) not null,
+ *     price_hi    numeric(10,2),
+ *     confidence  smallint,
+ *     comp_count  smallint,
+ *     trend_30d   numeric(6,2),
+ *     source      text not null default 'ebay'
+ *   );
+ *   create index on price_history (card_name, queried_at desc);
+ *   create index on price_history (queried_at desc);
+ */
+
+// ─── TOKEN CACHE ──────────────────────────────────────────────────────────────
+let _token = null;
+let _tokenExpiry = 0;
+
+async function getToken() {
+  if (_token && Date.now() < _tokenExpiry) return _token;
+  const creds = Buffer.from(
+    `${process.env.EBAY_CLIENT_ID}:${process.env.EBAY_CLIENT_SECRET}`
+  ).toString('base64');
+  const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${creds}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: 'grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope',
+  });
+  if (!res.ok) throw new Error(`eBay token error: ${res.status}`);
+  const data = await res.json();
+  _token = data.access_token;
+  _tokenExpiry = Date.now() + (data.expires_in - 60) * 1000;
+  return _token;
+}
+
+// ─── EBAY SEARCH ─────────────────────────────────────────────────────────────
+async function ebaySearch(query, token, { limit = 40, marketplaceId = 'EBAY_US' } = {}) {
+  const params = new URLSearchParams({
+    q: query,
+    filter: 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true',
+    sort: 'endingSoonest',
+    limit: String(limit),
+  });
+  const res = await fetch(
+    `https://api.ebay.com/buy/browse/v1/item_summary/search?${params}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
+        'X-EBAY-C-ENDUSERCTX': 'contextualLocation=country=US',
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`eBay search failed (${res.status})`);
+  return res.json();
+}
+
+// ─── PRICE STATS ─────────────────────────────────────────────────────────────
+function calcStats(items) {
+  if (!items?.length) return null;
+  const prices = items
+    .map(i => parseFloat(i.price?.value))
+    .filter(p => !isNaN(p) && p > 0)
+    .sort((a, b) => a - b);
+  if (prices.length < 3) return null;
+  const trim    = Math.max(1, Math.floor(prices.length * 0.1));
+  const trimmed = prices.slice(trim, prices.length - trim);
+  if (trimmed.length < 2) return null;
+  const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+  return {
+    lo:    parseFloat(trimmed[0].toFixed(2)),
+    avg:   parseFloat(avg.toFixed(2)),
+    hi:    parseFloat(trimmed[trimmed.length - 1].toFixed(2)),
+    count: trimmed.length,
+  };
+}
+
+// ─── COMP EXTRACTION ─────────────────────────────────────────────────────────
+function extractComps(items, limit = 10) {
+  return items.slice(0, limit).map(i => ({
+    title:     i.title,
+    price:     parseFloat(i.price?.value || 0),
+    date:      i.itemEndDate || i.itemCreationDate || null,
+    url:       i.itemWebUrl  || null,
+    image:     i.image?.imageUrl || i.thumbnailImages?.[0]?.imageUrl || null,
+    condition: i.condition   || null,
+    source:    'ebay',
+  }));
+}
+
+// ─── TREND ───────────────────────────────────────────────────────────────────
+function calcTrend(recentAvg, allAvg) {
+  if (!recentAvg || !allAvg || allAvg === 0) return 0;
+  return parseFloat((((recentAvg - allAvg) / allAvg) * 100).toFixed(1));
+}
+
+// ─── QUERY BUILDERS ──────────────────────────────────────────────────────────
+function buildQueries(name, grade, lang) {
+  const langSuffix = { Japanese: ' japanese', Korean: ' korean', Chinese: ' chinese' }[lang] || '';
+  const base       = `${name}${langSuffix}`;
+  const gradeStr   = grade && grade !== 'Raw' ? ` ${grade}` : '';
+  return {
+    a: { q: base,                  label: 'All sold (90d)',                   weight: 0.25, limit: 40 },
+    b: { q: base,                  label: 'Recent sold (30d)',                weight: 0.45, limit: 20 },
+    c: { q: `${base}${gradeStr}`,  label: `Grade-exact (${grade || 'raw'})`, weight: 0.30, limit: 30 },
+  };
+}
+
+// ─── WEIGHTED BLEND ──────────────────────────────────────────────────────────
+function blend(results) {
+  const active = results.filter(r => r.stats !== null);
+  if (!active.length) return null;
+  const tw   = active.reduce((a, r) => a + r.weight, 0);
+  const wAvg = active.reduce((a, r) => a + r.stats.avg * r.weight, 0) / tw;
+  const wLo  = active.reduce((a, r) => a + r.stats.lo  * r.weight, 0) / tw;
+  const wHi  = active.reduce((a, r) => a + r.stats.hi  * r.weight, 0) / tw;
+  const totalComps = active.reduce((a, r) => a + r.stats.count, 0);
+  const confidence = Math.round(
+    (active.length / results.length) * 50 +
+    Math.min(1, totalComps / 20)     * 50
+  );
+  return {
+    lo:            parseFloat(wLo.toFixed(2)),
+    avg:           parseFloat(wAvg.toFixed(2)),
+    hi:            parseFloat(wHi.toFixed(2)),
+    confidence,
+    activeQueries: active.length,
+    totalQueries:  results.length,
+    totalComps,
+  };
+}
+
+// ─── SUPABASE LOGGING (fire-and-forget) ──────────────────────────────────────
+/**
+ * Writes one price snapshot row to Supabase.
+ * NEVER awaited — response goes out before this completes.
+ * If Supabase is down or not yet configured, the user never knows.
+ *
+ * Over time this table becomes your price history database.
+ * Query it later with:
+ *   GET /api/prices?history=1&q=Charizard Base Set Holo&grade=PSA 10
+ */
+async function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, totalComps, trend30 }) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) return; // not configured yet — skip silently
+
+  try {
+    await fetch(`${url}/rest/v1/price_history`, {
+      method: 'POST',
+      headers: {
+        'apikey':        key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type':  'application/json',
+        'Prefer':        'return=minimal',
+      },
+      body: JSON.stringify({
+        card_name:  cardName,
+        grade:      grade  || 'Raw',
+        lang:       lang   || 'English',
+        price_lo:   lo,
+        price_avg:  avg,
+        price_hi:   hi,
+        confidence,
+        comp_count: totalComps,
+        trend_30d:  trend30,
+        source:     'ebay',
+      }),
+    });
+  } catch (err) {
+    console.warn('History log failed (non-fatal):', err.message);
+  }
+}
+
+// ─── HISTORY RETRIEVAL ───────────────────────────────────────────────────────
+/**
+ * GET /api/prices?history=1&q=Charizard Base Set Holo&grade=PSA 10
+ *
+ * Returns up to 200 price snapshots for a card over the last 90 days,
+ * sorted oldest-first — ready to render as a trend chart on the frontend.
+ *
+ * This endpoint is what turns CardPulse into Card Ladder over time.
+ * Add it to the UI once you have 30+ days of data for popular cards.
+ */
+async function handleHistory(res, cardName, grade) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) return res.status(503).json({ error: 'History not available yet' });
+
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const params = new URLSearchParams({
+    card_name:  `eq.${cardName}`,
+    grade:      `eq.${grade || 'Raw'}`,
+    queried_at: `gte.${since}`,
+    select:     'queried_at,price_avg,price_lo,price_hi,confidence,comp_count',
+    order:      'queried_at.asc',
+    limit:      '200',
+  });
+
+  const r = await fetch(`${url}/rest/v1/price_history?${params}`, {
+    headers: { 'apikey': key, 'Authorization': `Bearer ${key}` },
+  });
+  if (!r.ok) return res.status(500).json({ error: 'History query failed' });
+  const rows = await r.json();
+  return res.status(200).json({ history: rows, card: cardName, grade });
+}
+
+// ─── MAIN HANDLER ────────────────────────────────────────────────────────────
+export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const { q, grade = 'Raw', lang = 'English', history } = req.query;
+
+  // History sub-route
+  if (history === '1') return handleHistory(res, q, grade);
+
+  if (!q || q.trim().length < 2) {
+    return res.status(400).json({ error: 'Query too short' });
+  }
+
+  try {
+    const token   = await getToken();
+    const queries = buildQueries(q.trim(), grade, lang);
+
+    // Three queries in parallel — one failure doesn't kill the others
+    const [dataA, dataB, dataC] = await Promise.allSettled([
+      ebaySearch(queries.a.q, token, { limit: queries.a.limit }),
+      ebaySearch(queries.b.q, token, { limit: queries.b.limit }),
+      ebaySearch(queries.c.q, token, { limit: queries.c.limit }),
+    ]);
+
+    const itemsA = dataA.status === 'fulfilled' ? (dataA.value.itemSummaries || []) : [];
+    const itemsB = dataB.status === 'fulfilled' ? (dataB.value.itemSummaries || []) : [];
+    const itemsC = dataC.status === 'fulfilled' ? (dataC.value.itemSummaries || []) : [];
+
+    const results = [
+      { ...queries.a, stats: calcStats(itemsA) },
+      { ...queries.b, stats: calcStats(itemsB) },
+      { ...queries.c, stats: calcStats(itemsC) },
+    ];
+
+    const blended = blend(results);
+    if (!blended) {
+      return res.status(404).json({ error: 'Not enough sold comps found. Try a more specific search.' });
+    }
+
+    const trend30 = calcTrend(results[1].stats?.avg, results[0].stats?.avg);
+
+    // Deduplicate comps across all queries
+    const seen    = new Set();
+    const deduped = [...itemsA, ...itemsB, ...itemsC].filter(i => {
+      const key = i.title?.toLowerCase().slice(0, 40);
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+
+    const response = {
+      lo:            blended.lo,
+      avg:           blended.avg,
+      hi:            blended.hi,
+      confidence:    blended.confidence,
+      activeQueries: blended.activeQueries,
+      totalQueries:  blended.totalQueries,
+      totalComps:    blended.totalComps,
+      trend30,
+      trend90:       null,
+      imageUrl:      deduped.find(i => i.image?.imageUrl)?.image?.imageUrl || null,
+      sourceBreakdown: results.map(r => ({
+        label:     r.label,
+        weight:    r.weight,
+        available: r.stats !== null,
+        avg:       r.stats?.avg   || null,
+        count:     r.stats?.count || 0,
+      })),
+      comps:     extractComps(deduped, 10),
+      query:     q,
+      grade,
+      lang,
+      source:    'ebay',
+      timestamp: Date.now(),
+    };
+
+    // Log to Supabase — fire and forget, never blocks the response
+    logPriceHistory({
+      cardName:   q.trim(),
+      grade,
+      lang,
+      lo:         blended.lo,
+      avg:        blended.avg,
+      hi:         blended.hi,
+      confidence: blended.confidence,
+      totalComps: blended.totalComps,
+      trend30,
+    });
+
+    return res.status(200).json(response);
+
+  } catch (err) {
+    console.error('CardPulse API error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+}
