@@ -488,7 +488,42 @@ async function searchDbs(query) {
     }
 
     // Hardcoded popular cards fallback
-    return searchDbsFallback(query)
+    const fbResults = searchDbsFallback(query)
+    if (fbResults.length > 0) return fbResults
+
+    // Retry with individual words (longest first) — catches attack names
+    // "god kamehameha" → try "kamehameha" alone → finds "Gohan, Father-Son Kamehameha"
+    const words = sanitized.split(/\s+/).filter((w) => w.length >= 3)
+    if (words.length > 1) {
+      const sorted = [...words].sort((a, b) => b.length - a.length)
+      for (const word of sorted) {
+        console.log(`[cards:dbs] retrying with single word: "${word}"`)
+        if (data && Array.isArray(data)) {
+          const retry = data.filter((card) => {
+            const hay = `${card.name || ''} ${card.number || ''} ${card.cardNumber || ''} ${card.rarity || ''}`.toLowerCase()
+            return hay.includes(word.toLowerCase())
+          }).slice(0, 8)
+          if (retry.length > 0) {
+            return retry.map((card) => {
+              const num = card.number || card.cardNumber || ''
+              return {
+                id: `dbs-gh-${num || Math.random()}`,
+                name: card.name || '',
+                set: num ? num.replace(/-\d+[A-Z]?$/, '') : '',
+                number: num, rarity: card.rarity || '', game: 'dbs',
+                imageUrl: card.image || card.imageUrl || null,
+                largeImageUrl: card.image || card.imageUrl || null,
+                searchQuery: buildSearchQuery(simplifyDbsName(card.name || ''), num, card.rarity),
+              }
+            })
+          }
+        }
+        const fbRetry = searchDbsFallback(word)
+        if (fbRetry.length > 0) return fbRetry
+      }
+    }
+
+    return []
   })
 }
 
@@ -737,7 +772,7 @@ export default async function handler(req, res) {
   }
 
   // General eBay fallback — when official databases return nothing and query is 3+ words
-  if (!cards.length && query.split(/\s+/).length >= 3) {
+  if (!cards.length && query.split(/\s+/).length >= 2) {
     console.log('[cards] no catalog results, trying eBay fallback')
     try {
       cards = await searchEbayFallback(query)
