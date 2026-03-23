@@ -89,12 +89,17 @@ async function ebaySearch(
 }
 
 // ─── PRICE STATS ─────────────────────────────────────────────────────────────
-const RAW_EXCLUDE = ['psa', 'bgs', 'cgc', 'sgc', 'beckett', 'graded', 'slab', 'black label']
+// ─── GRADE FILTERING ─────────────────────────────────────────────────────────
+const GRADE_EXCLUDE = {
+  'Raw': ['psa', 'bgs', 'cgc', 'sgc', 'beckett', 'graded', 'slab', 'black label',
+          'gem mint', 'gem-mint', 'gold alt art', 'gold parallel',
+          'parallel scr', 'rainbow rare', 'hyper rare'],
+}
 
 function gradeMatch(title, grade) {
   const t = (title || '').toLowerCase()
   if (grade === 'PSA 10') {
-    if (t.includes('psa 9') || t.includes('psa9')) return false   // block PSA 9 contamination
+    if (t.includes('psa 9') || t.includes('psa9')) return false
     return t.includes('psa 10') || t.includes('psa10') || t.includes('gem mint') || t.includes('gem-mint')
   }
   if (grade === 'PSA 9') return t.includes('psa 9') || t.includes('psa9')
@@ -103,35 +108,32 @@ function gradeMatch(title, grade) {
   return true
 }
 
-function filterByGrade(items, grade, label) {
+/**
+ * Filter a flat list of eBay itemSummary objects by grade.
+ * For Raw: removes listings that contain graded/variant keywords.
+ * For graded grades: keeps only listings whose title matches the grade.
+ * Falls back to the full set if fewer than 2 items survive (avoids empty results).
+ */
+function filterItems(items, grade) {
   if (!items?.length) return items
-  const tag = `[filterByGrade:${label || '?'}]`
-  if (!grade || grade === 'Raw') {
-    const kept = []
-    const removed = []
-    for (const i of items) {
+  const excludeTerms = GRADE_EXCLUDE[grade]
+  if (excludeTerms) {
+    // Raw — exclude graded/variant listings
+    const kept = items.filter((i) => {
       const t = (i.title || '').toLowerCase()
-      const hitKw = RAW_EXCLUDE.find((kw) => t.includes(kw))
-      if (hitKw) {
-        removed.push({ title: i.title, reason: hitKw })
-      } else {
-        kept.push(i)
-      }
-    }
-    console.log(`${tag} Raw: ${items.length} in → ${kept.length} kept, ${removed.length} removed`)
-    if (removed.length) console.log(`${tag} removed:`, removed.map(r => `"${r.title?.slice(0,60)}" (matched "${r.reason}")`))
-    if (kept.length >= 2) return kept
-    console.log(`${tag} Raw: fewer than 2 remain after filtering — keeping full set to avoid empty results`)
-    return items
+      const hit = excludeTerms.find((kw) => t.includes(kw))
+      if (hit) console.log(`[filter:Raw] dropped "${i.title?.slice(0, 70)}" matched "${hit}"`)
+      return !hit
+    })
+    console.log(`[filter:Raw] ${items.length} → ${kept.length} kept`)
+    return kept.length >= 2 ? kept : items
   }
-  const filtered = items.filter((i) => gradeMatch(i.title, grade))
-  console.log(`${tag} ${grade}: ${items.length} in → ${filtered.length} match`)
-  if (filtered.length < items.length) {
-    const dropped = items.filter((i) => !gradeMatch(i.title, grade))
-    console.log(`${tag} dropped:`, dropped.map(i => `"${i.title?.slice(0,60)}"`))
+  if (grade && grade !== 'Raw') {
+    // Graded — keep only titles that match the grade string
+    const kept = items.filter((i) => gradeMatch(i.title, grade))
+    console.log(`[filter:${grade}] ${items.length} → ${kept.length} match`)
+    return kept.length >= 2 ? kept : items
   }
-  if (filtered.length >= 2) return filtered
-  console.log(`${tag} ${grade}: fewer than 2 remain — keeping full set`)
   return items
 }
 
@@ -604,8 +606,9 @@ export default async function handler(req, res) {
     const token = await getToken()
     const { query: processed } = preprocessQuery(q.trim(), grade)
 
-    // Helper: run the three parallel eBay queries for a given name and return
-    // { results, blended, allItems }
+    // Helper: run the three parallel eBay queries for a given name.
+    // Grade filtering is applied immediately after raw results come back,
+    // before calcStats, extractComps, or image selection see any data.
     async function runQueries(name) {
       const qs = buildQueries(name, grade, lang)
       const [dA, dB, dC] = await Promise.allSettled([
@@ -613,15 +616,21 @@ export default async function handler(req, res) {
         ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
         ebaySearch(qs.c.q, token, { limit: qs.c.limit, sort: qs.c.sort }),
       ])
-      const iA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
-      const iB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
-      const iC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
+      const rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
+      const rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
+      const rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
+
+      // Filter by grade immediately — filtered items are used for everything downstream
+      const fA = filterItems(rawA, grade)
+      const fB = filterItems(rawB, grade)
+      const fC = filterItems(rawC, grade)
+
       const res = [
-        { ...qs.a, stats: calcStats(filterByGrade(iA, grade, 'A')) },
-        { ...qs.b, stats: calcStats(filterByGrade(iB, grade, 'B')) },
-        { ...qs.c, stats: calcStats(filterByGrade(iC, grade, 'C')) },
+        { ...qs.a, stats: calcStats(fA) },
+        { ...qs.b, stats: calcStats(fB) },
+        { ...qs.c, stats: calcStats(fC) },
       ]
-      return { results: res, blended: blend(res), allItems: [...iA, ...iB, ...iC] }
+      return { results: res, blended: blend(res), allItems: [...fA, ...fB, ...fC] }
     }
 
     let { results, blended, allItems } = await runQueries(processed)
@@ -697,15 +706,9 @@ export default async function handler(req, res) {
         const qWords = qLower.split(/\s+/)
         const rareTerms = ['illustration rare', 'special illustration', ' sir ', 'sir)', 'full art', 'alt art', 'alternate art']
         const queryIsRare = rareTerms.some((t) => qLower.includes(t))
-        const isRawSearch = !grade || grade === 'Raw'
+        // deduped is already grade-filtered — no need to re-filter here
         const scored = deduped
           .filter((i) => i.image?.imageUrl)
-          .filter((i) => {
-            // When searching Raw, exclude images from graded slab listings
-            if (!isRawSearch) return true
-            const t = (i.title || '').toLowerCase()
-            return !RAW_EXCLUDE.some((kw) => t.includes(kw))
-          })
           .map((i) => {
             const t = (i.title || '').toLowerCase()
             let score = qWords.filter((w) => t.includes(w)).length
