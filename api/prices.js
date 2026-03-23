@@ -96,9 +96,13 @@ function calcStats(items) {
     .filter((p) => !isNaN(p) && p > 0)
     .sort((a, b) => a - b)
   if (prices.length < 1) return null
-  const trimmed = prices.length >= 6
-    ? prices.slice(Math.floor(prices.length * 0.1), prices.length - Math.floor(prices.length * 0.1))
-    : prices
+  const mid = Math.floor(prices.length / 2)
+  const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
+  const filtered = prices.filter((p) => p <= median * 3)
+  if (filtered.length < 1) return null
+  const trimmed = filtered.length >= 6
+    ? filtered.slice(Math.floor(filtered.length * 0.1), filtered.length - Math.floor(filtered.length * 0.1))
+    : filtered
   const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length
   return {
     lo: parseFloat(trimmed[0].toFixed(2)),
