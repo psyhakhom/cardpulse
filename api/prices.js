@@ -132,7 +132,10 @@ function calcStats(items) {
   if (prices.length < 1) return null
   const mid = Math.floor(prices.length / 2)
   const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
-  const clipped = prices.filter((p) => p <= median * 3)
+  // Bidirectional outlier removal: drop anything below 20% of median (low junk)
+  // or above 5x median (high outliers). Protects SIR/chase cards from cheap
+  // trainer tip cards dragging the average down.
+  const clipped = prices.filter((p) => p >= median * 0.2 && p <= median * 5)
   if (clipped.length < 1) return null
   const trimmed = clipped.length >= 6
     ? clipped.slice(Math.floor(clipped.length * 0.1), clipped.length - Math.floor(clipped.length * 0.1))
@@ -405,12 +408,18 @@ export default async function handler(req, res) {
       trend30,
       trend90: null,
       imageUrl: (() => {
-        const qWords = q.trim().toLowerCase().split(/\s+/)
+        const qLower = q.trim().toLowerCase()
+        const qWords = qLower.split(/\s+/)
+        // Terms that signal a specific rare variant — if the query contains them,
+        // heavily prefer images from listings that also contain them.
+        const rareTerms = ['illustration rare', 'special illustration', ' sir ', 'sir)', 'full art', 'alt art', 'alternate art']
+        const queryIsRare = rareTerms.some((t) => qLower.includes(t))
         const scored = deduped
           .filter((i) => i.image?.imageUrl)
           .map((i) => {
             const t = (i.title || '').toLowerCase()
-            const score = qWords.filter((w) => t.includes(w)).length
+            let score = qWords.filter((w) => t.includes(w)).length
+            if (queryIsRare && rareTerms.some((rt) => t.includes(rt))) score += 10
             return { url: i.image.imageUrl, score }
           })
         scored.sort((a, b) => b.score - a.score)
