@@ -44,12 +44,23 @@ const DBS_KW = [
   'hakai', 'ultra instinct', 'god kamehameha', 'destructo disc',
   'special beam cannon', 'makankosappo',
 ]
-const DBS_CODE_RE = /\b(?:BT|FB|SD|OP|ST|D-BT)\d+/i
+const DBS_CODE_RE = /\b(?:BT|FB|SD|ST|D-BT)\d+/i
+const OP_KW = [
+  'one piece', 'onepiece', 'optcg',
+  // Set codes
+  'op-01', 'op-02', 'op-03', 'op-04', 'op-05', 'op-06', 'op-07',
+  'op-08', 'op-09', 'op-10', 'op-11', 'op-12', 'op-13', 'op-14',
+  // Character names
+  'shanks', 'whitebeard', 'blackbeard', 'hancock', 'mihawk',
+  'crocodile', 'doflamingo', 'katakuri', 'kaido', 'big mom', 'yamato', 'uta',
+]
+const OP_CODE_RE = /\bOP-?\d{2}/i
 
 function detectGame(query) {
   const ql = query.toLowerCase()
   if (POKEMON_KW.some((k) => ql.includes(k))) return 'pokemon'
   if (MTG_KW.some((k) => ql.includes(k))) return 'mtg'
+  if (OP_KW.some((k) => ql.includes(k)) || OP_CODE_RE.test(query)) return 'onepiece'
   if (DBS_KW.some((k) => ql.includes(k)) || DBS_CODE_RE.test(query)) return 'dbs'
   return null
 }
@@ -80,6 +91,10 @@ function buildMtgQuery(card) {
 
 function buildDbsQuery(card) {
   return [card.name, card.number, card.rarity].filter(Boolean).join(' ').slice(0, 60)
+}
+
+function buildOpQuery(card) {
+  return [card.name, card.number].filter(Boolean).join(' ').slice(0, 60)
 }
 
 // ─── POKEMON TCG API ──────────────────────────────────────────────────────────
@@ -265,12 +280,167 @@ async function searchMtg(query) {
   })
 }
 
-// ─── GENERAL EBAY FALLBACK ────────────────────────────────────────────────────
-// When official card databases return nothing, search eBay active listings
-// and extract card suggestions from listing titles. Works for any card game.
+// ─── SHARED LISTING FILTERS ──────────────────────────────────────────────────
 const LISTING_NOISE_RE = /\b(psa|bgs|cgc|sgc|beckett)\s*\d+[\d.]*/gi
 const LISTING_JUNK_RE = /\b(lot|bundle|collection|complete set|booster|pack|box|sealed|\d+\s*cards?|\dx|\bx\d+|buy \d|bogo|get \d free)\b/i
 const CARD_NUM_GENERAL_RE = /\b((?:[A-Z]{1,4}-?\d+-\d+[A-Z]?)|(?:\d{1,3}\/\d{1,3}))\b/
+
+// ─── ONE PIECE CARD GAME ─────────────────────────────────────────────────────
+const OP_NUM_RE = /\b((?:OP|ST|EB)\d+-\d+)\b/i
+const OP_RARITY_RE = /\b(SEC|SR|R|UC|C|L|SP|P|DON)\b/
+
+function extractOpCard(title) {
+  const numMatch = title.match(OP_NUM_RE)
+  const number = numMatch ? numMatch[1].toUpperCase() : ''
+  const set = number ? number.replace(/-\d+$/, '') : ''
+
+  const rarityMatch = title.match(OP_RARITY_RE)
+  const rarity = rarityMatch ? rarityMatch[1].toUpperCase() : ''
+
+  let name = title
+    .replace(/\bone\s*piece\s*(card\s*game|tcg)?\b/gi, '')
+    .replace(/\boptcg\b/gi, '')
+    .replace(OP_NUM_RE, '')
+    .replace(OP_RARITY_RE, '')
+    .replace(/\bpsa\s*\d+\b/gi, '')
+    .replace(/\bbgs\s*[\d.]+\b/gi, '')
+    .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b/gi, '')
+    .replace(/\bfoil\b|\bholo\b|\balt\s*art\b|\bfull\s*art\b|\bmanga\b/gi, '')
+    .replace(/\bcard\b|\bsingle\b|\btrading\b|\bgame\b/gi, '')
+    .replace(/\benglish\b|\bjapanese\b/gi, '')
+    .replace(/[[\]()|#]/g, ' ')
+    .replace(/\s*[-–—]\s*$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+
+  name = name.replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '').trim()
+  name = name.replace(/\b\w/g, (c) => c.toUpperCase())
+
+  return { name, number, set, rarity }
+}
+
+async function searchOpSite(query) {
+  return withCache(`op-site:${query.toLowerCase()}`, async () => {
+    const sanitized = sanitizeQuery(query)
+    const url = `https://en.onepiece-cardgame.com/cardlist/?search=true&freewords=${encodeURIComponent(sanitized)}`
+    console.log(`[cards:op] fetching One Piece site: "${sanitized}"`)
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'CardPulse/1.0' },
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) throw new Error(`OP site ${res.status}`)
+    const html = await res.text()
+    console.log(`[cards:op] site response: ${html.length} chars`)
+
+    const cards = []
+    // Try to parse card entries from the HTML
+    const cardRe = /<a[^>]*class="[^"]*modalCol[^"]*"[^>]*>([\s\S]*?)<\/a>/gi
+    let match
+    while ((match = cardRe.exec(html)) !== null && cards.length < 8) {
+      const block = match[1]
+      const imgMatch = block.match(/<img[^>]+src="([^"]+)"/)
+      const nameMatch = block.match(/cardName[^>]*>([^<]+)/) || block.match(/<div[^>]*class="[^"]*name[^"]*"[^>]*>([^<]+)/)
+      const numMatch = block.match(/((?:OP|ST|EB)\d+-\d+)/i)
+
+      if (!nameMatch) continue
+      const name = nameMatch[1].trim()
+      const number = numMatch ? numMatch[1].toUpperCase() : ''
+      let imageUrl = imgMatch ? imgMatch[1].trim() : null
+      if (imageUrl && imageUrl.startsWith('/')) {
+        imageUrl = `https://en.onepiece-cardgame.com${imageUrl}`
+      }
+
+      cards.push({
+        id: `op-${number || cards.length}`,
+        name,
+        set: number ? number.replace(/-\d+$/, '') : '',
+        number,
+        rarity: '',
+        game: 'onepiece',
+        imageUrl,
+        largeImageUrl: imageUrl,
+        searchQuery: buildOpQuery({ name, number }),
+      })
+    }
+
+    return cards
+  })
+}
+
+async function searchOpEbay(query) {
+  return withCache(`op-ebay:${query.toLowerCase()}`, async () => {
+    const token = await getEbayToken()
+    const sanitized = sanitizeQuery(query)
+    const q = `${sanitized} one piece card game`
+    console.log(`[cards:op] searching eBay active listings: "${q}"`)
+    const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&filter=buyingOptions:{AUCTION|FIXED_PRICE}&sort=newlyListed&limit=40`
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+      },
+      signal: AbortSignal.timeout(6000),
+    })
+    if (!res.ok) {
+      console.error(`[cards:op] eBay search error: ${res.status}`)
+      return []
+    }
+    const data = await res.json()
+    const items = data.itemSummaries || []
+    console.log(`[cards:op] eBay returned ${items.length} active listings`)
+
+    const seen = new Set()
+    const cards = []
+    for (const item of items) {
+      const title = item.title || ''
+      if (LISTING_JUNK_RE.test(title)) continue
+
+      const { name, number, set, rarity } = extractOpCard(title)
+      if (!name || name.length < 3) continue
+
+      const dedupeKey = number ? number.toLowerCase() : name.toLowerCase()
+      if (seen.has(dedupeKey)) continue
+      seen.add(dedupeKey)
+
+      cards.push({
+        id: `op-ebay-${item.itemId}`,
+        name,
+        set,
+        number,
+        rarity,
+        game: 'onepiece',
+        imageUrl: item.image?.imageUrl || null,
+        largeImageUrl: item.image?.imageUrl || null,
+        searchQuery: buildOpQuery({ name, number }),
+      })
+      if (cards.length >= 8) break
+    }
+    console.log(`[cards:op] extracted ${cards.length} unique cards`)
+    return cards
+  })
+}
+
+async function searchOnePiece(query) {
+  // Try official site first
+  try {
+    const siteResults = await searchOpSite(query)
+    if (siteResults.length > 0) return siteResults
+  } catch (err) {
+    console.log(`[cards:op] site scrape failed: ${err.message}`)
+  }
+  // Fall back to eBay active listings
+  try {
+    const ebayResults = await searchOpEbay(query)
+    if (ebayResults.length > 0) return ebayResults
+  } catch (err) {
+    console.log(`[cards:op] eBay fallback failed: ${err.message}`)
+  }
+  return []
+}
+
+// ─── GENERAL EBAY FALLBACK ────────────────────────────────────────────────────
+// When official card databases return nothing, search eBay active listings
+// and extract card suggestions from listing titles. Works for any card game.
 
 function extractCardFromTitle(title) {
   let name = title
@@ -693,6 +863,14 @@ export default async function handler(req, res) {
       console.error('[cards] mtg error:', err.message)
     }
     if (cards.length) attribution = 'Scryfall'
+  } else if (game === 'onepiece') {
+    try {
+      cards = await searchOnePiece(query)
+      console.log('[cards] onepiece results:', cards.length)
+    } catch (err) {
+      console.error('[cards] onepiece error:', err.message)
+    }
+    if (cards.length) attribution = 'One Piece Card Game'
   } else if (game === 'dbs') {
     try {
       cards = await searchDbs(query)
