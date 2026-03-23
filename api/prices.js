@@ -240,6 +240,73 @@ function calcTrend(recentAvg, allAvg) {
   return parseFloat((((recentAvg - allAvg) / allAvg) * 100).toFixed(1))
 }
 
+// ─── CARD IMAGE LOOKUP ───────────────────────────────────────────────────────
+
+const POKEMON_KEYWORDS = ['pokemon', 'pokémon', 'charizard', 'pikachu', 'mewtwo', 'eevee',
+  'blastoise', 'venusaur', 'gengar', 'snorlax', 'gyarados', 'dragonite', 'meowth',
+  'lugia', 'ho-oh', 'rayquaza', 'mew', 'umbreon', 'espeon', 'sylveon', 'gardevoir',
+  'lucario', 'greninja', 'alakazam', 'bulbasaur', 'squirtle']
+
+const MTG_KEYWORDS = ['mtg', 'magic the gathering', 'magic: the gathering', 'planeswalker']
+
+function detectCardSource(query) {
+  const ql = query.toLowerCase()
+  if (POKEMON_KEYWORDS.some((k) => ql.includes(k))) return 'pokemon'
+  if (MTG_KEYWORDS.some((k) => ql.includes(k))) return 'mtg'
+  return null
+}
+
+/** Extract the likely card name from the query for API lookups — first 2-3 words,
+ *  stopping before set codes or rarity abbreviations. */
+function extractCardName(query) {
+  const tokens = query.split(/\s+/)
+  const stopRe = /^(?:[A-Z]{1,4}-?\d+|\d{1,3}\/\d{1,3}|SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR)$/i
+  const nameTokens = []
+  for (const tok of tokens) {
+    if (stopRe.test(tok)) break
+    nameTokens.push(tok)
+    if (nameTokens.length >= 4) break
+  }
+  return nameTokens.join(' ').trim()
+}
+
+async function fetchPokemonImage(query) {
+  const cardName = extractCardName(query)
+  if (!cardName) return null
+  const apiKey = process.env.POKEMON_TCG_API_KEY
+  const headers = apiKey ? { 'X-Api-Key': apiKey } : {}
+  const url = `https://api.pokemontcg.io/v2/cards?q=name:"${encodeURIComponent(cardName)}"&pageSize=1`
+  const res = await fetch(url, { headers })
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.data?.[0]?.images?.large || null
+}
+
+async function fetchMtgImage(query) {
+  const cardName = extractCardName(query)
+  if (!cardName) return null
+  const url = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`
+  const res = await fetch(url)
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.image_uris?.normal || data.card_faces?.[0]?.image_uris?.normal || null
+}
+
+/**
+ * Fetches the best card image from a dedicated card API based on detected game.
+ * Returns null (not throws) on any failure so it never blocks the response.
+ */
+async function fetchCardImage(query) {
+  const source = detectCardSource(query)
+  try {
+    if (source === 'pokemon') return await fetchPokemonImage(query)
+    if (source === 'mtg') return await fetchMtgImage(query)
+  } catch (e) {
+    console.log(`[cardImage:${source}] failed: ${e.message}`)
+  }
+  return null
+}
+
 // ─── SPELL CORRECTION ────────────────────────────────────────────────────────
 
 // Exact substitutions checked first (fast path)
@@ -633,7 +700,14 @@ export default async function handler(req, res) {
       return { results: res, blended: blend(res), allItems: [...fA, ...fB, ...fC] }
     }
 
-    let { results, blended, allItems } = await runQueries(processed)
+    // Launch card image lookup in parallel with the first eBay query batch
+    const [queriesResult, cardImageResult] = await Promise.allSettled([
+      runQueries(processed),
+      fetchCardImage(q.trim()),
+    ])
+    let { results, blended, allItems } = queriesResult.value
+    const dedicatedImageUrl = cardImageResult.status === 'fulfilled' ? cardImageResult.value : null
+
     let correctedQuery = null  // set if we used spell correction or word-strip
 
     // ── Retry 1: spell correction ────────────────────────────────────────────
@@ -702,11 +776,13 @@ export default async function handler(req, res) {
       trend30,
       trend90: null,
       imageUrl: (() => {
+        // Prefer a dedicated card API image (pokemontcg.io / Scryfall) when available
+        if (dedicatedImageUrl) return dedicatedImageUrl
+        // Fall back to best-scored eBay listing image
         const qLower = q.trim().toLowerCase()
         const qWords = qLower.split(/\s+/)
         const rareTerms = ['illustration rare', 'special illustration', ' sir ', 'sir)', 'full art', 'alt art', 'alternate art']
         const queryIsRare = rareTerms.some((t) => qLower.includes(t))
-        // deduped is already grade-filtered — no need to re-filter here
         const scored = deduped
           .filter((i) => i.image?.imageUrl)
           .map((i) => {
