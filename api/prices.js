@@ -227,55 +227,127 @@ function calcTrend(recentAvg, allAvg) {
 }
 
 // ─── QUERY PREPROCESSOR ──────────────────────────────────────────────────────
-// Filler words stripped when query exceeds 60 chars. Order matters: longer
-// phrases must come before their substrings (e.g. "trading card game" before "card").
-const FILLER = [
-  'trading card game', 'special illustration rare', 'illustration rare',
+
+// Rarity codes to extract and preserve
+const RARITY_CODES = ['IMIR', 'SIR', 'SCR', 'SPR', 'SAR', 'SSR', 'SEC', 'ACE', 'UR', 'SR', 'RR', 'UC', 'CHR', 'AR']
+
+// Set code pattern: BT27-019, FB09, OP01-112, D-BT01, 121/088
+const SET_CODE_RE = /\b(?:[A-Z]{1,4}-)?(?:BT|FB|OP|SD|P|D-BT|ST)\d+(?:-\d+)?\b|\b[A-Z]{1,4}\d{2,3}(?:-\d+)?\b|\b\d{3}\/\d{3}\b/gi
+
+// Card number standalone: 121/088
+const CARD_NUM_RE = /\b\d{1,3}\/\d{1,3}\b/g
+
+// Grade words — strip from query since grade is handled by the grade filter
+const GRADE_WORDS_RE = /\b(?:psa|bgs|cgc|sgc|beckett)\s*\d+(?:\.\d+)?|\braw\b|\bgem\s*mint\b|\bnm\b|\bnear\s*mint\b|\bmint\b|\blightly\s*played\b|\bheavily\s*played\b/gi
+
+// Filler phrases/words to remove from FULL_TITLE queries (longest first)
+const FULL_TITLE_FILLER = [
+  'special illustration rare', 'illustration rare', 'trading card game',
   'pre-owned', 'near mint', 'lightly played', 'heavily played',
+  'perfect order', 'scarlet violet', 'scarlet & violet',
+  'pokemon tcg', 'pokemon card', 'pokémon card',
+  'single card', 'card game',
   'english', 'japanese', 'korean', 'chinese',
-  'special', 'holo rare', 'ultra rare', 'secret rare',
-  'common', 'uncommon', 'rare',
-  'pokemon', 'pokémon',
+  'special', 'trading', 'single', 'holo',
+  'new', '1x',
 ]
 
-// Preserve these token patterns even if they look like filler.
-const KEEP_RE = [
-  /\b[A-Z]{2,4}\b/,           // rarity abbreviations: SIR, SCR, SR, UR, SSR
-  /\b[A-Z]{1,4}-?\d+\b/i,     // set codes: BT27, FB09-121, OP01
-  /\b\d+\/\d+\b/,             // card numbers: 121/088
-]
+function normalize(raw) {
+  return raw
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
+    .replace(/[^\w\s\-\/]/g, ' ')                     // remove special chars
+    .replace(/\s+/g, ' ').trim()
+}
 
-function preprocessQuery(raw) {
-  // 1. Normalise accents: é→e, ü→u, etc.
-  let q = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+function detectType(q, grade) {
+  const ql = q.toLowerCase()
+  if (SET_CODE_RE.test(q)) { SET_CODE_RE.lastIndex = 0; return 'SET_CODE' }
+  if (GRADE_WORDS_RE.test(ql)) { GRADE_WORDS_RE.lastIndex = 0; return 'GRADE_INCLUDED' }
+  if (q.length > 60) return 'FULL_TITLE'
+  return 'SIMPLE_NAME'
+}
 
-  // 2. Remove any characters eBay doesn't care about
-  q = q.replace(/[^\w\s\-\/]/g, ' ').replace(/\s+/g, ' ').trim()
+function extractTokens(q) {
+  // Set codes
+  const setCodes = q.match(SET_CODE_RE) || []
+  SET_CODE_RE.lastIndex = 0
 
-  // 3. Only shorten if over 60 characters
-  if (q.length <= 60) return q
+  // Card numbers (e.g. 121/088)
+  const cardNums = q.match(CARD_NUM_RE) || []
 
-  // Tokenise, tag each word as keep/drop
-  const tokens = q.split(/\s+/)
-  const kept = tokens.filter((tok) => {
-    // Always keep tokens that match a preserve pattern
-    if (KEEP_RE.some((re) => re.test(tok))) return true
-    // Drop if the token (lowercased) appears in any filler phrase
-    const tl = tok.toLowerCase()
-    return !FILLER.some((f) => f === tl || f.split(' ').includes(tl) && f.includes(tl))
-  })
+  // Rarity codes — match as whole uppercase words
+  const rarityCode = RARITY_CODES.find((r) => new RegExp(`\\b${r}\\b`).test(q)) || null
 
-  // Also strip full multi-word filler phrases from the joined string
-  let shortened = kept.join(' ')
-  for (const phrase of FILLER) {
-    if (phrase.includes(' ')) {
-      shortened = shortened.replace(new RegExp(`\\b${phrase}\\b`, 'gi'), '')
-    }
+  // Grade string (for logging; not used in final query)
+  const gradeMatch = q.match(GRADE_WORDS_RE)
+  GRADE_WORDS_RE.lastIndex = 0
+  const gradeStr = gradeMatch ? gradeMatch[0] : null
+
+  return { setCodes, cardNums, rarityCode, gradeStr }
+}
+
+function cleanFullTitle(q) {
+  let out = q
+  // Strip multi-word filler phrases first
+  for (const phrase of FULL_TITLE_FILLER) {
+    out = out.replace(new RegExp(`\\b${phrase}\\b`, 'gi'), ' ')
   }
-  shortened = shortened.replace(/\s+/g, ' ').trim()
+  // Strip grade words
+  out = out.replace(GRADE_WORDS_RE, ' ')
+  GRADE_WORDS_RE.lastIndex = 0
+  return out.replace(/\s+/g, ' ').trim()
+}
 
-  console.log(`[preprocess] "${raw}" → "${shortened}"`)
-  return shortened || q // fall back to original if we over-stripped
+/**
+ * Preprocess a raw search query into a tight eBay query.
+ * Returns { query, type, tokens } for logging and debugging.
+ */
+function preprocessQuery(raw, grade = 'Raw') {
+  const normalised = normalize(raw)
+  const type = detectType(normalised, grade)
+  const tokens = extractTokens(normalised)
+
+  let cleaned
+  if (type === 'FULL_TITLE') {
+    cleaned = cleanFullTitle(normalised)
+  } else if (type === 'GRADE_INCLUDED') {
+    // Remove grade words — grade filter handles this separately
+    cleaned = normalised.replace(GRADE_WORDS_RE, ' ').replace(/\s+/g, ' ').trim()
+    GRADE_WORDS_RE.lastIndex = 0
+  } else {
+    // SET_CODE or SIMPLE_NAME — keep as-is
+    cleaned = normalised
+  }
+
+  // Reconstruct: cardName portion (what's left after removing codes/rarity),
+  // then re-append set codes and rarity code so they're always present
+  const setCodeStr = tokens.setCodes.join(' ')
+  const cardNumStr = tokens.cardNums.filter((n) => !setCodeStr.includes(n)).join(' ')
+  const rarityStr  = tokens.rarityCode || ''
+
+  // Remove the tokens we're about to re-append, to avoid duplicates
+  let base = cleaned
+  for (const sc of tokens.setCodes) base = base.replace(sc, '')
+  for (const cn of tokens.cardNums) base = base.replace(cn, '')
+  if (rarityStr) base = base.replace(new RegExp(`\\b${rarityStr}\\b`, 'g'), '')
+  base = base.replace(/\s+/g, ' ').trim()
+
+  const parts = [base, setCodeStr, cardNumStr, rarityStr].filter(Boolean)
+  let query = parts.join(' ').replace(/\s+/g, ' ').trim()
+
+  // Hard cap at 50 chars — trim from the end of the base name, not the codes
+  if (query.length > 50) {
+    const suffix = [setCodeStr, cardNumStr, rarityStr].filter(Boolean).join(' ')
+    const maxBase = 50 - (suffix ? suffix.length + 1 : 0)
+    base = base.substring(0, maxBase).replace(/\s+\S*$/, '').trim()
+    query = [base, suffix].filter(Boolean).join(' ')
+  }
+
+  // Fallback: if cleaning gutted the query, return the normalised original
+  if (query.length < 3) query = normalised.substring(0, 50)
+
+  console.log(`[preprocess] type=${type} "${raw}" → "${query}"`)
+  return { query, type, tokens }
 }
 
 // ─── QUERY BUILDERS ──────────────────────────────────────────────────────────
@@ -428,7 +500,7 @@ export default async function handler(req, res) {
 
   try {
     const token = await getToken()
-    const processed = preprocessQuery(q.trim())
+    const { query: processed } = preprocessQuery(q.trim(), grade)
     const queries = buildQueries(processed, grade, lang)
 
     // Three queries in parallel — one failure doesn't kill the others
