@@ -414,9 +414,6 @@ const acCache=new Map();
 const AC_CACHE_MAX=20;
 function acCacheSet(k,v){if(acCache.size>=AC_CACHE_MAX){const oldest=acCache.keys().next().value;acCache.delete(oldest);}acCache.set(k,v);}
 const GAME_ICONS={
-  pokemon:'<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="2" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>',
-  mtg:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 19h20L12 2z"/><circle cx="12" cy="14" r="2" fill="currentColor"/></svg>',
-  dbs:'<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 5l2 4 4.5.7-3.3 3.1.8 4.5L12 15l-4 2.3.8-4.5L5.5 9.7 10 9z"/></svg>',
   direct:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>',
 };
 function showAcLoading(){
@@ -463,11 +460,8 @@ function renderAc(d,q){
       return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(c.name)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
     }
     const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='var(--bd)'">`:`<div class="ac-img"></div>`;
-    const gameCls=c.game==='pokemon'?'pkm':c.game==='mtg'?'mtg':c.game==='dbs'?'dbs':'dir';
-    const icon=GAME_ICONS[c.game]||'';
-    const badge=`<span class="ac-badge ${gameCls}">${icon}</span>`;
     const sub=[c.set,c.number,c.rarity].filter(Boolean).join(' \u00b7 ');
-    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name">${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div>${badge}</div>`;
+    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name">${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div></div>`;
   }).join('');
   // Attribution line
   if(d.attribution){

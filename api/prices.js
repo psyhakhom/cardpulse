@@ -111,6 +111,7 @@ const GRADE_EXCLUDE = {
     'x2', 'x3', 'x4', 'x5', '2x', '3x', '4x', '5x',
     '2 card', '3 card', '4 card', '5 card', '10 card', '21 card',
     'booster box', 'booster pack', 'sealed',
+    'buy 3 get 1', 'buy 2 get 1', 'buy 1 get 1', 'bogo', 'get 1 free', 'get one free',
   ],
 }
 
