@@ -150,49 +150,24 @@ function calcStats(items) {
 function extractComps(items, limit = 10, grade = null) {
   const now = Date.now()
   const ms90 = 90 * 24 * 60 * 60 * 1000
-  const ms180 = 180 * 24 * 60 * 60 * 1000
 
-  const eligible = items
+  return items
     .filter((i) => parseFloat(i.price?.value || 0) > 0)
     .filter((i) => !grade || gradeMatch(i.title, grade))
-
-  const toComp = (i, stale = false) => ({
-    title: i.title,
-    price: parseFloat(i.price?.value || 0),
-    date: i.itemEndDate || i.itemCreationDate || null,
-    url: i.itemWebUrl || null,
-    image: i.image?.imageUrl || i.thumbnailImages?.[0]?.imageUrl || null,
-    condition: i.condition || null,
-    source: 'ebay',
-    stale,
-  })
-
-  const fresh = eligible.filter((i) => {
-    const d = i.itemEndDate || i.itemCreationDate
-    return d && now - new Date(d).getTime() <= ms90
-  })
-
-  if (fresh.length >= 3) return fresh.slice(0, limit).map((i) => toComp(i, false))
-
-  const extended = eligible.filter((i) => {
-    const d = i.itemEndDate || i.itemCreationDate
-    return d && now - new Date(d).getTime() <= ms180
-  })
-
-  if (extended.length >= 3) {
-    return extended.slice(0, limit).map((i) => {
+    .filter((i) => {
       const d = i.itemEndDate || i.itemCreationDate
-      const stale = !d || now - new Date(d).getTime() > ms90
-      return toComp(i, stale)
+      return d && now - new Date(d).getTime() <= ms90
     })
-  }
-
-  // Fewer than 3 even in 180d window — show everything, flag anything over 90d
-  return eligible.slice(0, limit).map((i) => {
-    const d = i.itemEndDate || i.itemCreationDate
-    const stale = !d || now - new Date(d).getTime() > ms90
-    return toComp(i, stale)
-  })
+    .slice(0, limit)
+    .map((i) => ({
+      title: i.title,
+      price: parseFloat(i.price?.value || 0),
+      date: i.itemEndDate || i.itemCreationDate || null,
+      url: i.itemWebUrl || null,
+      image: i.image?.imageUrl || i.thumbnailImages?.[0]?.imageUrl || null,
+      condition: i.condition || null,
+      source: 'ebay',
+    }))
 }
 
 // ─── TREND ───────────────────────────────────────────────────────────────────
