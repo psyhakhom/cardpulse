@@ -545,6 +545,7 @@ async function search(q, elId) {
       console.log('[search] grade=', JSON.stringify(G), 'lang=', JSON.stringify(L), 'q=', searchQ, sc ? '(catalog)' : '(free text)');
       const params = new URLSearchParams({ q: searchQ, grade: G, lang: L });
       if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
+      if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
       if (data.error) {

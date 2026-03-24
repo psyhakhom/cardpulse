@@ -435,7 +435,7 @@ async function searchDbsSite(query) {
     cards.push({
       id: `dbs-site-${number || cards.length}`, name,
       set: number ? number.replace(/-\d+[A-Z]?$/, '') : '', number, rarity,
-      game: 'dbs', imageUrl, largeImageUrl: imageUrl,
+      game: 'dbs', imageUrl: imageUrl || dbsImageUrl(number), largeImageUrl: imageUrl || dbsImageUrl(number),
       searchQuery: buildSearchQuery(simplifyDbsName(name), number, rarity),
     })
   }
@@ -524,6 +524,12 @@ const DBS_POPULAR = [
   { name: 'SS Broly, Banisher of Fury', number: 'BT29-145', rarity: 'SCR' },
 ]
 
+// Generate official DBS card image URL from card number
+function dbsImageUrl(number) {
+  if (!number) return null
+  return `https://www.dbs-cardgame.com/images/card/${number}.png`
+}
+
 function searchDbsFallback(query) {
   const sanitized = sanitizeQuery(query)
   const terms = sanitized.toLowerCase().split(/\s+/)
@@ -537,8 +543,8 @@ function searchDbsFallback(query) {
     number: card.number,
     rarity: card.rarity,
     game: 'dbs',
-    imageUrl: null,
-    largeImageUrl: null,
+    imageUrl: dbsImageUrl(card.number),
+    largeImageUrl: dbsImageUrl(card.number),
     searchQuery: buildSearchQuery(simplifyDbsName(card.name), card.number, card.rarity),
   }))
 }

@@ -940,16 +940,19 @@ function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery
   // Use raw SQL upsert via POST with Prefer: resolution=merge-duplicates
   // The table has unique index on (card_name, game, rarity_key) where
   // rarity_key is a generated column: coalesce(rarity, '')
+  // Only include image_url if it's a real official image (not eBay seller photo)
+  const safeImageUrl = (imageUrl && !imageUrl.includes('ebayimg.com')) ? imageUrl : null
   const body = {
     card_name: cardName,
     game: game || 'unknown',
     set_code: setCode || null,
     rarity: rarity || null,
-    image_url: imageUrl || null,
     search_query: searchQuery || cardName,
     times_searched: 1,
     last_searched: new Date().toISOString(),
   }
+  // Only set image_url if we have a good one — don't overwrite existing official image with null
+  if (safeImageUrl) body.image_url = safeImageUrl
   sbFetch('card_catalog', 'POST', body, {
     prefer: 'return=minimal,resolution=merge-duplicates',
   }).then((r) => {
@@ -996,7 +999,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, lang = 'English', history, exact } = req.query
+  const { q, lang = 'English', history, exact, cardImageUrl } = req.query
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
   const rawGrade = req.query.grade || 'Raw'
@@ -1270,13 +1273,15 @@ export default async function handler(req, res) {
       return 'unknown'
     })()
     const detectedSetCode = (processed.match(/\b(?:BT|FB|FS|SD|ST|SB|EB|TB|OP|D-BT)\d+(?:-\d+)?/i) || [])[0] || null
-    console.log(`[debug] about to call logCardCatalog for: "${q.trim()}" game: ${detectedGame}`)
+    // Prefer official card image (from autocomplete) over eBay listing photo
+    const catalogImageUrl = cardImageUrl || (response.imageUrl && !response.imageUrl.includes('ebayimg.com') ? response.imageUrl : null)
+    console.log(`[debug] about to call logCardCatalog for: "${q.trim()}" game: ${detectedGame}, imageUrl: ${catalogImageUrl ? 'official' : 'none'}`)
     logCardCatalog({
       cardName: q.trim(),
       game: detectedGame,
       setCode: detectedSetCode,
       rarity: requiredRarity || null,
-      imageUrl: response.imageUrl || null,
+      imageUrl: catalogImageUrl,
       searchQuery: processed,
     })
 
