@@ -109,18 +109,19 @@ create index on price_history (queried_at desc);
 
 -- Self-growing card catalog (populated by every successful search)
 create table card_catalog (
-  id            bigserial primary key,
-  card_name     text        not null,
-  game          text        not null default 'unknown',
-  set_code      text,
-  rarity        text,
-  image_url     text,
-  search_query  text,
-  times_searched int        not null default 1,
+  id             bigserial primary key,
+  card_name      text        not null,
+  game           text        not null default 'unknown',
+  set_code       text,
+  rarity         text,
+  rarity_key     text        generated always as (coalesce(rarity, '')) stored,
+  image_url      text,
+  search_query   text,
+  times_searched int         not null default 1,
   last_searched  timestamptz not null default now(),
-  created_at    timestamptz not null default now(),
-  unique(card_name, game)
+  created_at     timestamptz not null default now()
 );
+create unique index on card_catalog (card_name, game, rarity_key);
 create index on card_catalog (game, lower(card_name));
 create index on card_catalog (last_searched desc);
 ```

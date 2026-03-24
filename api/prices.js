@@ -894,6 +894,8 @@ function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, total
 function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery }) {
   if (!supabase) return
 
+  // Use rarity_key (generated column: coalesce(rarity, '')) for unique constraint
+  // Table must have: unique index on (card_name, game, rarity_key)
   supabase.from('card_catalog').upsert({
     card_name: cardName,
     game: game || 'unknown',
@@ -904,8 +906,12 @@ function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery
     times_searched: 1,
     last_searched: new Date().toISOString(),
   }, {
-    onConflict: 'card_name,game',
-  }).then(() => {}).catch((err) => console.warn('card_catalog write failed:', err.message))
+    onConflict: 'card_name,game,rarity_key',
+    ignoreDuplicates: false,
+  }).then((result) => {
+    if (result.error) console.error('card_catalog upsert error:', JSON.stringify(result.error))
+    else console.log(`card_catalog upsert success: "${cardName}" [${game}]`)
+  }).catch((err) => console.error('card_catalog upsert exception:', err.message))
 }
 
 // ─── HISTORY RETRIEVAL ───────────────────────────────────────────────────────
