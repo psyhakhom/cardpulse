@@ -21,8 +21,20 @@ async function searchCatalog(query, game) {
   try {
     const sanitized = query.replace(/'/g, "''")
     const encoded = encodeURIComponent(sanitized)
-    // Search both card_name and search_query, sort by popularity
-    let url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${encoded}*,search_query.ilike.*${encoded}*)&order=times_searched.desc&limit=16`
+
+    // If query has a specific card number (FB02-099, BT1-031), require exact match on it
+    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?)\b/i)
+
+    let url
+    if (cardNumMatch) {
+      // Exact card number search — only return cards matching that number
+      const num = encodeURIComponent(cardNumMatch[1])
+      console.log(`[cards:db] card number detected: ${cardNumMatch[1]}, using exact match`)
+      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&search_query=ilike.*${num}*&order=times_searched.desc&limit=8`
+    } else {
+      // General name search — broader matching
+      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${encoded}*,search_query.ilike.*${encoded}*)&order=times_searched.desc&limit=16`
+    }
     if (game) url += `&game=eq.${game}`
 
     const res = await fetch(url, {
