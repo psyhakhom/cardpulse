@@ -19,9 +19,10 @@ const _sbReady = !!(SB_URL && SB_KEY)
 async function searchCatalog(query, game) {
   if (!_sbReady) return []
   try {
-    const sanitized = query.replace(/'/g, "''") // escape single quotes for ILIKE
-    // Build query: filter by game if detected, search by name ILIKE
-    let url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&card_name=ilike.*${encodeURIComponent(sanitized)}*&order=times_searched.desc&limit=8`
+    const sanitized = query.replace(/'/g, "''")
+    const encoded = encodeURIComponent(sanitized)
+    // Search both card_name and search_query, sort by popularity
+    let url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${encoded}*,search_query.ilike.*${encoded}*)&order=times_searched.desc&limit=16`
     if (game) url += `&game=eq.${game}`
 
     const res = await fetch(url, {
@@ -32,8 +33,19 @@ async function searchCatalog(query, game) {
     const rows = await res.json()
     if (!rows.length) return []
 
-    console.log(`[cards:db] card_catalog returned ${rows.length} results for "${query}"${game ? ` [${game}]` : ''}`)
-    return rows.map((r) => ({
+    console.log(`[cards:db] card_catalog returned ${rows.length} raw results for "${query}"${game ? ` [${game}]` : ''}`)
+    // Deduplicate by card_name (case-insensitive), prefer rows with images
+    const seen = new Map()
+    for (const r of rows) {
+      const key = r.card_name.toLowerCase()
+      const existing = seen.get(key)
+      if (!existing || (!existing.image_url && r.image_url)) {
+        seen.set(key, r)
+      }
+    }
+    const deduped = [...seen.values()].slice(0, 8)
+    console.log(`[cards:db] ${deduped.length} unique results (${deduped.filter(r => r.image_url).length} with images)`)
+    return deduped.map((r) => ({
       id: `db-${r.card_name}-${r.game}`,
       name: r.card_name,
       set: r.set_code || '',
