@@ -4,7 +4,13 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "import-dbs": "node --env-file=.env.local scripts/import-dbs-cards.js"
+    "import-dbs": "node --env-file=.env.local scripts/import-dbs-cards.js",
+    "import-pokemon": "node --env-file=.env.local scripts/import-pokemon.js",
+    "import-mtg": "node --env-file=.env.local scripts/import-mtg.js",
+    "import-yugioh": "node --env-file=.env.local scripts/import-yugioh.js",
+    "import-onepiece": "node --env-file=.env.local scripts/import-onepiece.js",
+    "import-lorcana": "node --env-file=.env.local scripts/import-lorcana.js",
+    "import-all": "node --env-file=.env.local scripts/import-all.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0"
