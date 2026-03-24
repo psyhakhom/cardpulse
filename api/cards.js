@@ -764,7 +764,10 @@ export default async function handler(req, res) {
 
   // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
   const catalogResults = await searchCatalog(query, game)
-  if (catalogResults.length >= 3) {
+  // Card number searches (FB05-054) need only 1 match; name searches need 3+
+  const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)\d+-\d+/i.test(query)
+  const minResults = hasCardNum ? 1 : 3
+  if (catalogResults.length >= minResults) {
     // Good catalog coverage — use it and skip external APIs entirely
     cards = catalogResults
     attribution = 'CardPulse catalog'
