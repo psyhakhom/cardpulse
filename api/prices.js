@@ -104,10 +104,15 @@ const GRADE_EXCLUDE = {
     // Multi-card lots and sealed product
     'complete set', 'lot of', 'bundle', 'collection lot',
     'x2', 'x3', 'x4', 'x5', '2x', '3x', '4x', '5x',
+    '100x', '50x', '25x', '10x',
     '2 card', '3 card', '4 card', '5 card', '10 card', '21 card',
     'booster box', 'booster pack', 'manga booster', 'booster 01', 'sealed',
     'single card lot', 'parallel single',
+    'bulk', 'bulk lot', 'wholesale', 'random card', 'random lot',
     'buy 3 get 1', 'buy 2 get 1', 'buy 1 get 1', 'bogo', 'get 1 free', 'get one free',
+    // Code cards and digital products
+    'code card', 'digital code', 'online code', 'tcg online', 'tcgo', 'ptcgo',
+    'redeem', 'reward card', 'rewards card', 'digital version',
     // Multi-word phrases safe for includes() (no false-positive risk)
     'gem mint', 'gem-mint', 'black label',
   ],
@@ -528,16 +533,20 @@ function levenshtein(a, b) {
 
 function correctWord(word) {
   const wl = word.toLowerCase()
-  // 1. Exact map hit
+  // 1. Exact map hit — known misspellings only
   if (SPELL_MAP[wl]) return SPELL_MAP[wl]
   // 2. Already a known term — no correction needed
   if (KNOWN_TERMS.includes(wl)) return word
   // 3. Short words and numbers — don't touch
   if (wl.length <= 5 || /^\d/.test(wl)) return word
-  // 4. Levenshtein — find closest known term within distance 2
-  let best = null, bestDist = 3
+  // 4. Common English words — never correct these, they're valid
+  if (/^(granting|wishing|dragon|super|power|energy|attack|guard|strike|battle|master|spirit|cosmic|divine|eternal|ancient|mighty|sacred|golden|silver|shadow|knight|leader|future|world|force|magic|flame|storm|light|heart|sword|giant|royal|metal|steel|stone|thunder|crystal|phantom|ultimate|infinite|awakened|unleashed|absolute|supreme|majestic|celestial|legendary|mythical|original|pristine|standard|premium|limited|special|classic|modern|vintage)$/i.test(wl)) return word
+  // 5. Levenshtein — only correct words very close to known card terms
+  // Require distance 1 for words ≤8 chars, distance 2 for longer words
+  const maxDist = wl.length <= 8 ? 1 : 2
+  let best = null, bestDist = maxDist + 1
   for (const term of KNOWN_TERMS) {
-    if (Math.abs(term.length - wl.length) > 2) continue // prune
+    if (Math.abs(term.length - wl.length) > maxDist) continue
     const d = levenshtein(wl, term)
     if (d < bestDist) { bestDist = d; best = term }
   }
