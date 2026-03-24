@@ -117,6 +117,10 @@ async function ebaySearch(
     },
   })
   if (!res.ok) {
+    if (res.status === 429) {
+      console.error(`[ebay] rate limited (429) — too many requests`)
+      throw new Error('eBay rate limit reached. Please try again in a few minutes.')
+    }
     const body = live ? await res.text().catch(() => '') : ''
     if (live) console.error(`[ebay:live] failed ${res.status}: ${body.slice(0, 200)}`)
     throw new Error(`eBay search failed (${res.status})`)
