@@ -23,7 +23,7 @@ async function searchCatalog(query, game) {
     const encoded = encodeURIComponent(sanitized)
 
     // If query has a specific card number (FB02-099, BT1-031), require exact match on it
-    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?)\b/i)
+    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+)\b/i)
 
     let url
     if (cardNumMatch) {
@@ -181,8 +181,9 @@ const DBS_KW = [
   'kamehameha', 'final flash', 'galick gun', 'spirit bomb', 'instant transmission',
   'hakai', 'ultra instinct', 'god kamehameha', 'destructo disc',
   'special beam cannon', 'makankosappo',
+  'energy marker',
 ]
-const DBS_CODE_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|PUMS|SDBH)\d+/i
+const DBS_CODE_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|PUMS|SDBH)\d+|\bE-\d+/i
 const OP_KW = [
   'one piece', 'onepiece', 'optcg', 'luffy', 'zoro', 'nami', 'sanji',
   'chopper', 'robin', 'franky', 'brook',
@@ -818,7 +819,7 @@ export default async function handler(req, res) {
   // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
   const catalogResults = await searchCatalog(query, game)
   // Card number searches (FB05-054) need only 1 match; name searches need 3+
-  const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)\d+-\d+/i.test(query)
+  const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)\d+-\d+|\bE-?\d+/i.test(query)
   const minResults = hasCardNum ? 1 : 3
   if (catalogResults.length >= minResults) {
     // Good catalog coverage — use it and skip external APIs entirely
