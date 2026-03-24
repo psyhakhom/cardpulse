@@ -27,10 +27,12 @@ async function searchCatalog(query, game) {
 
     let url
     if (cardNumMatch) {
-      // Exact card number search — only return cards matching that number
-      const num = encodeURIComponent(cardNumMatch[1])
-      console.log(`[cards:db] card number detected: ${cardNumMatch[1]}, using exact match`)
-      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&search_query=ilike.*${num}*&order=times_searched.desc&limit=8`
+      const num = cardNumMatch[1].toUpperCase()
+      const numEnc = encodeURIComponent(num)
+      console.log(`[cards:db] card number detected: ${num}`)
+      // First try exact card_number match (e.g., FB05-119 matches only FB05-119, not FB05-119-P3)
+      // Then also include variants via search_query for broader results
+      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_number.eq.${numEnc},card_number.like.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
     } else {
       // General name search — split into words joined by % wildcards so
       // "son gohan future" matches "Son Gohan : Future" (colon between words)
@@ -97,7 +99,24 @@ async function searchCatalog(query, game) {
       }
     }
 
-    const deduped = [...byNumber.values()].slice(0, 8)
+    let deduped = [...byNumber.values()].slice(0, 8)
+
+    // If user searched for a base card number (no -p suffix) but we only found
+    // parallel variants, the base card isn't in the catalog — return empty so
+    // eBay search can find it instead of showing the wrong variant
+    if (cardNumMatch) {
+      const searchedNum = cardNumMatch[1].toUpperCase()
+      const hasBaseCard = deduped.some(r => r.card_number?.toUpperCase() === searchedNum)
+      if (!hasBaseCard && !/-P\d+$/i.test(searchedNum)) {
+        // User searched for base but only parallels found — check if any result is actually the right card
+        const onlyParallels = deduped.every(r => /-P\d+$/i.test(r.card_number || ''))
+        if (onlyParallels) {
+          console.log(`[cards:db] base card ${searchedNum} not in catalog, only parallels found — deferring to external search`)
+          return []
+        }
+      }
+    }
+
     console.log(`[cards:db] ${deduped.length} unique results (${deduped.filter(r => r.image_url).length} with images)`)
     return deduped.map((r) => ({
       id: `db-${r.card_number || r.card_name}-${r.game}`,
