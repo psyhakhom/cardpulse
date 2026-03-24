@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
+  "scripts": {
+    "import-dbs": "node --env-file=.env.local scripts/import-dbs-cards.js"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0"
   }
