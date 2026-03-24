@@ -136,14 +136,31 @@ const GRADED_RE = /\b(psa|bgs|cgc|sgc|beckett|ace|hga)\s*\d+|\b(graded|slab|gem\
 
 // 2. Variant terms — exclude from ALL queries unless query itself contains the term
 const VARIANT_TERMS = [
+  // Art variants
   { query: /\balt\b/i, title: /\b(alt(?:ernate)?|alternative)\s*art\b/i },
   { query: /\bsuper\s*parallel\b/i, title: /\bsuper\s*parallel\b|\bsp\s*card\b/i },
   { query: /\bfull\s*art\b/i, title: /\bfull\s*art\b/i },
   { query: /\bSAR\b/, title: /\bSAR\b/ },
   { query: /\bbooster\b/i, title: /\bmanga\s*booster\b|\bbooster\b/i },
-  // ARS is always excluded — sealed product SKU, never a card variant
+  // Foil/special finish variants
+  { query: /\bsilver\b/i, title: /\bsilver\b/i },
+  { query: /\bgold\b/i, title: /\bgold\b/i },
+  { query: /\bfoil\b/i, title: /\bfoil\b/i },
+  { query: /\brainbow\b/i, title: /\brainbow\b/i },
+  { query: /\bprismatic\b/i, title: /\bprismatic\b/i },
+  { query: /\bchrome\b/i, title: /\bchrome\b/i },
+  { query: /\brefractor\b/i, title: /\brefractor\b/i },
+  // Token / promo / version variants
+  { query: /\btoken\b/i, title: /\btoken\b/i },
+  { query: /\bv\.?2\b/i, title: /\bv\.?\s*2\b|\bversion\s*2\b/i },
+  { query: /\bpromo\b/i, title: /\bpromo(?:tional)?\b|\bpromo\s*card\b/i },
+  // Always excluded — sealed product SKUs and non-card products
   { query: /(?!)/, title: /\bARS\s*\d/i },
+  { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set)\b/i },
+  { query: /(?!)/, title: /\b(manga\s*volume|vol\.\s*\d|volume\s*\d)\b/i },
 ]
+// Note: "holo" excluded from VARIANT_TERMS — it's a base rarity for Pokemon.
+// It's handled separately inside filterItems with a game-type check.
 
 // 3. Language bleed — exclude foreign language listings when language filter is set
 const LANG_EXCLUDE = {
@@ -197,6 +214,41 @@ function filterItems(items, grade, searchQuery, lang) {
     filtered = items.filter((i) => !GRADED_RE.test(i.title || ''))
   } else if (filtered.length < 2) {
     filtered = items
+  }
+
+  // ── 2b. Holo exclusion (non-Pokemon only) ─────────────────────────────
+  // Holo is a base rarity for Pokemon, so only exclude for other games
+  const isPokemon = /\bpokemon\b|\bpokémon\b|\bcharizard\b|\bpikachu\b/i.test(ql)
+  if (!isPokemon && !/\bholo\b/i.test(ql)) {
+    const before = filtered.length
+    const holoFiltered = filtered.filter((i) => !/\bholo\b/i.test(i.title || ''))
+    if (holoFiltered.length >= 2) {
+      filtered = holoFiltered
+      if (filtered.length < before) console.log(`[filter:holo] ${before} → ${filtered.length}`)
+    }
+  }
+
+  // ── 2c. Wrong set code exclusion (DBS specific) ───────────────────────
+  // If query contains a specific set code, exclude comps from different sets
+  const DBS_SET_RE = /\b(BT|FB|SD|SB|EB|TB|PUMS|SDBH)\d+/i
+  const querySetMatch = ql.match(DBS_SET_RE)
+  if (querySetMatch) {
+    const querySet = querySetMatch[0].toUpperCase()
+    const before = filtered.length
+    const setFiltered = filtered.filter((i) => {
+      const t = (i.title || '').toUpperCase()
+      // If title contains any DBS set code, it must match the query's set
+      const titleSetMatch = t.match(DBS_SET_RE)
+      if (titleSetMatch && titleSetMatch[0].toUpperCase() !== querySet) {
+        console.log(`[filter:set] dropped "${(i.title || '').slice(0, 70)}" wrong set ${titleSetMatch[0]} vs ${querySet}`)
+        return false
+      }
+      return true
+    })
+    if (setFiltered.length >= 2) {
+      filtered = setFiltered
+      console.log(`[filter:set] ${before} → ${filtered.length} enforcing set ${querySet}`)
+    }
   }
 
   // ── 3. Language exclusion (all grades) ────────────────────────────────
