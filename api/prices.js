@@ -895,9 +895,26 @@ function blend(results) {
  * NEVER awaited — response goes out before these complete.
  * If Supabase is not configured, silently skipped.
  */
+// Track recent writes to prevent duplicates within 60 seconds
+const _recentWrites = new Map()
+
 function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, totalComps, trend30 }) {
   console.log(`[debug] logPriceHistory called, _sbConfigured: ${_sbConfigured}, cardName: "${cardName}"`)
   if (!_sbConfigured) { console.log('[debug] logPriceHistory skipped — not configured'); return }
+
+  // Deduplicate: skip if same card+grade+lang was written in last 60 seconds
+  const dedupeKey = `${cardName}|${grade}|${lang}`
+  const lastWrite = _recentWrites.get(dedupeKey)
+  if (lastWrite && Date.now() - lastWrite < 60000) {
+    console.log(`[supabase] price_history skipped (duplicate within 60s): "${cardName}"`)
+    return
+  }
+  _recentWrites.set(dedupeKey, Date.now())
+  // Clean old entries to prevent memory leak
+  if (_recentWrites.size > 100) {
+    const now = Date.now()
+    for (const [k, v] of _recentWrites) { if (now - v > 60000) _recentWrites.delete(k) }
+  }
 
   sbFetch('price_history', 'POST', {
     card_name: cardName,
@@ -1244,7 +1261,7 @@ export default async function handler(req, res) {
     // Build self-growing card catalog — saves every searched card for future autocomplete
     const detectedGame = (() => {
       const ql = q.trim().toLowerCase()
-      if (/dragon ball|dbs|goku|vegeta|gogeta|broly|frieza|fusion world/i.test(ql) || /\b(BT|FB|FS|SD|ST)\d+/i.test(ql)) return 'dbs'
+      if (/dragon ball|dbs|goku|vegeta|gogeta|broly|frieza|fusion world|energy marker/i.test(ql) || /\b(BT|FB|FS|SD|ST)\d+/i.test(ql)) return 'dbs'
       if (/pokemon|charizard|pikachu/i.test(ql)) return 'pokemon'
       if (/mtg|magic/i.test(ql)) return 'mtg'
       if (/yugioh|yu-gi-oh/i.test(ql)) return 'yugioh'
