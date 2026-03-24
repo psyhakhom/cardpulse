@@ -50,38 +50,52 @@ async function searchCatalog(query, game) {
     // Deduplicate: extract card number from search_query, group by it.
     // Prefer rows where card_name is a proper name (not just the card number)
     // and rows that have an image_url.
-    const cardNumRe = /\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP|P-)\d+-\d+[A-Z]?(?:-p\d)?)\b/i
-    const byNumber = new Map()
-    const byName = new Map()
+    // Dedup logic:
+    // - Parallel variants (FB05-054, FB05-054-p1, FB05-054-p2) are SEPARATE results
+    // - Bare card-number rows (card_name = "fb05-054") are MERGED with properly-named rows
+    const cardNumRe = /\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP|P-)\d+-\d+[A-Z]?(?:-p\d+)?)\b/i
+    const bareNumRe = /^[a-z]{2,4}\d+-\d+(?:-p\d+)?$/i
+
+    const byNumber = new Map() // keyed by full card number (including -p suffix)
+    const bareNums = []        // rows where card_name is just a card number
 
     for (const r of rows) {
-      // Extract card number from search_query
       const numMatch = (r.search_query || '').match(cardNumRe)
-      const num = numMatch ? numMatch[1].toUpperCase().replace(/-P\d+$/i, '') : null
-      const isProperName = r.card_name && num && r.card_name.toLowerCase() !== num.toLowerCase()
-      const hasImage = !!r.image_url
+      const num = numMatch ? numMatch[1].toUpperCase() : null
+      const isBareNum = bareNumRe.test(r.card_name?.trim())
+
+      if (isBareNum) {
+        // This is a "bad" row where card_name is just the card number (from user search log)
+        // Don't add to results — it'll be dropped if a proper row exists
+        bareNums.push({ ...r, _num: num })
+        continue
+      }
 
       if (num) {
         const existing = byNumber.get(num)
-        if (!existing
-          || (!existing._isProperName && isProperName)
-          || (existing._isProperName === isProperName && !existing.image_url && hasImage)) {
-          byNumber.set(num, { ...r, _isProperName: isProperName })
+        if (!existing || (!existing.image_url && r.image_url)) {
+          byNumber.set(num, r)
         }
       } else {
-        // No card number — dedup by name
+        // No card number — use card_name as key
         const key = r.card_name.toLowerCase()
-        const existing = byName.get(key)
-        if (!existing || (!existing.image_url && hasImage)) {
-          byName.set(key, r)
+        if (!byNumber.has(key)) byNumber.set(key, r)
+      }
+    }
+
+    // Add bare-number rows ONLY if no properly-named row exists for that number
+    for (const br of bareNums) {
+      if (br._num && !byNumber.has(br._num)) {
+        // Also check base number without -p suffix
+        const baseNum = br._num.replace(/-P\d+$/i, '')
+        if (!byNumber.has(baseNum)) {
+          const { _num, ...clean } = br
+          byNumber.set(br._num, clean)
         }
       }
     }
 
-    // Merge: card-number deduped first, then name-only results
-    const deduped = [...byNumber.values(), ...byName.values()]
-      .map(({ _isProperName, ...r }) => r) // strip internal field
-      .slice(0, 8)
+    const deduped = [...byNumber.values()].slice(0, 8)
     console.log(`[cards:db] ${deduped.length} unique results (${deduped.filter(r => r.image_url).length} with images)`)
     return deduped.map((r) => ({
       id: `db-${r.card_name}-${r.game}`,
