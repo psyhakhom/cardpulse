@@ -518,8 +518,12 @@ async function searchDbs(query) {
 
     // Retry with individual words (longest first) — catches attack names
     // "god kamehameha" → try "kamehameha" alone → finds "Gohan, Father-Son Kamehameha"
+    // SKIP word-retry when query has a specific card number — returning a different
+    // card (e.g., BT1-057 when user asked for BT29-145) is worse than no result.
+    // Let the eBay fallback in the handler find the actual card.
+    const queryHasCardNum = DBS_NUM_RE.test(sanitized)
     const words = sanitized.split(/\s+/).filter((w) => w.length >= 3)
-    if (words.length > 1) {
+    if (!queryHasCardNum && words.length > 1) {
       const sorted = [...words].sort((a, b) => b.length - a.length)
       for (const word of sorted) {
         console.log(`[cards:dbs] retrying with single word: "${word}"`)
