@@ -1,19 +1,54 @@
 /**
  * GET /api/cards?q={query}
  *
- * Card catalog autocomplete endpoint. Returns up to 8 matching cards from:
- *   - pokemontcg.io  (Pokemon)
- *   - Scryfall       (MTG)
- *   - YGOProDeck     (Yu-Gi-Oh)
- *   - OPTCG GitHub   (One Piece)
- *   - DBS site + community JSON fallback (Dragon Ball Super)
- *   - Lorcana API    (Disney Lorcana)
- *   - eBay fallback  (anything else)
+ * Card catalog autocomplete endpoint. Priority order:
+ *   1. Supabase card_catalog (71,000+ pre-imported cards — instant)
+ *   2. External APIs (pokemontcg.io, Scryfall, YGOProDeck, etc.)
+ *   3. eBay fallback
  * Plus an "eBay direct" fallback option always included.
  *
  * All responses are in-memory cached for 1 hour per query string.
  * Env vars: POKEMON_TCG_API_KEY (optional — unlocks higher rate limit)
  */
+
+// ─── SUPABASE CLIENT (for card_catalog reads) ────────────────────────────────
+const SB_URL = process.env.SUPABASE_URL
+const SB_KEY = process.env.SUPABASE_SERVICE_KEY
+const _sbReady = !!(SB_URL && SB_KEY)
+
+async function searchCatalog(query, game) {
+  if (!_sbReady) return []
+  try {
+    const sanitized = query.replace(/'/g, "''") // escape single quotes for ILIKE
+    // Build query: filter by game if detected, search by name ILIKE
+    let url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&card_name=ilike.*${encodeURIComponent(sanitized)}*&order=times_searched.desc&limit=8`
+    if (game) url += `&game=eq.${game}`
+
+    const res = await fetch(url, {
+      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+      signal: AbortSignal.timeout(3000), // 3s max — must be faster than external APIs
+    })
+    if (!res.ok) return []
+    const rows = await res.json()
+    if (!rows.length) return []
+
+    console.log(`[cards:db] card_catalog returned ${rows.length} results for "${query}"${game ? ` [${game}]` : ''}`)
+    return rows.map((r) => ({
+      id: `db-${r.card_name}-${r.game}`,
+      name: r.card_name,
+      set: r.set_code || '',
+      number: '',
+      rarity: r.rarity || '',
+      game: r.game,
+      imageUrl: r.image_url || null,
+      largeImageUrl: r.image_url || null,
+      searchQuery: r.search_query || r.card_name,
+    }))
+  } catch (err) {
+    console.log(`[cards:db] catalog query failed: ${err.message}`)
+    return []
+  }
+}
 
 // ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
 const cache = new Map()
@@ -703,6 +738,17 @@ export default async function handler(req, res) {
   let attribution = null
   let jpExclusive = false
 
+  // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
+  const catalogResults = await searchCatalog(query, game)
+  if (catalogResults.length >= 3) {
+    // Good catalog coverage — use it and skip external APIs entirely
+    cards = catalogResults
+    attribution = 'CardPulse catalog'
+    console.log(`[cards] using card_catalog (${cards.length} results), skipping external APIs`)
+    return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
+  }
+
+  // ── Step 2: Fall through to external APIs if catalog had <3 results ─────
   if (game === 'pokemon') {
     try {
       const result = await searchPokemon(query)
