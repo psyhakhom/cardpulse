@@ -516,14 +516,13 @@ async function searchDbs(query) {
     const fbResults = searchDbsFallback(query)
     if (fbResults.length > 0) return fbResults
 
-    // Retry with individual words (longest first) — catches attack names
-    // "god kamehameha" → try "kamehameha" alone → finds "Gohan, Father-Son Kamehameha"
-    // SKIP word-retry when query has a specific card number — returning a different
-    // card (e.g., BT1-057 when user asked for BT29-145) is worse than no result.
-    // Let the eBay fallback in the handler find the actual card.
+    // Retry with individual words — only for short queries (2 words) without
+    // a specific card number. For 3+ word queries like "SS Broly Banisher Fury",
+    // the user is searching for a specific card — returning a generic "Broly" match
+    // is worse than falling through to the eBay fallback.
     const queryHasCardNum = DBS_NUM_RE.test(sanitized)
     const words = sanitized.split(/\s+/).filter((w) => w.length >= 3)
-    if (!queryHasCardNum && words.length > 1) {
+    if (!queryHasCardNum && words.length === 2) {
       const sorted = [...words].sort((a, b) => b.length - a.length)
       for (const word of sorted) {
         console.log(`[cards:dbs] retrying with single word: "${word}"`)
@@ -552,6 +551,10 @@ async function searchDbs(query) {
       }
     }
 
+    // For 3+ word queries that reached here, return empty so eBay fallback triggers
+    if (words.length >= 3) {
+      console.log(`[cards:dbs] specific query "${sanitized}" not in database, deferring to eBay fallback`)
+    }
     return []
   })
 }
