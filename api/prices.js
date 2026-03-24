@@ -1,3 +1,11 @@
+import { createClient } from '@supabase/supabase-js'
+
+// ─── SUPABASE CLIENT ────────────────────────────────────────────────────────
+// Null if env vars not configured — all writes silently skip
+const supabase = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY)
+  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
+  : null
+
 /**
  * CardPulse — /api/prices.js
  * Vercel serverless function
@@ -861,54 +869,43 @@ function blend(results) {
 
 // ─── SUPABASE LOGGING (fire-and-forget) ──────────────────────────────────────
 /**
- * Writes one price snapshot row to Supabase.
- * NEVER awaited — response goes out before this completes.
- * If Supabase is down or not yet configured, the user never knows.
- *
- * Over time this table becomes your price history database.
- * Query it later with:
- *   GET /api/prices?history=1&q=Charizard Base Set Holo&grade=PSA 10
+ * Writes one price snapshot row to Supabase price_history.
+ * Also upserts a row to card_catalog to build a self-growing card database.
+ * NEVER awaited — response goes out before these complete.
+ * If Supabase is not configured, silently skipped.
  */
-async function logPriceHistory({
-  cardName,
-  grade,
-  lang,
-  lo,
-  avg,
-  hi,
-  confidence,
-  totalComps,
-  trend30,
-}) {
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_KEY
-  if (!url || !key) return // not configured yet — skip silently
+function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, totalComps, trend30 }) {
+  if (!supabase) return
 
-  try {
-    await fetch(`${url}/rest/v1/price_history`, {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify({
-        card_name: cardName,
-        grade: grade || 'Raw',
-        lang: lang || 'English',
-        price_lo: lo,
-        price_avg: avg,
-        price_hi: hi,
-        confidence,
-        comp_count: totalComps,
-        trend_30d: trend30,
-        source: 'ebay',
-      }),
-    })
-  } catch (err) {
-    console.warn('History log failed (non-fatal):', err.message)
-  }
+  supabase.from('price_history').insert({
+    card_name: cardName,
+    grade: grade || 'Raw',
+    lang: lang || 'English',
+    price_lo: lo,
+    price_avg: avg,
+    price_hi: hi,
+    confidence,
+    comp_count: totalComps,
+    trend_30d: trend30,
+    source: 'ebay',
+  }).then(() => {}).catch((err) => console.warn('price_history write failed:', err.message))
+}
+
+function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery }) {
+  if (!supabase) return
+
+  supabase.from('card_catalog').upsert({
+    card_name: cardName,
+    game: game || 'unknown',
+    set_code: setCode || null,
+    rarity: rarity || null,
+    image_url: imageUrl || null,
+    search_query: searchQuery || cardName,
+    times_searched: 1,
+    last_searched: new Date().toISOString(),
+  }, {
+    onConflict: 'card_name,game',
+  }).then(() => {}).catch((err) => console.warn('card_catalog write failed:', err.message))
 }
 
 // ─── HISTORY RETRIEVAL ───────────────────────────────────────────────────────
@@ -922,26 +919,19 @@ async function logPriceHistory({
  * Add it to the UI once you have 30+ days of data for popular cards.
  */
 async function handleHistory(res, cardName, grade) {
-  const url = process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_KEY
-  if (!url || !key)
-    return res.status(503).json({ error: 'History not available yet' })
+  if (!supabase) return res.status(503).json({ error: 'History not available yet' })
 
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
-  const params = new URLSearchParams({
-    card_name: `eq.${cardName}`,
-    grade: `eq.${grade || 'Raw'}`,
-    queried_at: `gte.${since}`,
-    select: 'queried_at,price_avg,price_lo,price_hi,confidence,comp_count',
-    order: 'queried_at.asc',
-    limit: '200',
-  })
+  const { data: rows, error } = await supabase
+    .from('price_history')
+    .select('queried_at,price_avg,price_lo,price_hi,confidence,comp_count')
+    .eq('card_name', cardName)
+    .eq('grade', grade || 'Raw')
+    .gte('queried_at', since)
+    .order('queried_at', { ascending: true })
+    .limit(200)
 
-  const r = await fetch(`${url}/rest/v1/price_history?${params}`, {
-    headers: { apikey: key, Authorization: `Bearer ${key}` },
-  })
-  if (!r.ok) return res.status(500).json({ error: 'History query failed' })
-  const rows = await r.json()
+  if (error) return res.status(500).json({ error: 'History query failed' })
   return res.status(200).json({ history: rows, card: cardName, grade })
 }
 
@@ -1209,6 +1199,27 @@ export default async function handler(req, res) {
       confidence: blended.confidence,
       totalComps: blended.totalComps,
       trend30,
+    })
+
+    // Build self-growing card catalog — saves every searched card for future autocomplete
+    const detectedGame = (() => {
+      const ql = q.trim().toLowerCase()
+      if (/dragon ball|dbs|goku|vegeta|gogeta|broly|frieza|fusion world/i.test(ql) || /\b(BT|FB|FS|SD|ST)\d+/i.test(ql)) return 'dbs'
+      if (/pokemon|charizard|pikachu/i.test(ql)) return 'pokemon'
+      if (/mtg|magic/i.test(ql)) return 'mtg'
+      if (/yugioh|yu-gi-oh/i.test(ql)) return 'yugioh'
+      if (/one piece|luffy|zoro/i.test(ql)) return 'onepiece'
+      if (/lorcana/i.test(ql)) return 'lorcana'
+      return 'unknown'
+    })()
+    const detectedSetCode = (processed.match(/\b(?:BT|FB|FS|SD|ST|SB|EB|TB|OP|D-BT)\d+(?:-\d+)?/i) || [])[0] || null
+    logCardCatalog({
+      cardName: q.trim(),
+      game: detectedGame,
+      setCode: detectedSetCode,
+      rarity: requiredRarity || null,
+      imageUrl: response.imageUrl || null,
+      searchQuery: processed,
     })
 
     return res.status(200).json(response)
