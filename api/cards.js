@@ -588,6 +588,13 @@ const DBS_POPULAR = [
   { name: 'Gogeta, Display of Power', number: 'BT12-136', rarity: 'SCR' },
   { name: 'Gogeta, Beyond Fusion', number: 'FB03-139', rarity: 'SCR' },
   { name: 'Vegeta, Royal Pride', number: 'FB03-028', rarity: 'SCR' },
+  // Attack-name cards (for word-retry on "kamehameha", "spirit bomb" etc)
+  { name: 'Gohan, Father-Son Kamehameha', number: 'FB03-049', rarity: 'SR' },
+  { name: 'Son Goku, God Kamehameha', number: 'FB04-001', rarity: 'SCR' },
+  { name: 'Son Goku, Spirit Bomb', number: 'BT8-108', rarity: 'SPR' },
+  { name: 'Vegeta, Final Flash', number: 'BT4-030', rarity: 'SPR' },
+  { name: 'Piccolo, Special Beam Cannon', number: 'FB03-058', rarity: 'SR' },
+  { name: 'SS Broly, Banisher of Fury', number: 'BT29-145', rarity: 'SCR' },
 ]
 
 function searchDbsFallback(query) {
