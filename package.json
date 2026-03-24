@@ -10,6 +10,7 @@
     "import-yugioh": "node --env-file=.env.local scripts/import-yugioh.js",
     "import-onepiece": "node --env-file=.env.local scripts/import-onepiece.js",
     "import-lorcana": "node --env-file=.env.local scripts/import-lorcana.js",
+    "import-dbs-classic": "node --env-file=.env.local scripts/import-dbs-classic.js",
     "import-all": "node --env-file=.env.local scripts/import-all.js"
   },
   "dependencies": {
