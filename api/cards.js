@@ -788,15 +788,7 @@ export default async function handler(req, res) {
   const query = q.trim()
   const game = detectGame(query)
   console.log('[cards] game detected:', game)
-  const ebayDirect = {
-    id: 'ebay-direct',
-    name: `Search eBay directly for '${query}'`,
-    set: '', number: '', rarity: '',
-    game: 'direct',
-    imageUrl: null, largeImageUrl: null,
-    searchQuery: query,
-    isDirect: true,
-  }
+  const ebayDirect = null
 
   let cards = []
   let attribution = null
