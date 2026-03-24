@@ -87,15 +87,14 @@ async function searchCatalog(query, game) {
       }
     }
 
-    // Add search-log rows ONLY if no import row covers the same card number
-    for (const r of searchLogRows) {
-      const num = (r.search_query || '').match(cardNumRe)?.[1]?.toUpperCase()
-      if (num) {
-        const baseNum = num.replace(/-P\d+$/i, '')
-        if (byNumber.has(num) || byNumber.has(baseNum)) continue // import row exists, skip
+    // Add search-log rows ONLY if NO import rows were found at all.
+    // If we have any import rows, search-log rows are redundant or misleading
+    // (they often point to the wrong card variant).
+    if (byNumber.size === 0) {
+      for (const r of searchLogRows) {
+        const key = r.card_name.toLowerCase()
+        if (!byNumber.has(key)) byNumber.set(key, r)
       }
-      const key = r.card_name.toLowerCase()
-      if (!byNumber.has(key)) byNumber.set(key, r)
     }
 
     const deduped = [...byNumber.values()].slice(0, 8)
