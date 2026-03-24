@@ -896,7 +896,8 @@ function blend(results) {
  * If Supabase is not configured, silently skipped.
  */
 function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, totalComps, trend30 }) {
-  if (!_sbConfigured) return
+  console.log(`[debug] logPriceHistory called, _sbConfigured: ${_sbConfigured}, cardName: "${cardName}"`)
+  if (!_sbConfigured) { console.log('[debug] logPriceHistory skipped — not configured'); return }
 
   sbFetch('price_history', 'POST', {
     card_name: cardName,
@@ -916,7 +917,8 @@ function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, total
 }
 
 function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery }) {
-  if (!_sbConfigured) return
+  console.log(`[debug] logCardCatalog called, _sbConfigured: ${_sbConfigured}, cardName: "${cardName}", game: "${game}"`)
+  if (!_sbConfigured) { console.log('[debug] logCardCatalog skipped — not configured'); return }
 
   // Use raw SQL upsert via POST with Prefer: resolution=merge-duplicates
   // The table has unique index on (card_name, game, rarity_key) where
@@ -1225,6 +1227,8 @@ export default async function handler(req, res) {
     }
 
     // Log to Supabase — fire and forget, never blocks the response
+    console.log(`[debug] about to call logPriceHistory for: "${q.trim()}"`)
+    console.log(`[debug] _sbConfigured: ${_sbConfigured}`)
     logPriceHistory({
       cardName: q.trim(),
       grade,
@@ -1249,6 +1253,7 @@ export default async function handler(req, res) {
       return 'unknown'
     })()
     const detectedSetCode = (processed.match(/\b(?:BT|FB|FS|SD|ST|SB|EB|TB|OP|D-BT)\d+(?:-\d+)?/i) || [])[0] || null
+    console.log(`[debug] about to call logCardCatalog for: "${q.trim()}" game: ${detectedGame}`)
     logCardCatalog({
       cardName: q.trim(),
       game: detectedGame,
