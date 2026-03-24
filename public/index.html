@@ -508,8 +508,11 @@ function selectAc(i){
     return;
   }
   // Store full card metadata for the search flow
-  // Clean searchQuery for eBay — strip colons and special chars that break search
-  const cleanSQ=(card.searchQuery||card.name||'').replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+  // Clean searchQuery for eBay:
+  // 1. Strip colons and special chars
+  // 2. Convert "-p1"/"-p2"/"-p3" suffixes to "parallel" (eBay sellers don't use -p notation)
+  let cleanSQ=(card.searchQuery||card.name||'').replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+  cleanSQ=cleanSQ.replace(/\b(\w+-\d+)-p\d+\b/gi,'$1 parallel');
   selectedCard={
     name:card.name,
     set:card.set,
