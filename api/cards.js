@@ -401,35 +401,8 @@ async function searchOnePiece(query) {
 }
 
 // ─── DRAGON BALL SUPER ───────────────────────────────────────────────────────
-let dbsCardData = null
-let dbsDataLoading = null
-let dbsLoadFailedAt = 0
-
-async function loadDbsData() {
-  if (dbsCardData) return dbsCardData
-  if (dbsDataLoading) return dbsDataLoading
-  if (dbsLoadFailedAt && Date.now() - dbsLoadFailedAt < 60000) return null
-
-  dbsDataLoading = (async () => {
-    console.log('[cards:dbs] loading DBS card data from GitHub...')
-    try {
-      const res = await fetch('https://raw.githubusercontent.com/boffinism/dbs-card-list/main/cards.json', {
-        signal: AbortSignal.timeout(10000),
-      })
-      if (!res.ok) throw new Error(`GitHub ${res.status}`)
-      dbsCardData = await res.json()
-      console.log(`[cards:dbs] loaded ${Array.isArray(dbsCardData) ? dbsCardData.length : 'unknown'} cards`)
-      dbsDataLoading = null
-      return dbsCardData
-    } catch (err) {
-      console.error(`[cards:dbs] failed to load card data: ${err.message}`)
-      dbsLoadFailedAt = Date.now()
-      dbsDataLoading = null
-      return null
-    }
-  })()
-  return dbsDataLoading
-}
+// DBS GitHub JSON repo (boffinism/dbs-card-list) is dead (404).
+// DBS autocomplete now relies on: site scraping → hardcoded dictionary → eBay fallback.
 
 const DBS_NUM_RE = /\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|P-|PUMS|SDBH)\d+-\d+[A-Z]?)\b/i
 
@@ -485,33 +458,6 @@ async function searchDbs(query) {
       console.log(`[cards:dbs] site failed: ${err.message}`)
     }
 
-    // Try community JSON data
-    const data = await loadDbsData()
-    if (data && Array.isArray(data)) {
-      const results = data.filter((card) => {
-        const hay = `${card.name || ''} ${card.number || ''} ${card.cardNumber || ''} ${card.rarity || ''}`.toLowerCase()
-        return terms.every((t) => hay.includes(t))
-      }).slice(0, 8)
-
-      if (results.length > 0) {
-        console.log(`[cards:dbs] GitHub data matched ${results.length} cards`)
-        return results.map((card) => {
-          const num = card.number || card.cardNumber || ''
-          return {
-            id: `dbs-gh-${num || Date.now()}`,
-            name: card.name || '',
-            set: num ? num.replace(/-\d+[A-Z]?$/, '') : '',
-            number: num,
-            rarity: card.rarity || '',
-            game: 'dbs',
-            imageUrl: card.image || card.imageUrl || null,
-            largeImageUrl: card.image || card.imageUrl || null,
-            searchQuery: buildSearchQuery(simplifyDbsName(card.name || ''), num, card.rarity),
-          }
-        })
-      }
-    }
-
     // Hardcoded popular cards fallback
     const fbResults = searchDbsFallback(query)
     if (fbResults.length > 0) return fbResults
@@ -526,26 +472,6 @@ async function searchDbs(query) {
       const sorted = [...words].sort((a, b) => b.length - a.length)
       for (const word of sorted) {
         console.log(`[cards:dbs] retrying with single word: "${word}"`)
-        if (data && Array.isArray(data)) {
-          const retry = data.filter((card) => {
-            const hay = `${card.name || ''} ${card.number || ''} ${card.cardNumber || ''} ${card.rarity || ''}`.toLowerCase()
-            return hay.includes(word.toLowerCase())
-          }).slice(0, 8)
-          if (retry.length > 0) {
-            return retry.map((card) => {
-              const num = card.number || card.cardNumber || ''
-              return {
-                id: `dbs-gh-${num || Date.now()}`,
-                name: card.name || '',
-                set: num ? num.replace(/-\d+[A-Z]?$/, '') : '',
-                number: num, rarity: card.rarity || '', game: 'dbs',
-                imageUrl: card.image || card.imageUrl || null,
-                largeImageUrl: card.image || card.imageUrl || null,
-                searchQuery: buildSearchQuery(simplifyDbsName(card.name || ''), num, card.rarity),
-              }
-            })
-          }
-        }
         const fbRetry = searchDbsFallback(word)
         if (fbRetry.length > 0) return fbRetry
       }
@@ -738,7 +664,6 @@ function preWarmCache() {
   }
   // Also pre-load One Piece and DBS card data
   loadOpData().catch(() => {})
-  loadDbsData().catch(() => {})
 }
 
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
