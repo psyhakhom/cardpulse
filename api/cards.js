@@ -62,7 +62,7 @@ const DBS_KW = [
   'hakai', 'ultra instinct', 'god kamehameha', 'destructo disc',
   'special beam cannon', 'makankosappo',
 ]
-const DBS_CODE_RE = /\b(?:BT|FB|SD|ST|D-BT)\d+/i
+const DBS_CODE_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|PUMS|SDBH)\d+/i
 const OP_KW = [
   'one piece', 'onepiece', 'optcg', 'luffy', 'zoro', 'nami', 'sanji',
   'chopper', 'robin', 'franky', 'brook',
@@ -431,7 +431,7 @@ async function loadDbsData() {
   return dbsDataLoading
 }
 
-const DBS_NUM_RE = /\b((?:BT|FB|SD|ST|D-BT|P-)\d+-\d+[A-Z]?)\b/i
+const DBS_NUM_RE = /\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|P-|PUMS|SDBH)\d+-\d+[A-Z]?)\b/i
 
 async function searchDbsSite(query) {
   const sanitized = sanitizeQuery(query)
@@ -591,6 +591,7 @@ const DBS_POPULAR = [
   // Attack-name cards (for word-retry on "kamehameha", "spirit bomb" etc)
   { name: 'Gohan, Father-Son Kamehameha', number: 'FB03-049', rarity: 'SR' },
   { name: 'Son Goku, God Kamehameha', number: 'FB04-001', rarity: 'SCR' },
+  { name: 'God Kamehameha', number: 'FS01-16', rarity: 'SR' },
   { name: 'Son Goku, Spirit Bomb', number: 'BT8-108', rarity: 'SPR' },
   { name: 'Vegeta, Final Flash', number: 'BT4-030', rarity: 'SPR' },
   { name: 'Piccolo, Special Beam Cannon', number: 'FB03-058', rarity: 'SR' },

@@ -250,7 +250,7 @@ function filterItems(items, grade, searchQuery, lang) {
 
   // ── 2c. Wrong set code exclusion (DBS specific) ───────────────────────
   // If query contains a specific set code, exclude comps from different sets
-  const DBS_SET_RE = /\b(BT|FB|SD|SB|EB|TB|PUMS|SDBH)\d+/i
+  const DBS_SET_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH)\d+/i
   const querySetMatch = ql.match(DBS_SET_RE)
   if (querySetMatch) {
     const querySet = querySetMatch[0].toUpperCase()
