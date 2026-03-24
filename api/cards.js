@@ -57,7 +57,7 @@ async function searchCatalog(query, game) {
     for (const r of rows) {
       // Extract card number from search_query
       const numMatch = (r.search_query || '').match(cardNumRe)
-      const num = numMatch ? numMatch[1].toUpperCase() : null
+      const num = numMatch ? numMatch[1].toUpperCase().replace(/-P\d+$/i, '') : null
       const isProperName = r.card_name && num && r.card_name.toLowerCase() !== num.toLowerCase()
       const hasImage = !!r.image_url
 
