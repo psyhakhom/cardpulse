@@ -32,8 +32,11 @@ async function searchCatalog(query, game) {
       console.log(`[cards:db] card number detected: ${cardNumMatch[1]}, using exact match`)
       url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&search_query=ilike.*${num}*&order=times_searched.desc&limit=8`
     } else {
-      // General name search — broader matching
-      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${encoded}*,search_query.ilike.*${encoded}*)&order=times_searched.desc&limit=16`
+      // General name search — split into words joined by % wildcards so
+      // "son gohan future" matches "Son Gohan : Future" (colon between words)
+      const words = sanitized.split(/\s+/).map(w => encodeURIComponent(w))
+      const pattern = words.join('*')  // son*gohan*future → ILIKE *son*gohan*future*
+      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${pattern}*,search_query.ilike.*${pattern}*)&order=times_searched.desc&limit=16`
     }
     if (game) url += `&game=eq.${game}`
 
