@@ -46,16 +46,42 @@ async function searchCatalog(query, game) {
     if (!rows.length) return []
 
     console.log(`[cards:db] card_catalog returned ${rows.length} raw results for "${query}"${game ? ` [${game}]` : ''}`)
-    // Deduplicate by card_name (case-insensitive), prefer rows with images
-    const seen = new Map()
+
+    // Deduplicate: extract card number from search_query, group by it.
+    // Prefer rows where card_name is a proper name (not just the card number)
+    // and rows that have an image_url.
+    const cardNumRe = /\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP|P-)\d+-\d+[A-Z]?(?:-p\d)?)\b/i
+    const byNumber = new Map()
+    const byName = new Map()
+
     for (const r of rows) {
-      const key = r.card_name.toLowerCase()
-      const existing = seen.get(key)
-      if (!existing || (!existing.image_url && r.image_url)) {
-        seen.set(key, r)
+      // Extract card number from search_query
+      const numMatch = (r.search_query || '').match(cardNumRe)
+      const num = numMatch ? numMatch[1].toUpperCase() : null
+      const isProperName = r.card_name && num && r.card_name.toLowerCase() !== num.toLowerCase()
+      const hasImage = !!r.image_url
+
+      if (num) {
+        const existing = byNumber.get(num)
+        if (!existing
+          || (!existing._isProperName && isProperName)
+          || (existing._isProperName === isProperName && !existing.image_url && hasImage)) {
+          byNumber.set(num, { ...r, _isProperName: isProperName })
+        }
+      } else {
+        // No card number — dedup by name
+        const key = r.card_name.toLowerCase()
+        const existing = byName.get(key)
+        if (!existing || (!existing.image_url && hasImage)) {
+          byName.set(key, r)
+        }
       }
     }
-    const deduped = [...seen.values()].slice(0, 8)
+
+    // Merge: card-number deduped first, then name-only results
+    const deduped = [...byNumber.values(), ...byName.values()]
+      .map(({ _isProperName, ...r }) => r) // strip internal field
+      .slice(0, 8)
     console.log(`[cards:db] ${deduped.length} unique results (${deduped.filter(r => r.image_url).length} with images)`)
     return deduped.map((r) => ({
       id: `db-${r.card_name}-${r.game}`,
