@@ -1,183 +1,122 @@
 /**
- * Bulk import Dragon Ball Super card images into card_catalog.
+ * Bulk import Dragon Ball Super Fusion World cards from apitcg.com
+ * into the card_catalog Supabase table.
  *
- * Usage:
- *   1. Create .env.local with SUPABASE_URL and SUPABASE_SERVICE_KEY
- *   2. Run: npm run import-dbs
- *
- * This is a one-time local script — not deployed to Vercel.
+ * Prerequisites:
+ *   1. Register at https://apitcg.com/platform to get an API key
+ *   2. Create .env.local with:
+ *      SUPABASE_URL=https://your-project.supabase.co
+ *      SUPABASE_SERVICE_KEY=your-service-role-key
+ *      APITCG_KEY=your-apitcg-api-key
+ *   3. Run: npm run import-dbs
  */
 
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
-
-// ─── DBS SET DEFINITIONS ────────────────────────────────────────────────────
-const DBS_SETS = [
-  { prefix: 'BT', sets: 23, cardsPerSet: 230 },
-  { prefix: 'FB', sets: 7,  cardsPerSet: 230 },
-  { prefix: 'SD', sets: 23, cardsPerSet: 60  },
-  { prefix: 'SB', sets: 4,  cardsPerSet: 60  },
-  { prefix: 'EB', sets: 2,  cardsPerSet: 60  },
-  { prefix: 'TB', sets: 4,  cardsPerSet: 60  },
-]
-
-// ─── HELPERS ────────────────────────────────────────────────────────────────
-function pad(n, len) {
-  return String(n).padStart(len, '0')
-}
-
-function buildCardNumber(prefix, setNum, cardNum) {
-  const setPad = prefix === 'BT' && setNum < 10 ? pad(setNum, 2) : pad(setNum, 2)
-  const cardPad = pad(cardNum, 3)
-  return `${prefix}${setPad}-${cardPad}`
-}
-
-async function checkImage(url) {
-  try {
-    const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) })
-    return res.ok
-  } catch {
-    return false
-  }
-}
+const API_KEY = process.env.APITCG_KEY
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// ─── LOAD COMMUNITY CARD DATA ───────────────────────────────────────────────
-async function loadCardData() {
-  console.log('Loading community card data from GitHub...')
-
-  const urls = [
-    'https://raw.githubusercontent.com/boffinism/dbs-card-list/master/dbs-cards.json',
-    'https://raw.githubusercontent.com/boffinism/dbs-card-list/main/dbs-cards.json',
-    'https://raw.githubusercontent.com/boffinism/dbs-card-list/master/cards.json',
-    'https://raw.githubusercontent.com/boffinism/dbs-card-list/main/cards.json',
-  ]
-
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
-      if (!res.ok) continue
-      const data = await res.json()
-      const cards = Array.isArray(data) ? data : []
-      console.log(`Loaded ${cards.length} cards from ${url}`)
-
-      // Build lookup map by card number
-      const lookup = new Map()
-      for (const card of cards) {
-        const num = card.number || card.cardNumber || card.id || ''
-        if (num) lookup.set(num.toUpperCase(), card)
-      }
-      return lookup
-    } catch (err) {
-      console.log(`Failed to load ${url}: ${err.message}`)
-    }
+async function fetchPage(page) {
+  const url = `https://apitcg.com/api/dragon-ball-fusion/cards?limit=100&page=${page}`
+  const res = await fetch(url, {
+    headers: { 'x-api-key': API_KEY },
+    signal: AbortSignal.timeout(15000),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`API returned ${res.status}: ${text.slice(0, 200)}`)
   }
-
-  console.log('Could not load community card data — will use card numbers as names')
-  return new Map()
+  return res.json()
 }
 
-// ─── MAIN IMPORT ────────────────────────────────────────────────────────────
+function mapCard(card) {
+  return {
+    card_name: card.name || '',
+    game: 'dbs',
+    set_code: card.set?.id?.toUpperCase() || card.code?.replace(/-\d+$/, '') || null,
+    rarity: card.rarity || null,
+    image_url: card.images?.large || card.images?.small || card.image || null,
+    search_query: `${card.name || ''} ${card.code || ''} ${card.rarity || ''}`.trim(),
+    times_searched: 0,
+    last_searched: new Date().toISOString(),
+  }
+}
+
+async function flushBatch(batch) {
+  if (!batch.length) return
+  const { error } = await supabase
+    .from('card_catalog')
+    .upsert(batch, { onConflict: 'card_name,game,rarity_key', ignoreDuplicates: false })
+  if (error) {
+    console.error(`  Batch upsert failed (${batch.length} cards):`, error.message)
+  } else {
+    console.log(`  → Upserted ${batch.length} cards to Supabase`)
+  }
+}
+
 async function main() {
-  console.log('Starting DBS card import...')
+  console.log('Starting DBS Fusion World card import from apitcg.com...')
   console.log(`Supabase URL: ${process.env.SUPABASE_URL ? 'set' : 'MISSING'}`)
   console.log(`Supabase Key: ${process.env.SUPABASE_SERVICE_KEY ? 'set' : 'MISSING'}`)
+  console.log(`APITCG Key:   ${API_KEY ? 'set' : 'MISSING'}`)
 
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
-    console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_KEY. Create .env.local first.')
+    console.error('\nMissing SUPABASE_URL or SUPABASE_SERVICE_KEY.')
+    console.error('Add them to .env.local')
+    process.exit(1)
+  }
+  if (!API_KEY) {
+    console.error('\nMissing APITCG_KEY.')
+    console.error('Register at https://apitcg.com/platform to get a free API key.')
+    console.error('Then add APITCG_KEY=your-key to .env.local')
     process.exit(1)
   }
 
-  const cardLookup = await loadCardData()
+  // Fetch first page to get totalCount
+  console.log('\nFetching page 1...')
+  const first = await fetchPage(1)
+  const totalCount = first.totalCount || first.total || 0
+  const firstData = first.data || first.cards || first.results || []
+  const totalPages = Math.ceil(totalCount / 100) || 1
+  console.log(`Total cards in API: ${totalCount} (${totalPages} pages)`)
 
-  let totalProcessed = 0
-  let totalFound = 0
+  let totalImported = 0
   let batch = []
 
-  async function flushBatch() {
-    if (!batch.length) return
-    const { error } = await supabase
-      .from('card_catalog')
-      .upsert(batch, { onConflict: 'card_name,game,rarity_key', ignoreDuplicates: false })
+  // Process first page
+  const firstCards = firstData.map(mapCard).filter((c) => c.card_name)
+  batch.push(...firstCards)
+  totalImported += firstCards.length
+  console.log(`Page 1: fetched ${firstCards.length} cards, total imported: ${totalImported}`)
 
-    if (error) {
-      console.error(`Batch upsert failed (${batch.length} cards):`, error.message)
-    } else {
-      console.log(`Batch upserted ${batch.length} cards`)
-    }
-    batch = []
-  }
+  if (batch.length >= 50) { await flushBatch(batch); batch = [] }
 
-  for (const { prefix, sets, cardsPerSet } of DBS_SETS) {
-    for (let setNum = 1; setNum <= sets; setNum++) {
-      for (let cardNum = 1; cardNum <= cardsPerSet; cardNum++) {
-        const cardNumber = buildCardNumber(prefix, setNum, cardNum)
+  // Paginate remaining pages
+  for (let page = 2; page <= totalPages; page++) {
+    await delay(200)
 
-        // Check if base image exists
-        const baseUrl = `https://www.dbs-cardgame.com/images/card/${cardNumber}.png`
-        const exists = await checkImage(baseUrl)
+    try {
+      const result = await fetchPage(page)
+      const pageData = result.data || result.cards || result.results || []
+      const cards = pageData.map(mapCard).filter((c) => c.card_name)
+      batch.push(...cards)
+      totalImported += cards.length
+      console.log(`Page ${page}: fetched ${cards.length} cards, total imported: ${totalImported}`)
 
-        if (exists) {
-          const cardData = cardLookup.get(cardNumber) || {}
-          const name = cardData.name || cardNumber
-          const rarity = cardData.rarity || null
-
-          batch.push({
-            card_name: name,
-            game: 'dbs',
-            set_code: `${prefix}${pad(setNum, 2)}`,
-            rarity,
-            image_url: baseUrl,
-            search_query: `${name} ${cardNumber} ${rarity || ''}`.trim(),
-            times_searched: 0,
-            last_searched: new Date().toISOString(),
-            source: 'dbs-cardgame.com',
-          })
-          totalFound++
-
-          // Also check parallel version (_p)
-          const parallelUrl = `https://www.dbs-cardgame.com/images/card/${cardNumber}_p.png`
-          const parallelExists = await checkImage(parallelUrl)
-          if (parallelExists) {
-            batch.push({
-              card_name: `${name} (Parallel)`,
-              game: 'dbs',
-              set_code: `${prefix}${pad(setNum, 2)}`,
-              rarity: rarity ? `${rarity}*` : null,
-              image_url: parallelUrl,
-              search_query: `${name} ${cardNumber} ${rarity || ''} parallel`.trim(),
-              times_searched: 0,
-              last_searched: new Date().toISOString(),
-              source: 'dbs-cardgame.com',
-            })
-            totalFound++
-          }
-        }
-
-        totalProcessed++
-        if (totalProcessed % 100 === 0) {
-          console.log(`Processed ${totalProcessed} cards, found ${totalFound} images...`)
-        }
-
-        // Flush batch every 50 cards
-        if (batch.length >= 50) await flushBatch()
-
-        // Rate limit: 100ms between HEAD requests
-        await delay(100)
-      }
+      if (batch.length >= 50) { await flushBatch(batch); batch = [] }
+    } catch (err) {
+      console.error(`Page ${page} failed: ${err.message}`)
     }
   }
 
   // Flush remaining
-  await flushBatch()
+  await flushBatch(batch)
 
   console.log('')
   console.log('═══════════════════════════════════════')
-  console.log(`Import complete!`)
-  console.log(`Total card numbers checked: ${totalProcessed}`)
-  console.log(`Total images found & imported: ${totalFound}`)
+  console.log(`Import complete. Total cards imported: ${totalImported}`)
   console.log('═══════════════════════════════════════')
 }
 
