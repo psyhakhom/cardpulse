@@ -359,7 +359,17 @@ function extractComps(items, limit = 10, grade = null) {
   const cutoff = now - 90 * 24 * 60 * 60 * 1000
 
   const priced = items.filter((i) => parseFloat(i.price?.value || 0) > 0)
-  const gradeOk = priced.filter((i) => !grade || gradeMatch(i.title, grade))
+  // Final safety net: graded slabs must NEVER appear in Raw comps
+  const slabFree = grade === 'Raw'
+    ? priced.filter((i) => {
+        if (isGradedSlab(i.title)) {
+          console.log(`[extractComps:slab] final safety net caught: "${(i.title || '').slice(0, 70)}"`)
+          return false
+        }
+        return true
+      })
+    : priced
+  const gradeOk = slabFree.filter((i) => !grade || gradeMatch(i.title, grade))
 
   let dateDropped = 0
   const dateOk = gradeOk.filter((i) => {
@@ -937,8 +947,12 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, grade = 'Raw', lang = 'English', history, exact } = req.query
-  console.log('Grade received:', JSON.stringify(grade), '| q:', q, exact === '1' ? '(exact/catalog)' : '')
+  const { q, lang = 'English', history, exact } = req.query
+  // Normalize grade — ensure exact case match for all filtering logic
+  const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
+  const rawGrade = req.query.grade || 'Raw'
+  const grade = VALID_GRADES.find((g) => g.toLowerCase() === rawGrade.toLowerCase()) || 'Raw'
+  console.log('Grade received:', JSON.stringify(rawGrade), '→', JSON.stringify(grade), '| q:', q, exact === '1' ? '(exact/catalog)' : '')
 
   // History sub-route
   if (history === '1') return handleHistory(res, q, grade)
@@ -1109,9 +1123,11 @@ export default async function handler(req, res) {
 
     const trend30 = calcTrend(results[1].stats?.avg, results[0].stats?.avg)
 
-    // Deduplicate comps across all queries
+    // Deduplicate comps across all queries, strip slabs for Raw
     const seen = new Set()
     const deduped = allItems.filter((i) => {
+      // Hard slab exclusion at dedup stage — triple safety net
+      if (grade === 'Raw' && isGradedSlab(i.title)) return false
       const key = i.title?.toLowerCase().slice(0, 40)
       if (seen.has(key)) return false
       seen.add(key)
