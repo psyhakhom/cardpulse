@@ -1,10 +1,31 @@
-import { createClient } from '@supabase/supabase-js'
-
 // ─── SUPABASE CLIENT ────────────────────────────────────────────────────────
-// Null if env vars not configured — all writes silently skip
-const supabase = (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY)
-  ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
-  : null
+// Uses raw fetch to Supabase REST API — no external dependency needed
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
+const _sbConfigured = !!(SUPABASE_URL && SUPABASE_KEY)
+console.log(`[supabase] configured: ${_sbConfigured}, URL: ${SUPABASE_URL ? 'set' : 'missing'}, KEY: ${SUPABASE_KEY ? 'set' : 'missing'}`)
+
+function sbFetch(table, method, body, options = {}) {
+  if (!_sbConfigured) return Promise.resolve({ error: 'not configured' })
+  const headers = {
+    apikey: SUPABASE_KEY,
+    Authorization: `Bearer ${SUPABASE_KEY}`,
+    'Content-Type': 'application/json',
+    Prefer: options.prefer || 'return=minimal',
+  }
+  let url = `${SUPABASE_URL}/rest/v1/${table}`
+  if (options.query) url += `?${options.query}`
+  return fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined })
+    .then(async (r) => {
+      if (!r.ok) {
+        const text = await r.text().catch(() => '')
+        return { error: `${r.status}: ${text.slice(0, 200)}` }
+      }
+      if (options.parseJson) return { data: await r.json(), error: null }
+      return { error: null }
+    })
+    .catch((err) => ({ error: err.message }))
+}
 
 /**
  * CardPulse — /api/prices.js
@@ -875,9 +896,9 @@ function blend(results) {
  * If Supabase is not configured, silently skipped.
  */
 function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, totalComps, trend30 }) {
-  if (!supabase) return
+  if (!_sbConfigured) return
 
-  supabase.from('price_history').insert({
+  sbFetch('price_history', 'POST', {
     card_name: cardName,
     grade: grade || 'Raw',
     lang: lang || 'English',
@@ -888,15 +909,19 @@ function logPriceHistory({ cardName, grade, lang, lo, avg, hi, confidence, total
     comp_count: totalComps,
     trend_30d: trend30,
     source: 'ebay',
-  }).then(() => {}).catch((err) => console.warn('price_history write failed:', err.message))
+  }).then((r) => {
+    if (r.error) console.error('[supabase] price_history write failed:', r.error)
+    else console.log(`[supabase] price_history write success: "${cardName}"`)
+  })
 }
 
 function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery }) {
-  if (!supabase) return
+  if (!_sbConfigured) return
 
-  // Use rarity_key (generated column: coalesce(rarity, '')) for unique constraint
-  // Table must have: unique index on (card_name, game, rarity_key)
-  supabase.from('card_catalog').upsert({
+  // Use raw SQL upsert via POST with Prefer: resolution=merge-duplicates
+  // The table has unique index on (card_name, game, rarity_key) where
+  // rarity_key is a generated column: coalesce(rarity, '')
+  const body = {
     card_name: cardName,
     game: game || 'unknown',
     set_code: setCode || null,
@@ -905,13 +930,13 @@ function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery
     search_query: searchQuery || cardName,
     times_searched: 1,
     last_searched: new Date().toISOString(),
-  }, {
-    onConflict: 'card_name,game,rarity_key',
-    ignoreDuplicates: false,
-  }).then((result) => {
-    if (result.error) console.error('card_catalog upsert error:', JSON.stringify(result.error))
-    else console.log(`card_catalog upsert success: "${cardName}" [${game}]`)
-  }).catch((err) => console.error('card_catalog upsert exception:', err.message))
+  }
+  sbFetch('card_catalog', 'POST', body, {
+    prefer: 'return=minimal,resolution=merge-duplicates',
+  }).then((r) => {
+    if (r.error) console.error('[supabase] card_catalog write failed:', r.error)
+    else console.log(`[supabase] card_catalog write success: "${cardName}" [${game}]`)
+  })
 }
 
 // ─── HISTORY RETRIEVAL ───────────────────────────────────────────────────────
@@ -925,20 +950,25 @@ function logCardCatalog({ cardName, game, setCode, rarity, imageUrl, searchQuery
  * Add it to the UI once you have 30+ days of data for popular cards.
  */
 async function handleHistory(res, cardName, grade) {
-  if (!supabase) return res.status(503).json({ error: 'History not available yet' })
+  if (!_sbConfigured) return res.status(503).json({ error: 'History not available yet' })
 
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: rows, error } = await supabase
-    .from('price_history')
-    .select('queried_at,price_avg,price_lo,price_hi,confidence,comp_count')
-    .eq('card_name', cardName)
-    .eq('grade', grade || 'Raw')
-    .gte('queried_at', since)
-    .order('queried_at', { ascending: true })
-    .limit(200)
+  const params = new URLSearchParams({
+    card_name: `eq.${cardName}`,
+    grade: `eq.${grade || 'Raw'}`,
+    queried_at: `gte.${since}`,
+    select: 'queried_at,price_avg,price_lo,price_hi,confidence,comp_count',
+    order: 'queried_at.asc',
+    limit: '200',
+  })
 
-  if (error) return res.status(500).json({ error: 'History query failed' })
-  return res.status(200).json({ history: rows, card: cardName, grade })
+  const result = await sbFetch('price_history', 'GET', null, {
+    query: params.toString(),
+    prefer: 'return=representation',
+    parseJson: true,
+  })
+  if (result.error) return res.status(500).json({ error: 'History query failed' })
+  return res.status(200).json({ history: result.data, card: cardName, grade })
 }
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
