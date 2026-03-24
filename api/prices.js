@@ -142,12 +142,16 @@ function gradeMatch(title, grade) {
 // once inside filterItems. A graded slab can NEVER appear in Raw results.
 function isGradedSlab(title) {
   const t = (title || '').toLowerCase()
-  // Explicit grading company + number pattern
-  if (/\b(psa|bgs|cgc|sgc|hga|ace|gma|beckett)\s*\d/.test(t)) return true
-  // Grading-specific words
-  if (/\b(graded|slab|gem\s*mint|black\s*label|pristine|population|pop\s*\d|cert\s*\d|registry)\b/.test(t)) return true
-  // Numeric grade patterns that only appear on slabs
-  if (/\b(gem|pristine|perfect)\s*(mint\s*)?\d/.test(t)) return true
+  // 1. Grading company + number: psa 10, bgs 9.5, cgc9, etc
+  if (/\b(psa|bgs|cgc|sgc|hga|ace|gma|beckett|mnt|tag|ags|era)\s*\d/.test(t)) return true
+  // 2. Grading keywords anywhere in title
+  if (/\b(graded|slab|slabbed|encased|gem\s*mint|black\s*label|pristine|population|pop\s*\d|cert\s*\d|registry|authenticated)\b/.test(t)) return true
+  // 3. Grade patterns: "gem 10", "pristine 10", "perfect 10", "mint 10"
+  if (/\b(gem|pristine|perfect|mint)\s*\d+\.?\d*\b/.test(t)) return true
+  // 4. Reversed: "10 gem mint", "9.5 mint", "10 pristine"
+  if (/\b\d+\.?\d*\s*(gem\s*mint|mint|pristine|perfect|grade)\b/.test(t)) return true
+  // 5. Standalone numeric grade at end of title after rarity: "SPR 9.5", "SCR 10"
+  if (/\b(SPR|SCR|SR|UR|SEC|SSR)\s+\d+\.?\d*\s*$/i.test(t)) return true
   return false
 }
 
@@ -1171,7 +1175,14 @@ export default async function handler(req, res) {
         count: r.stats?.count || 0,
         live: r.label === 'Live auctions',
       })),
-      comps: extractComps(deduped, 10, grade),
+      comps: (() => {
+        const c = extractComps(deduped, 10, grade)
+        if (grade === 'Raw') {
+          console.log(`[comps:Raw] ${c.length} comps returned:`)
+          c.forEach((comp, i) => console.log(`  [comp ${i}] $${comp.price} "${comp.title?.slice(0, 80)}"`))
+        }
+        return c
+      })(),
       query: q,
       correctedQuery: correctedQuery !== processed ? correctedQuery : null,
       grade,
