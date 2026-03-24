@@ -274,6 +274,22 @@ function filterItems(items, grade, searchQuery, lang) {
     }
   }
 
+  // ── 3b. Cheap code card / bulk lot exclusion ────────────────────────
+  // If price < $3 AND title matches junk patterns, exclude regardless
+  const JUNK_CHEAP_RE = /\b(code|digital|redeem|reward|bulk|lot|wholesale|random)\b/i
+  {
+    const before = filtered.length
+    filtered = filtered.filter((i) => {
+      const price = parseFloat(i.price?.value || 0)
+      if (price > 0 && price < 3 && JUNK_CHEAP_RE.test(i.title || '')) {
+        console.log(`[filter:junk] dropped $${price} "${(i.title || '').slice(0, 70)}" cheap code/bulk`)
+        return false
+      }
+      return true
+    })
+    if (filtered.length < before) console.log(`[filter:junk] ${before} → ${filtered.length} after cheap junk removal`)
+  }
+
   // ── 4. Grade-specific filtering ───────────────────────────────────────
   const excludeTerms = GRADE_EXCLUDE[grade]
   if (excludeTerms) {
@@ -515,6 +531,9 @@ const KNOWN_TERMS = [
   'hyper','ultra','super','uncommon','common','promo','leader',
   // Set names
   'perfect','scarlet','violet','obsidian','temporal','paldea','paradox',
+  // Whitelist: always preserved, never spell-corrected
+  'granting','wishing','dragon','ultra','instinct','future','supreme',
+  'blazing','awakened','fusion','limit','breaker','shenron','wish',
 ]
 
 function levenshtein(a, b) {
@@ -1027,6 +1046,9 @@ export default async function handler(req, res) {
     }
 
     // ── Retry 2: progressive word removal (strip from middle, keep set codes) ─
+    // This silently broadens the search — it does NOT set correctedQuery because
+    // the user's original words are valid. The "Showing results for" banner should
+    // only appear for actual spell corrections, not word removal.
     if (!blended || blended.totalComps < 3) {
       const base = correctedQuery || processed
       const words = base.split(/\s+/)
@@ -1034,8 +1056,6 @@ export default async function handler(req, res) {
       const anchorRe = /^(?:[A-Z]{1,4}-?\d+|\d{1,3}\/\d{1,3}|SIR|SCR|SPR|SR|UR|SEC|SAR)$/i
       const anchorIdx = new Set(words.map((w, i) => anchorRe.test(w) ? i : -1).filter(i => i >= 0))
 
-      // Build candidate removal sequence: try removing each non-anchor word
-      // starting from the last non-anchor position (right-to-left, skip anchors)
       for (let i = words.length - 1; i >= 1; i--) {
         if (anchorIdx.has(i)) continue
         const candidate = words.filter((_, idx) => idx !== i).join(' ')
@@ -1044,8 +1064,8 @@ export default async function handler(req, res) {
         const attempt = await runQueries(candidate)
         if (attempt.blended && attempt.blended.totalComps > (blended?.totalComps || 0)) {
           ;({ results, blended, allItems } = attempt)
-          if (!correctedQuery) correctedQuery = candidate
-          if (blended.totalComps >= 3) break  // good enough, stop retrying
+          // Do NOT set correctedQuery — word removal is silent broadening, not a correction
+          if (blended.totalComps >= 3) break
         }
       }
     }
