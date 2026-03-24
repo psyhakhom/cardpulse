@@ -30,10 +30,10 @@ async function searchCatalog(query, game) {
       // Exact card number search — only return cards matching that number
       const num = encodeURIComponent(cardNumMatch[1])
       console.log(`[cards:db] card number detected: ${cardNumMatch[1]}, using exact match`)
-      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&search_query=ilike.*${num}*&order=times_searched.desc&limit=8`
+      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&search_query=ilike.*${num}*&order=times_searched.desc&limit=8`
     } else {
       // General name search — broader matching
-      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${encoded}*,search_query.ilike.*${encoded}*)&order=times_searched.desc&limit=16`
+      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${encoded}*,search_query.ilike.*${encoded}*)&order=times_searched.desc&limit=16`
     }
     if (game) url += `&game=eq.${game}`
 
@@ -98,10 +98,10 @@ async function searchCatalog(query, game) {
     const deduped = [...byNumber.values()].slice(0, 8)
     console.log(`[cards:db] ${deduped.length} unique results (${deduped.filter(r => r.image_url).length} with images)`)
     return deduped.map((r) => ({
-      id: `db-${r.card_name}-${r.game}`,
+      id: `db-${r.card_number || r.card_name}-${r.game}`,
       name: r.card_name,
       set: r.set_code || '',
-      number: '',
+      number: r.card_number || '',
       rarity: r.rarity || '',
       game: r.game,
       imageUrl: r.image_url || null,

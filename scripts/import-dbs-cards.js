@@ -32,13 +32,20 @@ async function fetchPage(page) {
 }
 
 function mapCard(card) {
+  const code = card.code || ''
+  const isParallel = /-p\d+$/i.test(code)
+  // Parallel variants get a suffix in card_name so they're distinct in the unique constraint
+  const name = isParallel
+    ? `${card.name || ''} (${code.match(/-p\d+$/i)[0].toUpperCase()})`
+    : (card.name || '')
   return {
-    card_name: card.name || '',
+    card_name: name,
+    card_number: code.toUpperCase() || null,
     game: 'dbs',
-    set_code: card.set?.id?.toUpperCase() || card.code?.replace(/-\d+$/, '') || null,
+    set_code: card.set?.id?.toUpperCase() || code.replace(/-\d+(?:-p\d+)?$/i, '') || null,
     rarity: card.rarity || null,
     image_url: card.images?.large || card.images?.small || card.image || null,
-    search_query: `${card.name || ''} ${card.code || ''} ${card.rarity || ''}`.trim(),
+    search_query: `${card.name || ''} ${code} ${card.rarity || ''}`.trim(),
     times_searched: 0,
     last_searched: new Date().toISOString(),
   }
