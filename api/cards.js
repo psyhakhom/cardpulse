@@ -55,47 +55,47 @@ async function searchCatalog(query, game) {
     // and rows that have an image_url.
     // Dedup logic:
     // - Parallel variants (FB05-054, FB05-054-p1, FB05-054-p2) are SEPARATE results
-    // - Bare card-number rows (card_name = "fb05-054") are MERGED with properly-named rows
+    // - Search-log rows (card_name looks like a user query, e.g., "son gohan future fb02-099")
+    //   are dropped if a properly-named import row exists
     const cardNumRe = /\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP|P-)\d+-\d+[A-Z]?(?:-p\d+)?)\b/i
-    const bareNumRe = /^[a-z]{2,4}\d+-\d+(?:-p\d+)?$/i
 
-    const byNumber = new Map() // keyed by full card number (including -p suffix)
-    const bareNums = []        // rows where card_name is just a card number
+    // Separate import rows (proper names) from search-log rows (user queries as names)
+    // A search-log row has: no card_number column set, all-lowercase card_name, or card_name contains a card number
+    const importRows = []
+    const searchLogRows = []
 
     for (const r of rows) {
-      const numMatch = (r.search_query || '').match(cardNumRe)
-      const num = numMatch ? numMatch[1].toUpperCase() : null
-      const isBareNum = bareNumRe.test(r.card_name?.trim())
+      const hasCardNumber = !!r.card_number
+      const nameIsLowercase = r.card_name === r.card_name?.toLowerCase()
+      const nameContainsNum = cardNumRe.test(r.card_name || '')
 
-      if (isBareNum) {
-        // This is a "bad" row where card_name is just the card number (from user search log)
-        // Don't add to results — it'll be dropped if a proper row exists
-        bareNums.push({ ...r, _num: num })
-        continue
-      }
-
-      if (num) {
-        const existing = byNumber.get(num)
-        if (!existing || (!existing.image_url && r.image_url)) {
-          byNumber.set(num, r)
-        }
+      if (hasCardNumber || (!nameIsLowercase && !nameContainsNum)) {
+        importRows.push(r)
       } else {
-        // No card number — use card_name as key
-        const key = r.card_name.toLowerCase()
-        if (!byNumber.has(key)) byNumber.set(key, r)
+        searchLogRows.push(r)
       }
     }
 
-    // Add bare-number rows ONLY if no properly-named row exists for that number
-    for (const br of bareNums) {
-      if (br._num && !byNumber.has(br._num)) {
-        // Also check base number without -p suffix
-        const baseNum = br._num.replace(/-P\d+$/i, '')
-        if (!byNumber.has(baseNum)) {
-          const { _num, ...clean } = br
-          byNumber.set(br._num, clean)
-        }
+    // Dedup import rows by card_number, prefer rows with images
+    const byNumber = new Map()
+    for (const r of importRows) {
+      const num = r.card_number?.toUpperCase() || (r.search_query || '').match(cardNumRe)?.[1]?.toUpperCase()
+      const key = num || r.card_name.toLowerCase()
+      const existing = byNumber.get(key)
+      if (!existing || (!existing.image_url && r.image_url)) {
+        byNumber.set(key, r)
       }
+    }
+
+    // Add search-log rows ONLY if no import row covers the same card number
+    for (const r of searchLogRows) {
+      const num = (r.search_query || '').match(cardNumRe)?.[1]?.toUpperCase()
+      if (num) {
+        const baseNum = num.replace(/-P\d+$/i, '')
+        if (byNumber.has(num) || byNumber.has(baseNum)) continue // import row exists, skip
+      }
+      const key = r.card_name.toLowerCase()
+      if (!byNumber.has(key)) byNumber.set(key, r)
     }
 
     const deduped = [...byNumber.values()].slice(0, 8)
