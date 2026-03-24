@@ -136,8 +136,20 @@ function gradeMatch(title, grade) {
  * For graded grades: keeps only listings whose title matches the grade.
  * Falls back to the full set if fewer than 2 items survive (avoids empty results).
  */
-// 1. Hard graded slab pattern — runs FIRST for Raw, never bypassed
-const GRADED_RE = /\b(psa|bgs|cgc|sgc|beckett|ace|hga)\s*\d+|\b(graded|slab|gem\s*mint|black\s*label|pristine)\b/i
+
+// ─── GRADED SLAB DETECTION ──────────────────────────────────────────────────
+// Standalone function — called as double filter: once before filterItems,
+// once inside filterItems. A graded slab can NEVER appear in Raw results.
+function isGradedSlab(title) {
+  const t = (title || '').toLowerCase()
+  // Explicit grading company + number pattern
+  if (/\b(psa|bgs|cgc|sgc|hga|ace|gma|beckett)\s*\d/.test(t)) return true
+  // Grading-specific words
+  if (/\b(graded|slab|gem\s*mint|black\s*label|pristine|population|pop\s*\d|cert\s*\d|registry)\b/.test(t)) return true
+  // Numeric grade patterns that only appear on slabs
+  if (/\b(gem|pristine|perfect)\s*(mint\s*)?\d/.test(t)) return true
+  return false
+}
 
 // 2. Variant terms — exclude from ALL queries unless query itself contains the term
 const VARIANT_TERMS = [
@@ -189,9 +201,8 @@ function filterItems(items, grade, searchQuery, lang) {
   let filtered = items
   if (grade === 'Raw') {
     filtered = items.filter((i) => {
-      const t = i.title || ''
-      if (GRADED_RE.test(t)) {
-        console.log(`[filter:slab] dropped "${t.slice(0, 70)}"`)
+      if (isGradedSlab(i.title)) {
+        console.log(`[filter:slab] dropped "${(i.title || '').slice(0, 70)}"`)
         return false
       }
       return true
@@ -216,7 +227,7 @@ function filterItems(items, grade, searchQuery, lang) {
   }
   // If variant filter gutted results, fall back (but keep slab exclusion)
   if (filtered.length < 2 && grade === 'Raw') {
-    filtered = items.filter((i) => !GRADED_RE.test(i.title || ''))
+    filtered = items.filter((i) => !isGradedSlab(i.title))
   } else if (filtered.length < 2) {
     filtered = items
   }
@@ -304,7 +315,7 @@ function filterItems(items, grade, searchQuery, lang) {
     console.log(`[filter:Raw] ${filtered.length} → ${kept.length} kept`)
     if (kept.length >= 2) return kept
     // Fallback: always keep graded slab exclusion for Raw
-    const safeItems = filtered.filter((i) => !GRADED_RE.test(i.title || ''))
+    const safeItems = filtered.filter((i) => !isGradedSlab(i.title))
     console.log(`[filter:Raw] fallback: ${filtered.length} → ${safeItems.length}`)
     return safeItems
   }
@@ -998,10 +1009,29 @@ export default async function handler(req, res) {
         ebaySearch(qs.c.q, token, { limit: qs.c.limit, sort: qs.c.sort }),
         ebaySearch(qs.d.q, token, { limit: qs.d.limit, sort: qs.d.sort, live: true }),
       ])
-      const rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
-      const rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
-      const rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
-      const rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
+      let rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
+      let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
+      let rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
+      let rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
+
+      // ── Pre-filter: strip graded slabs BEFORE filterItems (double filter for Raw) ──
+      if (grade === 'Raw') {
+        const preFilter = (items, label) => {
+          const kept = items.filter((i) => {
+            if (isGradedSlab(i.title)) {
+              console.log(`[pre-filter:${label}] slab removed: "${(i.title || '').slice(0, 70)}"`)
+              return false
+            }
+            return true
+          })
+          if (kept.length < items.length) console.log(`[pre-filter:${label}] ${items.length} → ${kept.length}`)
+          return kept
+        }
+        rawA = preFilter(rawA, 'A')
+        rawB = preFilter(rawB, 'B')
+        rawC = preFilter(rawC, 'C')
+        rawD = preFilter(rawD, 'D')
+      }
 
       // Filter by grade + variant + rarity — filtered items are used for everything downstream
       const fA = filterByRarity(filterItems(rawA, grade, processed, lang))
