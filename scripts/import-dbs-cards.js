@@ -46,13 +46,21 @@ function mapCard(card) {
 
 async function flushBatch(batch) {
   if (!batch.length) return
+  // Deduplicate within batch — same card_name + game + rarity can't appear twice
+  const seen = new Set()
+  const deduped = batch.filter((c) => {
+    const key = `${c.card_name}|${c.game}|${c.rarity || ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
   const { error } = await supabase
     .from('card_catalog')
-    .upsert(batch, { onConflict: 'card_name,game,rarity_key', ignoreDuplicates: false })
+    .upsert(deduped, { onConflict: 'card_name,game,rarity_key', ignoreDuplicates: false })
   if (error) {
-    console.error(`  Batch upsert failed (${batch.length} cards):`, error.message)
+    console.error(`  Batch upsert failed (${deduped.length} cards):`, error.message)
   } else {
-    console.log(`  → Upserted ${batch.length} cards to Supabase`)
+    console.log(`  → Upserted ${deduped.length} cards to Supabase`)
   }
 }
 
