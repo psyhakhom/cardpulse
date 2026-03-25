@@ -310,10 +310,12 @@ function filterItems(items, grade, searchQuery, lang) {
   }
 
   // ── 3. Language exclusion (all grades) ────────────────────────────────
+  // Always apply — wrong-language items must never remain, even if it leaves 0-1 results.
+  // Better to have fewer comps than wrong-language comps polluting the average.
   const langRe = LANG_EXCLUDE[lang]
   if (langRe) {
     const before = filtered.length
-    const langFiltered = filtered.filter((i) => {
+    filtered = filtered.filter((i) => {
       const t = i.title || ''
       if (langRe.test(t)) {
         console.log(`[filter:lang] dropped "${t.slice(0, 70)}" wrong language`)
@@ -321,8 +323,7 @@ function filterItems(items, grade, searchQuery, lang) {
       }
       return true
     })
-    if (langFiltered.length >= 2) {
-      filtered = langFiltered
+    if (filtered.length < before) {
       console.log(`[filter:lang] ${before} → ${filtered.length} after language filter`)
     }
   }
