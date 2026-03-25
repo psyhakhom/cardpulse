@@ -697,9 +697,9 @@ function normalizeRarity(raw) {
   // If no starred alias matched, detect plain rarity codes (SR, SCR etc)
   // so filterByRarity can exclude starred variants from plain searches
   if (!requiredRarity) {
-    if (/\bSCR\b/.test(q)) requiredRarity = 'SCR'
-    else if (/\bSPR\b/.test(q)) requiredRarity = 'SPR'
-    else if (/\bSR\b/.test(q)) requiredRarity = 'SR'
+    if (/\bSCR\b/i.test(q)) requiredRarity = 'SCR'
+    else if (/\bSPR\b/i.test(q)) requiredRarity = 'SPR'
+    else if (/\bSR\b/i.test(q)) requiredRarity = 'SR'
   }
   if (requiredRarity) console.log(`[rarity-norm] requiredRarity: ${requiredRarity}`)
   return { query: q, requiredRarity }
@@ -1232,9 +1232,6 @@ export default async function handler(req, res) {
       // Single item list used for BOTH calcStats (pricing) AND allItems (display).
       // No separate filtering paths — what you see is what feeds the average.
       const cleanA = finalA, cleanB = finalB, cleanC = freshC, cleanD = fD
-      const allClean = [...cleanA, ...cleanB, ...cleanC, ...cleanD]
-      console.log(`[allItems] ${allClean.length} total items after all filters:`)
-      allClean.forEach((i, idx) => console.log(`  [allItems ${idx}] $${parseFloat(i.price?.value||0)} "${(i.title||'').slice(0,70)}"`))
 
       const res = [
         { ...qs.a, stats: calcStats(cleanA, 'A') },
@@ -1301,9 +1298,6 @@ export default async function handler(req, res) {
     }
 
     const trend30 = calcTrend(results[1].stats?.avg, results[0].stats?.avg)
-
-    console.log(`[pre-dedup] allItems has ${allItems.length} items`)
-    allItems.forEach((i, idx) => console.log(`  [pre-dedup ${idx}] $${parseFloat(i.price?.value||0)} "${(i.title||'').slice(0,70)}"`))
 
     // Deduplicate comps across all queries, strip slabs for Raw
     const seen = new Set()
