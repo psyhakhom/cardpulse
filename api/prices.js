@@ -298,11 +298,17 @@ function filterItems(items, grade, searchQuery, lang) {
   // Lots and multi-card listings are never valid comps regardless of grade.
   {
     const LOT_RE = /\b(\d+\s*card\s*lot|lot\s*of\s*\d+|card\s*lot|lot\s*psa|lot\s*bgs|lot\s*cgc|father\s*[&\/]\s*son|father\s+son|complete\s*set|bundle|\d+\s*more\s*(?:rookie|card)s?)\b|\blot\s*\(\d+\)|\b(pick\s*your\s*card|pick\s*your|you\s*pick|choose\s*your)\b/i
+    // Multi-card listing: 3+ card numbers in one title (e.g. "FB07-113, FB07-009, FB07-057")
+    const MULTI_CARD_RE = /[A-Z]{1,4}\d+-\d+.*,.*[A-Z]{1,4}\d+-\d+.*,.*[A-Z]{1,4}\d+-\d+/i
     const before = filtered.length
     filtered = filtered.filter((i) => {
       const t = i.title || ''
       if (LOT_RE.test(t)) {
         console.log(`[filter:lot] dropped "${t.slice(0, 70)}"`)
+        return false
+      }
+      if (MULTI_CARD_RE.test(t)) {
+        console.log(`[filter:lot] dropped multi-card listing: "${t.slice(0, 70)}"`)
         return false
       }
       return true
