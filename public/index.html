@@ -419,7 +419,7 @@ function camOff(){
 // SEARCH
 function toggleClear(){document.getElementById('scl').classList.toggle('vis',document.getElementById('si').value.length>0);}
 function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');selectedCard=null;hideAc();i.focus();}
-function doSearch(){const q=document.getElementById('si').value.trim();if(q){hideAc();selectedCard=null;search(q,'sr');}}
+function doSearch(){const q=document.getElementById('si').value.trim();if(q){clearTimeout(acTimer);if(acAbort){acAbort.abort();acAbort=null;}hideAc();selectedCard=null;search(q,'sr');}}
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
 // AUTOCOMPLETE — Card Catalog
@@ -471,7 +471,12 @@ async function fetchAc(q){
 }
 function renderAc(d,q){
   const drop=document.getElementById('ac-drop');
-  const catalogCards=(d.cards||[]);
+  // Filter: first query word must appear in card name (prevents "james" matching "Jessie & James")
+  const _firstWord=(q||'').toLowerCase().split(/\s+/).find(w=>w.length>=3&&!/^(psa|bgs|cgc|raw|rookie|rc|card|the|and|for)$/i.test(w))||'';
+  const catalogCards=(d.cards||[]).filter(c=>{
+    if(!_firstWord||c.isDirect)return true;
+    return(c.name||'').toLowerCase().includes(_firstWord);
+  });
   // If no catalog results, only show the eBay direct option
   acList=catalogCards.length>0?[...catalogCards,d.ebayDirect].filter(Boolean):[d.ebayDirect].filter(Boolean);
   acSel=-1;
@@ -782,6 +787,7 @@ function dot(cls){return'<span class="dot '+cls+'"></span>';}
 function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 function renderResult(el,q,r){
+  hideAc(); // ensure dropdown is closed when results render
   const t3c=r.t30>0?'up':r.t30<0?'dn':'fl',t9c=r.t90>0?'up':r.t90<0?'dn':'fl';
   const t3a=r.t30>0?'↑':r.t30<0?'↓':'→',t9a=r.t90>0?'↑':r.t90<0?'↓':'→';
   const fx=r.showFX?`<div class="fxb"><span>¥ → $ at <strong>¥149.5</strong> · All prices in USD</span><span style="font-size:8px;text-align:right">Rate updates<br>at search time</span></div>`:'';
