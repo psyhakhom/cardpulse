@@ -619,11 +619,10 @@ function selectAc(i){
   const hasCardNum=card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number);
   console.log('[selectAc] card.number:', JSON.stringify(card.number), 'hasCardNum:', hasCardNum, 'card.name:', JSON.stringify(card.name));
   if(hasCardNum){
-    // Card number available — build short query: "Name CardNum [Rarity]"
+    // Card number available — build short query: "Name CardNum" (no rarity — sellers rarely include it)
     const shortName=(card.name||'').split(',')[0].split(' // ')[0].trim();
-    const rPart=card.rarity?(' '+card.rarity):'';
-    cleanSQ=(shortName+' '+card.number+rPart).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
-    console.log('[selectAc] built short query:', JSON.stringify(cleanSQ));
+    cleanSQ=(shortName+' '+card.number).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+    console.log('[selectAc] built short query:', JSON.stringify(cleanSQ), 'rarity:', JSON.stringify(card.rarity));
   }else{
     cleanSQ=(card.searchQuery||card.name||'').replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
     console.log('[selectAc] using full searchQuery:', JSON.stringify(cleanSQ));

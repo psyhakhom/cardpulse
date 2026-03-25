@@ -1193,17 +1193,25 @@ export default async function handler(req, res) {
     if (exact === '1') {
       processed = q.trim()
       // Truncate long catalog queries: keep name up to first comma + card number
-      // "Vegeta, Combination Attack in Hell BT22-049 UC" → "Vegeta BT22-049 UC"
+      // "Vegeta, Combination Attack in Hell BT22-049" → "Vegeta BT22-049"
       const cardNumMatch = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
       if (cardNumMatch && processed.length > 50) {
         const shortName = processed.split(',')[0].split(' // ')[0].trim()
-        const afterNum = processed.slice(processed.indexOf(cardNumMatch[1]))
-        processed = (shortName + ' ' + afterNum).replace(/\s+/g, ' ').trim()
+        processed = (shortName + ' ' + cardNumMatch[1]).replace(/\s+/g, ' ').trim()
         console.log(`[exact] truncated long query → "${processed}"`)
       }
-      // Still need rarity detection for filtering (SCR vs SCR* vs SCR** etc)
-      const { requiredRarity: rr } = normalizeRarity(processed)
-      requiredRarity = rr
+      // Only enforce rarity filtering for starred variants (SCR*, SR*, SCR**)
+      // Plain rarity codes (SR, SPR, UC) shouldn't filter — card number already identifies the card
+      const { query: cleaned, requiredRarity: rr } = normalizeRarity(processed)
+      processed = cleaned
+      // Only keep starred rarity enforcement — plain codes cause false negatives
+      if (rr && /\*/.test(rr)) {
+        requiredRarity = rr
+      } else {
+        // Strip plain rarity codes from the eBay query — sellers rarely include them
+        processed = processed.replace(/\b(?:SPR|SCR|SR|SSR|SAR|SEC|UC|R|C|L|ST|FR|GFR|DR|DAR|DBR|IVR)\b/gi, '').replace(/\s+/g, ' ').trim()
+        console.log(`[exact] stripped rarity from query → "${processed}"`)
+      }
     } else {
       const pp = preprocessQuery(q.trim(), grade)
       processed = pp.query
