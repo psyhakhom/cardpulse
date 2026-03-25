@@ -221,7 +221,7 @@ const VARIANT_TERMS = [
 
 // 3. Language bleed — exclude foreign language listings when language filter is set
 const LANG_EXCLUDE = {
-  English: /\b(japanese|japan|jpn|jp\s*ver|korean|korean\s*ver|chinese|cross\s*worlds)\b/i,
+  English: /\b(japanese|japan|jpn|jp\s*ver|korean|korean\s*ver|chinese|cross\s*worlds)\b|\b(?:dragon\s*ball\s*super|dbs(?:cg)?)\s*master\b/i,
   Japanese: /\b(english|eng\s*ver|korean|chinese)\b/i,
 }
 
@@ -1169,11 +1169,26 @@ export default async function handler(req, res) {
       const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
 
-      const totalComps = fA.length + fB.length + fC.length + fD.length
-      console.log(`[comps] US item counts: A=${fA.length} B=${fB.length} C=${fC.length} D=${fD.length} total=${totalComps}`)
+      // Strip items older than 90 days BEFORE calcStats — stale comps must not
+      // contribute to the weighted average (only extractComps was filtering before)
+      const cutoff90d = Date.now() - 90 * 24 * 60 * 60 * 1000
+      const dropStale = (items, label) => {
+        const kept = items.filter((i) => {
+          const d = i.itemEndDate || i.itemCreationDate
+          if (!d) return true // no date = keep (can't determine age)
+          return new Date(d).getTime() >= cutoff90d
+        })
+        if (kept.length < items.length) console.log(`[date-filter:${label}] ${items.length} → ${kept.length} after 90-day cutoff`)
+        return kept
+      }
+      // Don't date-filter Query D (live auctions — they're current by definition)
+      const freshA = dropStale(fA, 'A'), freshB = dropStale(fB, 'B'), freshC = dropStale(fC, 'C')
+
+      const totalComps = freshA.length + freshB.length + freshC.length + fD.length
+      console.log(`[comps] US item counts (after 90d filter): A=${freshA.length} B=${freshB.length} C=${freshC.length} D=${fD.length} total=${totalComps}`)
 
       // Low-volume fallback: if US-only returned < 5 comps, retry A+B without location filter
-      let finalA = fA, finalB = fB
+      let finalA = freshA, finalB = freshB
       if (totalComps < 5) {
         console.log(`[low-volume] only ${totalComps} US comps, retrying A+B globally`)
         const [gA, gB] = await Promise.allSettled([
@@ -1186,10 +1201,10 @@ export default async function handler(req, res) {
           rawGA = rawGA.filter((i) => !isGradedSlab(i.title))
           rawGB = rawGB.filter((i) => !isGradedSlab(i.title))
         }
-        const gfA = filterByRarity(filterItems(rawGA, grade, processed, lang))
-        const gfB = filterByRarity(filterItems(rawGB, grade, processed, lang))
-        if (gfA.length + gfB.length > fA.length + fB.length) {
-          console.log(`[low-volume] global A+B: ${gfA.length}+${gfB.length} comps (was ${fA.length}+${fB.length})`)
+        const gfA = dropStale(filterByRarity(filterItems(rawGA, grade, processed, lang)), 'A-global')
+        const gfB = dropStale(filterByRarity(filterItems(rawGB, grade, processed, lang)), 'B-global')
+        if (gfA.length + gfB.length > freshA.length + freshB.length) {
+          console.log(`[low-volume] global A+B: ${gfA.length}+${gfB.length} comps (was ${freshA.length}+${freshB.length})`)
           finalA = gfA
           finalB = gfB
         }
@@ -1198,10 +1213,11 @@ export default async function handler(req, res) {
       const res = [
         { ...qs.a, stats: calcStats(finalA, 'A') },
         { ...qs.b, stats: calcStats(finalB, 'B') },
-        { ...qs.c, stats: calcStats(fC, 'C') },
+        { ...qs.c, stats: calcStats(freshC, 'C') },
         { ...qs.d, stats: calcStats(fD, 'D') },
       ]
-      return { results: res, blended: blend(res), allItems: [...finalA, ...finalB, ...fC, ...fD] }
+      // allItems uses unfiltered fA/fB/fC for display (extractComps has its own date filter)
+      return { results: res, blended: blend(res), allItems: [...fA, ...fB, ...fC, ...fD] }
     }
 
     // Launch card image lookup in parallel with the first eBay query batch
