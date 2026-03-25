@@ -1311,15 +1311,21 @@ export default async function handler(req, res) {
           const spread = allPrices.length >= 2 ? allPrices[allPrices.length - 1] / allPrices[0] : 1
           if (spread > 5) {
             console.log(`[disambig] ${byNum.size} distinct card numbers with ${spread.toFixed(1)}x spread — returning picker`)
-            const variants = [...byNum.entries()].map(([num, items]) => {
+            let variants = [...byNum.entries()].map(([num, items]) => {
               const ps = items.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
               const avg = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : 0
-              // Detect rarity + variant from titles (check all items for this card number)
+              // Detect rarity from titles — only append * for explicit alt art indicators
               const allTitles = items.map(i => (i.title || '')).join(' ')
-              const rarityMatch = allTitles.match(/\b(SCR\s*\*\*|SCR\s*\*|SCR|SPR|SR\s*\*|SR|UR|SEC|SSR|SAR|UC|R|C|L|SP)\b/i)
-              const isAlt = /\balt(?:ernate)?\s*art\b/i.test(allTitles) || /\bSCR\s*alt\b/i.test(allTitles)
-              let rarity = rarityMatch ? rarityMatch[1].toUpperCase().replace(/\s+/g, '') : ''
-              if (isAlt && rarity && !rarity.includes('*')) rarity += '*'
+              const starredMatch = allTitles.match(/\b(SCR\s*\*\*|SCR\s*\*|SR\s*\*|SPR\s*\*)\b/i)
+              const isAlt = /\balt(?:ernate)?\s*art\b/i.test(allTitles) || /\b(?:SCR|SR)\s*alt\b/i.test(allTitles)
+              let rarity = ''
+              if (starredMatch) {
+                rarity = starredMatch[1].toUpperCase().replace(/\s+/g, '')
+              } else {
+                const plainMatch = allTitles.match(/\b(SCR|SPR|SR|UR|SEC|SSR|SAR|UC|R|C|L|SP)\b/i)
+                rarity = plainMatch ? plainMatch[1].toUpperCase() : ''
+                if (isAlt && (rarity === 'SCR' || rarity === 'SR')) rarity += '*'
+              }
               return {
                 cardNumber: num,
                 name: processed.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() || num,
@@ -1328,8 +1334,21 @@ export default async function handler(req, res) {
                 compCount: items.length,
                 imageUrl: items[0].image?.imageUrl || null,
               }
-            }).sort((a, b) => b.compCount - a.compCount || a.estimatedPrice - b.estimatedPrice)
-            return { disambiguation: true, variants, query: processed }
+            })
+            // Filter: require 2+ comps, remove price outliers >10x median
+            variants = variants.filter(v => v.compCount >= 2)
+            if (variants.length >= 2) {
+              const vPrices = variants.map(v => v.estimatedPrice).filter(p => p > 0).sort((a, b) => a - b)
+              const vMid = Math.floor(vPrices.length / 2)
+              const vMedian = vPrices.length % 2 !== 0 ? vPrices[vMid] : (vPrices[vMid - 1] + vPrices[vMid]) / 2
+              variants = variants.filter(v => v.estimatedPrice <= vMedian * 10)
+            }
+            // Sort by price descending, limit to 6
+            variants.sort((a, b) => b.estimatedPrice - a.estimatedPrice)
+            variants = variants.slice(0, 6)
+            if (variants.length >= 2) {
+              return { disambiguation: true, variants, query: processed }
+            }
           }
         }
       }

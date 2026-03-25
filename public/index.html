@@ -789,16 +789,26 @@ function price(q,g,cond,l){
 }
 
 function renderDisambiguation(el, data) {
-  const rows = data.variants.map((v, i) => {
+  const rarityColor = (r) => {
+    const u = (r || '').toUpperCase();
+    if (u.startsWith('SCR*') || u.startsWith('SR*')) return '#FF8C00';
+    if (u === 'SCR' || u === 'SR' || u === 'SEC' || u === 'SSR' || u === 'SAR' || u === 'SPR') return '#FFD700';
+    if (u === 'UC') return '#4A9EFF';
+    if (u === 'R') return '#4CAF50';
+    if (u === 'L' || u === 'SP') return '#9B59B6';
+    return '#888';
+  };
+  const rows = data.variants.map((v) => {
     const img = v.imageUrl ? `<img class="ac-img" src="${escH(v.imageUrl)}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
-    const badge = v.rarity ? `<span class="ac-badge">${escH(v.rarity)}</span>` : '';
-    const price = v.estimatedPrice > 0 ? `<span style="color:var(--gn);font-weight:700;font-size:13px;white-space:nowrap">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
-    const comps = v.compCount ? `<span style="font-size:9px;color:var(--mu)">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
+    const rc = rarityColor(v.rarity);
+    const badge = v.rarity ? `<span style="font-size:12px;font-weight:700;color:${rc};border:1px solid ${rc};padding:1px 6px;border-radius:3px">${escH(v.rarity)}</span>` : '';
+    const price = v.estimatedPrice > 0 ? `<span style="color:#00ff88;font-weight:700;font-size:15px;white-space:nowrap">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
+    const comps = v.compCount ? `<span style="font-size:11px;color:#666">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
     return `<div class="ac-item" style="cursor:pointer" onclick="disambigPick('${escH(v.cardNumber)}','${escH(data.query)}')">
       ${img}
       <div style="min-width:0;flex:1">
         <div class="ac-name">${escH(v.name)}</div>
-        <div class="ac-sub">${escH(v.cardNumber)} ${badge}</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:3px"><span style="font-size:13px;color:#aaa">${escH(v.cardNumber)}</span>${badge}</div>
       </div>
       <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px">${price}${comps}</div>
     </div>`;
