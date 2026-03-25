@@ -535,17 +535,20 @@ async function fetchAc(q){
   }catch(err){if(err.name==='AbortError')return;console.error('[ac] fetch error:', err);hideAc();}
   finally{if(acAbort===ctrl)acAbort=null;}
 }
+const RARITY_DISPLAY={'DBR':'SCR*','SGR':'SCR*'};
 function rarityPill(r){
   const u=(r||'').toUpperCase();
+  const display=RARITY_DISPLAY[u]||r;
   let bg='#333',fg='#999';
-  if(/^SCR\*|^SR\*/.test(u)){bg='#FF8C00';fg='#000';}
-  else if(/^SCR|^SR$|^SPR|^SEC|^SSR|^SAR/.test(u)){bg='#ffd700';fg='#000';}
+  if(/^SCR\*|^SR\*|^DBR|^SGR|^DR$|^DAR/.test(u)){bg='#FF8C00';fg='#000';}
+  else if(/^SCR|^SR$|^SPR|^SEC|^SSR|^SAR|^FR$|^GFR/.test(u)){bg='#ffd700';fg='#000';}
   else if(u==='UC'){bg='#1565c0';fg='#fff';}
   else if(u==='R'){bg='#2e7d32';fg='#fff';}
-  else if(u==='L'||u==='SP'){bg='#6a1b9a';fg='#fff';}
+  else if(u==='L'||u==='SP'||u==='IVR'){bg='#6a1b9a';fg='#fff';}
   else if(u==='C'){bg='#333';fg='#999';}
+  else if(u==='ST'){bg='#555';fg='#ccc';}
   else if(/^PR/.test(u)){bg='#00695c';fg='#fff';}
-  return`<span style="background:${bg};color:${fg};font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap">${escH(r)}</span>`;
+  return`<span style="background:${bg};color:${fg};font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap">${escH(display)}</span>`;
 }
 function renderAc(d,q){
   const drop=document.getElementById('ac-drop');
