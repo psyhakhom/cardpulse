@@ -135,6 +135,26 @@ async function searchCatalog(query, game) {
   }
 }
 
+// Fire-and-forget: update last_searched timestamp for served catalog results
+// (times_searched increment requires an RPC — for now just update timestamp)
+function incrementSearchCount(results) {
+  if (!_sbReady || !results.length) return
+  for (const r of results.slice(0, 8)) {
+    const name = encodeURIComponent(r.name || '')
+    if (!name) continue
+    fetch(`${SB_URL}/rest/v1/card_catalog?card_name=eq.${name}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: SB_KEY,
+        Authorization: `Bearer ${SB_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ last_searched: new Date().toISOString() }),
+    }).catch(() => {})
+  }
+}
+
 // ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
 const cache = new Map()
 const CACHE_TTL = 60 * 60 * 1000 // 1 hour
@@ -818,18 +838,34 @@ export default async function handler(req, res) {
 
   // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
   const catalogResults = await searchCatalog(query, game)
-  // Card number searches (FB05-054) need only 1 match; name searches need 3+
   const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)\d+-\d+|\bE-?\d+/i.test(query)
-  const minResults = hasCardNum ? 1 : 3
-  if (catalogResults.length >= minResults) {
-    // Good catalog coverage — use it and skip external APIs entirely
+
+  if (catalogResults.length >= 5) {
+    // 5+ results: great catalog coverage — return immediately, skip external APIs
     cards = catalogResults
     attribution = 'CardPulse catalog'
-    console.log(`[cards] using card_catalog (${cards.length} results), skipping external APIs`)
+    console.log(`[cards] catalog has ${cards.length} results, skipping external APIs`)
+    incrementSearchCount(catalogResults)
     return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
   }
 
-  // ── Step 2: Fall through to external APIs if catalog had <3 results ─────
+  if (catalogResults.length >= 1 && hasCardNum) {
+    // Card number search with 1+ catalog results — return immediately
+    cards = catalogResults
+    attribution = 'CardPulse catalog'
+    console.log(`[cards] catalog has ${cards.length} results for card number, skipping external APIs`)
+    incrementSearchCount(catalogResults)
+    return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
+  }
+
+  // ── Step 2: 1-4 catalog results — merge with external API results ──────
+  if (catalogResults.length >= 1) {
+    console.log(`[cards] catalog has ${catalogResults.length} partial results, merging with external API`)
+    cards = [...catalogResults]
+    incrementSearchCount(catalogResults)
+  }
+
+  // ── Step 3: Run external APIs (catalog had <5 results or 0 for name search) ─
   if (game === 'pokemon') {
     try {
       const result = await searchPokemon(query)
@@ -871,7 +907,7 @@ export default async function handler(req, res) {
     console.log(`[cards] parallel search found ${cards.length} total results`)
   }
 
-  // General eBay fallback — when official databases return nothing and query is 3+ words
+  // General eBay fallback — when official databases return nothing and query is 2+ words
   if (!cards.length && query.split(/\s+/).length >= 2) {
     console.log('[cards] no catalog results, trying eBay fallback')
     try {
@@ -880,5 +916,14 @@ export default async function handler(req, res) {
     } catch (err) { console.error('[cards] eBay fallback error:', err.message) }
   }
 
-  return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
+  // Deduplicate merged results (catalog + external API) by card number or name
+  const seenNames = new Set()
+  const finalCards = cards.filter((c) => {
+    const key = (c.number || c.name || '').toLowerCase()
+    if (!key || seenNames.has(key)) return false
+    seenNames.add(key)
+    return true
+  })
+
+  return res.status(200).json({ cards: finalCards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
 }
