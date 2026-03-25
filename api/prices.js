@@ -1232,6 +1232,9 @@ export default async function handler(req, res) {
       // Single item list used for BOTH calcStats (pricing) AND allItems (display).
       // No separate filtering paths — what you see is what feeds the average.
       const cleanA = finalA, cleanB = finalB, cleanC = freshC, cleanD = fD
+      const allClean = [...cleanA, ...cleanB, ...cleanC, ...cleanD]
+      console.log(`[allItems] ${allClean.length} total items after all filters:`)
+      allClean.forEach((i, idx) => console.log(`  [allItems ${idx}] $${parseFloat(i.price?.value||0)} "${(i.title||'').slice(0,70)}"`))
 
       const res = [
         { ...qs.a, stats: calcStats(cleanA, 'A') },
@@ -1298,6 +1301,9 @@ export default async function handler(req, res) {
     }
 
     const trend30 = calcTrend(results[1].stats?.avg, results[0].stats?.avg)
+
+    console.log(`[pre-dedup] allItems has ${allItems.length} items`)
+    allItems.forEach((i, idx) => console.log(`  [pre-dedup ${idx}] $${parseFloat(i.price?.value||0)} "${(i.title||'').slice(0,70)}"`))
 
     // Deduplicate comps across all queries, strip slabs for Raw
     const seen = new Set()
