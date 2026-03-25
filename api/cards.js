@@ -65,8 +65,15 @@ async function searchCatalog(query, game) {
         'charizrd': 'charizard', 'charazard': 'charizard',
         'pikchu': 'pikachu', 'mewtow': 'mewtwo',
       }
-      const stripped = sanitized.split(/\s+/).filter(w => !GAME_WORDS.includes(w.toLowerCase()))
+      // Extract set code from query (FB07, BT01, OP01, ST01, SV3, etc.) for post-filtering
+      const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|OP|SV|SM|XY|SS|SW|BS|EX)\d{1,3}\b/i
+      const setCodeMatch = sanitized.match(SET_CODE_RE)
+      const detectedSetCode = setCodeMatch ? setCodeMatch[0].toUpperCase() : null
+
+      const stripped = sanitized.split(/\s+/).filter(w => !GAME_WORDS.includes(w.toLowerCase()) && !(detectedSetCode && w.toUpperCase() === detectedSetCode))
       let cleanedQuery = (stripped.length > 0 ? stripped : sanitized.split(/\s+/)).join(' ')
+
+      if (detectedSetCode) console.log(`[cards:db] set code detected: ${detectedSetCode}, searching name: "${cleanedQuery}"`)
 
       // Apply alias corrections for common misspellings
       const corrected = cleanedQuery.toLowerCase().split(' ').map(w => ALIASES[w] || w).join(' ')
@@ -87,7 +94,7 @@ async function searchCatalog(query, game) {
         body: JSON.stringify({
           q: cleanedQuery,
           game_filter: game || null,
-          result_limit: 16,
+          result_limit: detectedSetCode ? 50 : 16,
         }),
         signal: AbortSignal.timeout(3000),
       })
@@ -98,6 +105,18 @@ async function searchCatalog(query, game) {
       }
       rows = await res.json()
       console.log(`[cards:db] RPC returned ${rows.length} rows, first: ${rows[0]?.card_name || 'none'}`)
+
+      // Post-filter by set code if detected
+      if (detectedSetCode && rows.length > 0) {
+        const before = rows.length
+        const filtered = rows.filter(r => {
+          const sc = (r.set_code || '').toUpperCase()
+          const cn = (r.card_number || '').toUpperCase()
+          return sc === detectedSetCode || sc.startsWith(detectedSetCode + '-') || cn.startsWith(detectedSetCode + '-')
+        })
+        console.log(`[cards:db] set code filter ${detectedSetCode}: ${before} → ${filtered.length} rows`)
+        if (filtered.length > 0) rows = filtered
+      }
     }
     if (!rows.length) return []
 
