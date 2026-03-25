@@ -830,7 +830,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { q } = req.query
-  console.log('[cards] handler called, q:', q)
 
   if (!q || q.trim().length < 3) {
     return res.status(400).json({ error: 'Query too short' })
@@ -838,7 +837,7 @@ export default async function handler(req, res) {
 
   const query = q.trim()
   const game = detectGame(query)
-  console.log('[cards] game detected:', game)
+  console.log(`[cards] q="${query}" game=${game}`)
   const ebayDirect = null
 
   let cards = []
@@ -847,7 +846,7 @@ export default async function handler(req, res) {
 
   // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
   const catalogResults = await searchCatalog(query, game)
-  const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)\d+-\d+|\bE-?\d+/i.test(query)
+  const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)-?\d+(?:-\d+)?|\bE-?\d+/i.test(query)
 
   if (catalogResults.length >= 5) {
     // 5+ results: great catalog coverage — return immediately, skip external APIs
