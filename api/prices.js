@@ -376,7 +376,9 @@ function calcStats(items, label) {
     for (const i of items) {
       const p = parseFloat(i.price?.value || 0)
       const d = (i.itemEndDate || i.itemCreationDate || '').slice(0, 10)
-      console.log(`[calcStats:${label}] $${p} ${d} "${(i.title || '').slice(0, 80)}"`)
+      const cur = i.price?.currency || '?'
+      const loc = i.itemLocation?.country || '?'
+      console.log(`[calcStats:${label}] $${p} ${cur} ${loc} ${d} "${(i.title || '').slice(0, 70)}"`)
     }
   }
   const prices = items
@@ -1189,8 +1191,10 @@ export default async function handler(req, res) {
           rawGA = rawGA.filter((i) => !isGradedSlab(i.title))
           rawGB = rawGB.filter((i) => !isGradedSlab(i.title))
         }
-        const gfA = dropStale(filterByRarity(filterItems(rawGA, grade, processed, lang)), 'A-global')
-        const gfB = dropStale(filterByRarity(filterItems(rawGB, grade, processed, lang)), 'B-global')
+        // Filter global results to USD only — GBP/EUR listings have converted prices that skew averages
+        const usdOnly = (items) => items.filter((i) => !i.price?.currency || i.price.currency === 'USD')
+        const gfA = dropStale(usdOnly(filterByRarity(filterItems(rawGA, grade, processed, lang))), 'A-global')
+        const gfB = dropStale(usdOnly(filterByRarity(filterItems(rawGB, grade, processed, lang))), 'B-global')
         if (gfA.length + gfB.length > freshA.length + freshB.length) {
           console.log(`[low-volume] global A+B: ${gfA.length}+${gfB.length} comps (was ${freshA.length}+${freshB.length})`)
           finalA = gfA
