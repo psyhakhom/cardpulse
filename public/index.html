@@ -373,11 +373,25 @@ function go(t){
 }
 
 // FILTERS
+const _GRADE_RE = /\b(?:psa\s*10|psa\s*9|bgs\s*10|bgs\s*9\.?5|cgc\s*10)\b/gi;
+const _GRADE_MAP = {'PSA 10':'psa 10','PSA 9':'psa 9','BGS 10':'bgs 10','BGS 9.5':'bgs 9.5','CGC 10':'cgc 10'};
 let _manualGrade = false;
 function pick(el,g){
   document.getElementById(g==='g'?'gc':'cc').querySelectorAll('.ch').forEach(c=>c.classList.remove('on'));
   el.classList.add('on');
-  if(g==='g'){G=el.textContent.trim();_manualGrade=true;console.log('[pick] grade set to',JSON.stringify(G));}else{C=el.textContent.trim();}
+  if(g==='g'){
+    G=el.textContent.trim();_manualGrade=true;
+    // Update query: replace/add/remove grade term to match new grade
+    const si=document.getElementById('si');
+    let q=si.value.trim();
+    const hasGrade=_GRADE_RE.test(q); _GRADE_RE.lastIndex=0;
+    const stripped=q.replace(_GRADE_RE,'').replace(/\s{2,}/g,' ').trim();
+    if(G==='Raw'){q=stripped;}
+    else if(hasGrade){q=stripped+' '+_GRADE_MAP[G];}
+    else{q=stripped+' '+(_GRADE_MAP[G]||'');}
+    q=q.trim(); si.value=q;
+    console.log('[pick] grade set to',JSON.stringify(G),'query →',q);
+  }else{C=el.textContent.trim();}
   const q=document.getElementById('si').value.trim();
   if(q)search(q,'sr');
 }
@@ -542,16 +556,13 @@ async function search(q, elId) {
   hideAc();
   const el = document.getElementById(elId);
   el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
-  // Strip grade terms from query and auto-detect grade (always strip, even on manual pick)
-  const GRADE_STRIP_RE = /\b(?:psa\s*10|psa\s*9|bgs\s*10|bgs\s*9\.?5|cgc\s*10|raw|ungraded)\b/gi;
-  const GRADE_DETECT = [
-    [/\bpsa\s*10\b/i, 'PSA 10'], [/\bpsa\s*9\b/i, 'PSA 9'],
-    [/\bbgs\s*10\b/i, 'BGS 10'], [/\bbgs\s*9\.?5\b/i, 'BGS 9.5'],
-    [/\bcgc\s*10\b/i, 'CGC 10'],
-    [/\b(raw|ungraded)\b/i, 'Raw'],
-  ];
-  // Auto-detect grade if user didn't manually click a grade button
+  // Auto-detect grade from query keywords (skip if user just clicked a grade button)
   if (!_manualGrade) {
+    const GRADE_DETECT = [
+      [/\bpsa\s*10\b/i, 'PSA 10'], [/\bpsa\s*9\b/i, 'PSA 9'],
+      [/\bbgs\s*10\b/i, 'BGS 10'], [/\bbgs\s*9\.?5\b/i, 'BGS 9.5'],
+      [/\bcgc\s*10\b/i, 'CGC 10'],
+    ];
     for (const [re, grd] of GRADE_DETECT) {
       if (re.test(q)) {
         G = grd;
@@ -564,11 +575,6 @@ async function search(q, elId) {
     }
   }
   _manualGrade = false;
-  // Always strip grade terms from query — grade is passed as a separate param
-  q = q.replace(GRADE_STRIP_RE, '').replace(/\s{2,}/g, ' ').trim();
-  // Update the search input to show the cleaned query
-  const si = document.getElementById('si');
-  if (si && si.value.toLowerCase() !== q.toLowerCase()) si.value = q;
   // Capture selectedCard at search time (it gets cleared on next input)
   const sc = selectedCard;
   if (USE_REAL_API) {
