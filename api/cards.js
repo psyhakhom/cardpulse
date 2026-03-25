@@ -148,11 +148,13 @@ async function searchCatalog(query, game) {
       }
     }
 
-    // Dedup import rows by card_number, prefer rows with images
+    // Dedup import rows by card_number + rarity, prefer rows with images
+    // Different rarities (SR vs SR*) are kept as separate entries
     const byNumber = new Map()
     for (const r of importRows) {
       const num = r.card_number?.toUpperCase() || (r.search_query || '').match(cardNumRe)?.[1]?.toUpperCase()
-      const key = num || r.card_name.toLowerCase()
+      const rarity = (r.rarity || '').toUpperCase()
+      const key = (num || r.card_name.toLowerCase()) + (rarity ? `|${rarity}` : '')
       const existing = byNumber.get(key)
       if (!existing || (!existing.image_url && r.image_url)) {
         byNumber.set(key, r)
