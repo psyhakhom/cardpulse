@@ -215,6 +215,9 @@ const VARIANT_TERMS = [
   { query: /(?!)/, title: /\bARS\s*\d/i },
   { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set)\b/i },
   { query: /(?!)/, title: /\b(manga\s*volume|vol\.\s*\d|volume\s*\d)\b/i },
+  // Always excluded — fan art, custom/proxy cards, third-party products
+  { query: /(?!)/, title: /\b(fan\s*art|fanart|ai\s*art|custom\s*card|proxy|proxies)\b/i },
+  { query: /(?!)/, title: /\b(interdimensional\s*cable|sia0)\b/i },
 ]
 // Note: "holo" excluded from VARIANT_TERMS — it's a base rarity for Pokemon.
 // It's handled separately inside filterItems with a game-type check.
@@ -286,19 +289,18 @@ function filterItems(items, grade, searchQuery, lang) {
     }
   }
 
-  // ── 2c. Wrong set code exclusion (DBS specific) ───────────────────────
+  // ── 2c. Wrong set code exclusion (DBS + Pokemon) ─────────────────────
   // If query contains a specific set code, exclude comps from different sets
-  const DBS_SET_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH)\d+/i
-  const querySetMatch = ql.match(DBS_SET_RE)
+  const SET_CODE_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH|SV|SM|XY|BW|DP|EX|OP|ST)\d+[A-Z]?\b/i
+  const querySetMatch = ql.match(SET_CODE_RE)
   if (querySetMatch) {
     const querySet = querySetMatch[0].toUpperCase()
     const before = filtered.length
     const setFiltered = filtered.filter((i) => {
       const t = (i.title || '').toUpperCase()
-      // If title contains any DBS set code, it must match the query's set
-      const titleSetMatch = t.match(DBS_SET_RE)
-      if (titleSetMatch && titleSetMatch[0].toUpperCase() !== querySet) {
-        console.log(`[filter:set] dropped "${(i.title || '').slice(0, 70)}" wrong set ${titleSetMatch[0]} vs ${querySet}`)
+      // Title must contain the queried set code
+      if (!t.includes(querySet)) {
+        console.log(`[filter:set] dropped "${(i.title || '').slice(0, 70)}" missing set ${querySet}`)
         return false
       }
       return true
@@ -1272,10 +1274,9 @@ export default async function handler(req, res) {
     if (!blended || blended.totalComps < 3) {
       const base = correctedQuery || processed
       const words = base.split(/\s+/)
-      // Anchors: card names (first word or multi-word names) and set codes
-      // Set codes / card numbers / rarity codes are modifiers that CAN be stripped
-      const modifierRe = /^(?:[A-Z]{1,4}-?\d+|\d{1,3}\/\d{1,3}|SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near\s*mint)$/i
-      const setCodeOnlyRe = /^[A-Z]{1,4}-?\d+$|^\d{1,3}\/\d{1,3}$/i
+      // Only rarity and grade terms can be stripped — card names and set codes are protected
+      const modifierRe = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near\s*mint|card|english)$/i
+      const setCodeOnlyRe = /^[A-Z]{1,4}-?\d+[A-Z]?$|^\d{1,3}\/\d{1,3}$/i
 
       // Try stripping one modifier word at a time, from the end
       for (let i = words.length - 1; i >= 1; i--) {
