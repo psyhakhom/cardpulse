@@ -214,19 +214,19 @@ const VARIANT_TERMS = [
   { query: /\btoken\b/i, title: /\btoken\b/i },
   { query: /\bv\.?2\b/i, title: /\bv\.?\s*2\b|\bversion\s*2\b/i },
   { query: /\bpromo\b/i, title: /\bpromo(?:tional)?\b|\bpromo\s*card\b/i },
-  // Memorabilia / relic cards — premium inserts, not standard cards
-  { query: /\brelic\b/i, title: /\brelic\b/i },
-  { query: /\bpatch\b/i, title: /\bpatch\b/i },
-  { query: /\bjersey\b/i, title: /\bjersey\b/i },
-  { query: /\bswatch\b/i, title: /\bswatch\b/i },
-  { query: /\bgame.?used\b/i, title: /\bgame[\s-]?used\b/i },
-  { query: /\bmemorabilia\b/i, title: /\bmemorabilia\b/i },
-  { query: /\b(glove|bat|shoe|sock)\b/i, title: /\b(glove|bat relic|shoe|sock)\b/i },
+  // Memorabilia / relic cards — premium inserts, not standard cards (_sports: apply on sports path too)
+  { query: /\brelic\b/i, title: /\brelic\b/i, _sports: true },
+  { query: /\bpatch\b/i, title: /\bpatch\b/i, _sports: true },
+  { query: /\bjersey\b/i, title: /\bjersey\b/i, _sports: true },
+  { query: /\bswatch\b/i, title: /\bswatch\b/i, _sports: true },
+  { query: /\bgame.?used\b/i, title: /\bgame[\s-]?used\b/i, _sports: true },
+  { query: /\bmemorabilia\b/i, title: /\bmemorabilia\b/i, _sports: true },
+  { query: /\b(glove|bat|shoe|sock)\b/i, title: /\b(glove|bat relic|shoe|sock)\b/i, _sports: true },
   // Event exclusives
-  { query: /\bnational\b/i, title: /\b(national\s*convention|the\s*national|convention\s*exclusive|industry\s*summit)\b/i },
+  { query: /\bnational\b/i, title: /\b(national\s*convention|the\s*national|convention\s*exclusive|industry\s*summit)\b/i, _sports: true },
   // Ultra-premium parallels
-  { query: /\brapture\b/i, title: /\brapture\b/i },
-  { query: /\bshimmer\b/i, title: /\bshimmer\b/i },
+  { query: /\brapture\b/i, title: /\brapture\b/i, _sports: true },
+  { query: /\bshimmer\b/i, title: /\bshimmer\b/i, _sports: true },
   // Always excluded — sealed product SKUs and non-card products
   { query: /(?!)/, title: /\bARS\s*\d/i },
   { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set)\b/i },
@@ -301,8 +301,8 @@ function filterItems(items, grade, searchQuery, lang) {
   const preVariantFiltered = [...filtered] // snapshot before variant filtering
   for (const vt of VARIANT_TERMS) {
     // Sports queries skip TCG-specific variants (foil, holo, chrome, refractor, silver, gold, rainbow, prismatic)
-    // but keep: memorabilia, sealed product, fan art, promo exclusions
-    if (isSportsQuery && !vt._alwaysCheck && vt.query.toString() !== '/(?!)/') continue
+    // but keep: memorabilia (_sports), sealed product (/(?!)/), fan art (/(?!)/)
+    if (isSportsQuery && !vt._sports && vt.query.toString() !== '/(?!)/') continue
     if (!vt.query.test(ql)) {
       const before = filtered.length
       filtered = filtered.filter((i) => {
@@ -458,11 +458,18 @@ function calcStats(items, label) {
       console.log(`[calcStats:${label}] $${p} ${cur} ${loc} ${d} "${(i.title || '').slice(0, 70)}"`)
     }
   }
-  const prices = items
+  let prices = items
     .map((i) => parseFloat(i.price?.value))
     .filter((p) => !isNaN(p) && p > 0)
     .sort((a, b) => a - b)
   if (prices.length < 1) return null
+
+  // Special case: 2 comps with extreme spread (>10x) — drop the outlier
+  if (prices.length === 2 && prices[1] > prices[0] * 10) {
+    if (label) console.log(`[calcStats:${label}] 2-comp extreme spread: $${prices[0]} vs $${prices[1]} (${(prices[1]/prices[0]).toFixed(0)}x) — keeping lower`)
+    prices = [prices[0]]
+  }
+
   const mid = Math.floor(prices.length / 2)
   const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
 
