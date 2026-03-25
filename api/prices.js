@@ -224,7 +224,7 @@ const VARIANT_TERMS = [
 
 // 3. Language bleed — exclude foreign language listings when language filter is set
 const LANG_EXCLUDE = {
-  English: /\b(japanese|japan|jpn|jp\s*ver|korean|korean\s*ver|chinese|cross\s*worlds)\b|\b(?:dragon\s*ball\s*super|dbs(?:cg)?)\s*master\b/i,
+  English: /\b(japanese|japan|jpn|jp\s+ver|korean|korean\s*ver|chinese|cross\s*worlds)\b|\bJP\b|\b(?:dragon\s*ball\s*super|dbs(?:cg)?)\s*master\b|\bruler\s*of\s*the\s*black\s*flame\b/i,
   Japanese: /\b(english|eng\s*ver|korean|chinese)\b/i,
 }
 
@@ -308,6 +308,27 @@ function filterItems(items, grade, searchQuery, lang) {
     if (setFiltered.length >= 2) {
       filtered = setFiltered
       console.log(`[filter:set] ${before} → ${filtered.length} enforcing set ${querySet}`)
+    }
+  }
+
+  // ── 2d. Card name enforcement ─────────────────────────────────────────
+  // Extract the card name from the query (non-modifier, non-set-code words).
+  // If we have a card name, require comps to contain at least one name word.
+  // Prevents "Vespiquen ex SV3" from appearing in "charizard ex sv3" results.
+  const MODIFIER_RE = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo)$/i
+  const SET_CODE_WORD_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
+  const nameWords = ql.split(/\s+/).filter(w => w.length >= 3 && !MODIFIER_RE.test(w) && !SET_CODE_WORD_RE.test(w))
+  if (nameWords.length > 0) {
+    const before = filtered.length
+    const nameFiltered = filtered.filter((i) => {
+      const t = (i.title || '').toLowerCase()
+      if (nameWords.some(w => t.includes(w))) return true
+      console.log(`[filter:name] dropped "${(i.title || '').slice(0, 70)}" — no match for [${nameWords.join(', ')}]`)
+      return false
+    })
+    if (nameFiltered.length >= 1) {
+      filtered = nameFiltered
+      if (filtered.length < before) console.log(`[filter:name] ${before} → ${filtered.length} enforcing card name [${nameWords.join(', ')}]`)
     }
   }
 
