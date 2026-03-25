@@ -227,6 +227,15 @@ const VARIANT_TERMS = [
   // Ultra-premium parallels
   { query: /\brapture\b/i, title: /\brapture\b/i, _sports: true },
   { query: /\bshimmer\b/i, title: /\bshimmer\b/i, _sports: true },
+  { query: /\blime\b/i, title: /\blime\b/i, _sports: true },
+  { query: /\blava\b/i, title: /\blava\b/i, _sports: true },
+  { query: /\bdisco\b/i, title: /\bdisco\b/i, _sports: true },
+  { query: /\bvortex\b/i, title: /\bvortex\b/i, _sports: true },
+  { query: /\bpulsar\b/i, title: /\bpulsar\b/i, _sports: true },
+  { query: /\bcosmic\b/i, title: /\bcosmic\b/i, _sports: true },
+  { query: /\bnebula\b/i, title: /\bnebula\b/i, _sports: true },
+  { query: /\bcracked\s*ice\b/i, title: /\bcracked\s*ice\b/i, _sports: true },
+  { query: /\btiger\s*stripe\b/i, title: /\btiger\s*stripe\b/i, _sports: true },
   // Always excluded — sealed product SKUs and non-card products
   { query: /(?!)/, title: /\bARS\s*\d/i },
   { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set)\b/i },
@@ -282,7 +291,7 @@ function filterItems(items, grade, searchQuery, lang) {
   // ── 1b. Lot/multi-card exclusion (all grades) ────────────────────────
   // Lots and multi-card listings are never valid comps regardless of grade.
   {
-    const LOT_RE = /\b(\d+\s*card\s*lot|lot\s*of\s*\d+|card\s*lot|lot\s*psa|lot\s*bgs|lot\s*cgc|father\s*[&\/]\s*son|father\s+son|complete\s*set|bundle)\b|\blot\s*\(\d+\)/i
+    const LOT_RE = /\b(\d+\s*card\s*lot|lot\s*of\s*\d+|card\s*lot|lot\s*psa|lot\s*bgs|lot\s*cgc|father\s*[&\/]\s*son|father\s+son|complete\s*set|bundle|\d+\s*more\s*(?:rookie|card)s?)\b|\blot\s*\(\d+\)|\b(pick\s*your\s*card|pick\s*your|you\s*pick|choose\s*your)\b/i
     const before = filtered.length
     filtered = filtered.filter((i) => {
       const t = i.title || ''
@@ -476,6 +485,12 @@ function calcStats(items, label) {
   // For small comp sets (<=5), use tighter outlier bounds:
   // remove anything >2x median (high) or <40% of median (low).
   // For larger sets, use the standard 20%/3x bounds.
+  // Hard cap: any comp >50x median is always an extreme outlier (e.g. $148,888 vs $20 median)
+  const preExtreme = prices.length
+  prices = prices.filter((p) => p <= median * 50)
+  if (label && prices.length < preExtreme) console.log(`[calcStats:${label}] extreme outlier: removed ${preExtreme - prices.length} items >50x median ($${median})`)
+  if (prices.length < 1) return null
+
   const isSmall = prices.length <= 5
   const loThresh = isSmall ? median * 0.4 : median * 0.2
   const hiThresh = isSmall ? median * 2 : median * 3
