@@ -1265,27 +1265,36 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── Retry 2: progressive word removal (strip from middle, keep set codes) ─
-    // This silently broadens the search — it does NOT set correctedQuery because
-    // the user's original words are valid. The "Showing results for" banner should
-    // only appear for actual spell corrections, not word removal.
+    // ── Retry 2: single word-strip retry (remove one modifier word) ────────
+    // Only strip modifier words (rarity, grade, etc), never the card name.
+    // Never retry if the result would be fewer than 2 meaningful words.
+    // Maximum 1 retry to avoid catastrophic broadening (e.g. "sv3" alone).
     if (!blended || blended.totalComps < 3) {
       const base = correctedQuery || processed
       const words = base.split(/\s+/)
-      // Identify anchor positions: set codes, card numbers, rarity codes
-      const anchorRe = /^(?:[A-Z]{1,4}-?\d+|\d{1,3}\/\d{1,3}|SIR|SCR|SPR|SR|UR|SEC|SAR)$/i
-      const anchorIdx = new Set(words.map((w, i) => anchorRe.test(w) ? i : -1).filter(i => i >= 0))
+      // Anchors: card names (first word or multi-word names) and set codes
+      // Set codes / card numbers / rarity codes are modifiers that CAN be stripped
+      const modifierRe = /^(?:[A-Z]{1,4}-?\d+|\d{1,3}\/\d{1,3}|SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near\s*mint)$/i
+      const setCodeOnlyRe = /^[A-Z]{1,4}-?\d+$|^\d{1,3}\/\d{1,3}$/i
 
+      // Try stripping one modifier word at a time, from the end
       for (let i = words.length - 1; i >= 1; i--) {
-        if (anchorIdx.has(i)) continue
+        if (!modifierRe.test(words[i])) continue // only strip modifiers, not card names
         const candidate = words.filter((_, idx) => idx !== i).join(' ')
         if (candidate === base) continue
+        // Never use a query that is only set codes / card numbers with no card name
+        const remainingWords = candidate.split(/\s+/)
+        const hasCardName = remainingWords.some(w => !setCodeOnlyRe.test(w))
+        if (!hasCardName || remainingWords.length < 2) {
+          console.log(`[word-strip] skipping "${candidate}" — no card name or too short`)
+          continue
+        }
         console.log(`[word-strip] trying "${candidate}"`)
         const attempt = await runQueries(candidate)
         if (attempt.blended && attempt.blended.totalComps > (blended?.totalComps || 0)) {
           ;({ results, blended, allItems } = attempt)
-          // Do NOT set correctedQuery — word removal is silent broadening, not a correction
-          if (blended.totalComps >= 3) break
+          console.log(`[word-strip] accepted "${candidate}" with ${blended.totalComps} comps`)
+          break // maximum 1 successful retry
         }
       }
     }
