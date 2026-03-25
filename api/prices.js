@@ -371,14 +371,13 @@ function filterItems(items, grade, searchQuery, lang) {
 
 function calcStats(items, label) {
   if (!items?.length) return null
-  // Log each comp's price and date for debugging
+  // Log each comp's price, title, and date for debugging
   if (label) {
-    const details = items.map((i) => {
+    for (const i of items) {
       const p = parseFloat(i.price?.value || 0)
-      const d = (i.itemEndDate || '').slice(0, 10)
-      return `$${p}(${d})`
-    })
-    console.log(`[calcStats:${label}] ${items.length} items: ${details.join(', ')}`)
+      const d = (i.itemEndDate || i.itemCreationDate || '').slice(0, 10)
+      console.log(`[calcStats:${label}] $${p} ${d} "${(i.title || '').slice(0, 80)}"`)
+    }
   }
   const prices = items
     .map((i) => parseFloat(i.price?.value))
@@ -387,10 +386,17 @@ function calcStats(items, label) {
   if (prices.length < 1) return null
   const mid = Math.floor(prices.length / 2)
   const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
-  // Bidirectional outlier removal: drop anything below 20% of median (low junk)
-  // or above 3x median (high outliers like misclassified graded slabs).
-  // Protects SIR/chase cards from cheap trainer tip cards dragging avg down.
-  const clipped = prices.filter((p) => p >= median * 0.2 && p <= median * 3)
+
+  // For small comp sets (<=5), use tighter outlier bounds:
+  // remove anything >2x median (high) or <40% of median (low).
+  // For larger sets, use the standard 20%/3x bounds.
+  const isSmall = prices.length <= 5
+  const loThresh = isSmall ? median * 0.4 : median * 0.2
+  const hiThresh = isSmall ? median * 2 : median * 3
+  const clipped = prices.filter((p) => p >= loThresh && p <= hiThresh)
+  if (label && clipped.length < prices.length) {
+    console.log(`[calcStats:${label}] outlier removal: ${prices.length} → ${clipped.length} (median=$${median}, bounds=$${loThresh.toFixed(0)}-$${hiThresh.toFixed(0)})`)
+  }
   if (clipped.length < 1) return null
   const trimmed = clipped.length >= 6
     ? clipped.slice(Math.floor(clipped.length * 0.1), clipped.length - Math.floor(clipped.length * 0.1))
