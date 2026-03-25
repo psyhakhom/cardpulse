@@ -238,6 +238,9 @@ video{width:100%;height:100%;object-fit:cover;display:block}
 .mobs{display:flex;gap:8px}
 .mobs button{flex:1;padding:12px;border-radius:12px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font-b);min-height:48px;transition:all .15s}
 .mobs button.ok{background:var(--ac);border-color:var(--ac);color:#000}
+/* back button */
+.back-btn{display:flex;align-items:center;gap:6px;font-size:13px;font-family:var(--font-b);color:var(--mu);background:none;border:none;cursor:pointer;padding:12px 16px;min-height:44px;width:100%;text-align:left;transition:color .15s}
+.back-btn:active{color:var(--tx)}
 </style>
 </head>
 <body>
@@ -383,6 +386,46 @@ let G='Raw',C='Any',L='English',stream=null,collStream=null,collN=0,pending=null
 let hist=JSON.parse(localStorage.getItem('cph')||'[]');
 let coll=JSON.parse(localStorage.getItem('cpc')||'[]');
 
+// BACK NAVIGATION STACK
+let navStack=[];
+let _lastDisambigHTML='';
+let _lastDisambigQuery='';
+let _skipNavPush=false;
+
+function navPush(view,query,card){
+  navStack.push({view,query,card:card||null});
+  history.pushState({navDepth:navStack.length},'',window.location.pathname);
+}
+
+function renderBackBtn(){
+  if(navStack.length<=1)return'';
+  return'<button class="back-btn" onclick="goBack()">\u2190 Back</button>';
+}
+
+function goBack(){
+  if(navStack.length<=1){navStack=[];document.getElementById('sr').innerHTML='';document.getElementById('si').focus();return;}
+  navStack.pop();
+  const prev=navStack[navStack.length-1];
+  const el=document.getElementById('sr');
+  if(!prev||prev.view==='search'){
+    navStack=[];
+    el.innerHTML='';
+    document.getElementById('si').value=prev?prev.query:'';
+    toggleClear();
+    selectedCard=null;
+    document.getElementById('si').focus();
+  }else if(prev.view==='disambiguation'){
+    selectedCard=null;
+    document.getElementById('si').value=prev.query;
+    toggleClear();
+    el.innerHTML=renderBackBtn()+_lastDisambigHTML;
+  }
+}
+
+window.addEventListener('popstate',function(e){
+  if(navStack.length>1){goBack();}
+});
+
 // NAV
 function go(t){
   ['search','scan','collection','history'].forEach((n,i)=>{
@@ -441,7 +484,7 @@ function camOff(){
 
 // SEARCH
 function toggleClear(){document.getElementById('scl').classList.toggle('vis',document.getElementById('si').value.length>0);}
-function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');selectedCard=null;hideAc();i.focus();}
+function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');selectedCard=null;navStack=[];hideAc();i.focus();}
 function doSearch(){const q=document.getElementById('si').value.trim();if(q){clearTimeout(acTimer);if(acAbort){acAbort.abort();acAbort=null;}hideAc();selectedCard=null;search(q,'sr');}}
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
@@ -597,6 +640,9 @@ const USE_REAL_API = true;
 async function search(q, elId) {
   hideAc();
   const el = document.getElementById(elId);
+  // Push search state to nav stack (only for main search pane, skip if coming from disambigPick)
+  if(elId==='sr'&&!_skipNavPush){navPush('search',document.getElementById('si').value.trim(),null);}
+  _skipNavPush=false;
   el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
   // Auto-detect grade from query keywords (skip if user just clicked a grade button)
   if (!_manualGrade) {
@@ -640,6 +686,7 @@ async function search(q, elId) {
       const data = await res.json();
       // Disambiguation: multiple distinct cards found — show picker
       if (data.type === 'disambiguation') {
+        if(elId==='sr'){navPush('disambiguation',document.getElementById('si').value.trim(),null);}
         renderDisambiguation(el, data);
         return;
       }
@@ -849,13 +896,16 @@ function renderDisambiguation(el, data) {
       <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px">${price}${comps}</div>
     </div>`;
   }).join('');
-  el.innerHTML = `<div style="padding:16px 0">
+  const disambigContent=`<div style="padding:16px 0">
     <div style="text-align:center;margin-bottom:12px">
       <div style="font-size:13px;font-weight:700;color:var(--tx)">Multiple cards found</div>
       <div style="font-size:11px;color:var(--mu);margin-top:4px">Which one are you looking for?</div>
     </div>
     <div style="background:var(--s1);border:1px solid var(--bd);border-radius:10px;overflow:hidden">${rows}</div>
   </div>`;
+  _lastDisambigHTML=disambigContent;
+  _lastDisambigQuery=data.query||'';
+  el.innerHTML=renderBackBtn()+disambigContent;
 }
 function disambigPick(cardNum, origQuery) {
   const si = document.getElementById('si');
@@ -864,6 +914,7 @@ function disambigPick(cardNum, origQuery) {
   si.value = newQ;
   // Set selectedCard with searchQuery so exact=1 is passed (bypasses preprocessor/rarity normalizer)
   selectedCard = { searchQuery: newQ, name: newQ };
+  _skipNavPush=true; // don't push intermediate 'search' state — keep disambiguation in stack
   search(newQ, 'sr');
 }
 
@@ -872,6 +923,8 @@ function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/
 
 function renderResult(el,q,r){
   hideAc(); // ensure dropdown is closed when results render
+  // Push result to nav stack (only for main search pane)
+  if(el.id==='sr'){navPush('result',document.getElementById('si').value.trim(),selectedCard);}
   const t3c=r.t30>0?'up':r.t30<0?'dn':'fl',t9c=r.t90>0?'up':r.t90<0?'dn':'fl';
   const t3a=r.t30>0?'↑':r.t30<0?'↓':'→',t9a=r.t90>0?'↑':r.t90<0?'↓':'→';
   const fx=r.showFX?`<div class="fxb"><span>¥ → $ at <strong>¥149.5</strong> · All prices in USD</span><span style="font-size:8px;text-align:right">Rate updates<br>at search time</span></div>`:'';
@@ -903,7 +956,7 @@ function renderResult(el,q,r){
   const lb=(r.l!=='English'||r.jx)?`<span class="lbg">${r.jx?'JP Exclusive':r.l}</span>`:'';
   const ctl=r.ct==='dbs'?'Dragon Ball TCG':r.ct==='tcg'?'TCG':r.ct==='sg'?'Graded Sports':'Sports Raw';
   const cardData=JSON.stringify({name:q,grade:G,cond:C,lang:L,avg:r.avg,lo:r.lo,hi:r.hi,imageUrl:r.img,ct:r.ct}).replace(/"/g,'&quot;');
-  el.innerHTML=`<div class="rc">
+  el.innerHTML=renderBackBtn()+`<div class="rc">
     <div class="rh" id="rh"><div class="shim" id="shim"></div>
     <img src="${r.img}" style="opacity:0" onload="this.style.opacity='1';var s=document.getElementById('shim');if(s)s.remove()" onerror="this.style.display='none'"/>
     <div class="rhl">${ctl}</div></div>
