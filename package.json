@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "import-dbs": "node --env-file=.env.local scripts/import-dbs-cards.js",
-    "import-pokemon": "node --env-file=.env.local scripts/import-pokemon.js",
+    "import-pokemon": "node --env-file=.env.local scripts/import-pokemon-cards.js",
     "import-mtg": "node --env-file=.env.local scripts/import-mtg-cards.js",
     "import-yugioh": "node --env-file=.env.local scripts/import-yugioh-cards.js",
     "import-onepiece": "node --env-file=.env.local scripts/import-onepiece.js",
