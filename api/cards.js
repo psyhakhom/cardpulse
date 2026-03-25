@@ -41,8 +41,22 @@ async function searchCatalog(query, game) {
     } else {
       // Fuzzy name search via pg_trgm similarity + ILIKE fallback
       const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world']
+      const ALIASES = {
+        'vegita': 'vegeta', 'vegetta': 'vegeta',
+        'freiza': 'frieza', 'friesa': 'frieza', 'freezer': 'frieza',
+        'gokou': 'goku', 'picolo': 'piccolo', 'piccalo': 'piccolo',
+        'charizrd': 'charizard', 'charazard': 'charizard',
+        'pikchu': 'pikachu', 'mewtow': 'mewtwo',
+      }
       const stripped = sanitized.split(/\s+/).filter(w => !GAME_WORDS.includes(w.toLowerCase()))
-      const cleanedQuery = (stripped.length > 0 ? stripped : sanitized.split(/\s+/)).join(' ')
+      let cleanedQuery = (stripped.length > 0 ? stripped : sanitized.split(/\s+/)).join(' ')
+
+      // Apply alias corrections for common misspellings
+      const corrected = cleanedQuery.toLowerCase().split(' ').map(w => ALIASES[w] || w).join(' ')
+      if (corrected !== cleanedQuery.toLowerCase()) {
+        console.log(`[cards:db] alias corrected: "${cleanedQuery}" → "${corrected}"`)
+        cleanedQuery = corrected
+      }
 
       console.log(`[cards:db] calling fuzzy_search_cards with q="${cleanedQuery}", game_filter=${game || 'null'}`)
       const rpcUrl = `${SB_URL}/rest/v1/rpc/fuzzy_search_cards`
