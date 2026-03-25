@@ -1075,7 +1075,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: rarity-filter-v3', new Date().toISOString())
+  console.log('PRICES.JS VERSION: hard-block-v1', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
@@ -1349,7 +1349,7 @@ export default async function handler(req, res) {
 
     // Deduplicate comps across all queries, strip slabs for Raw
     const seen = new Set()
-    const deduped = allItems.filter((i) => {
+    let deduped = allItems.filter((i) => {
       // Hard slab exclusion at dedup stage — triple safety net
       if (grade === 'Raw' && isGradedSlab(i.title)) return false
       const key = i.title?.toLowerCase().slice(0, 40)
@@ -1357,6 +1357,25 @@ export default async function handler(req, res) {
       seen.add(key)
       return true
     })
+
+    // ── HARD BLOCK: final card-name enforcement ──────────────────────────
+    // Absolute last safety net — no wrong-card comp can survive past this point.
+    // Extract card name words (non-modifier, non-set-code) from original query.
+    {
+      const _MOD_RE = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo)$/i
+      const _SET_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
+      const _nameWords = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_RE.test(w) && !_SET_RE.test(w))
+      if (_nameWords.length > 0) {
+        const before = deduped.length
+        deduped = deduped.filter((i) => {
+          const t = (i.title || '').toLowerCase()
+          if (_nameWords.some(w => t.includes(w))) return true
+          console.log(`[HARD BLOCK] removed wrong card: "${(i.title || '').slice(0, 80)}" — missing [${_nameWords.join(', ')}]`)
+          return false
+        })
+        if (deduped.length < before) console.log(`[HARD BLOCK] ${before} → ${deduped.length} after card name enforcement`)
+      }
+    }
 
     const response = {
       lo: blended.lo,
