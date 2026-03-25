@@ -1258,9 +1258,27 @@ export default async function handler(req, res) {
         }
       }
 
-      // Single item list used for BOTH calcStats (pricing) AND allItems (display).
-      // No separate filtering paths — what you see is what feeds the average.
-      const cleanA = finalA, cleanB = finalB, cleanC = freshC, cleanD = fD
+      // ── HARD BLOCK: card-name enforcement before calcStats ─────────────
+      // Ensures wrong-card items never contribute to weighted average OR display.
+      const _MOD = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo)$/i
+      const _SET = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
+      const _nameW = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD.test(w) && !_SET.test(w))
+      const hardBlock = (items, label) => {
+        if (!_nameW.length) return items
+        const kept = items.filter((i) => {
+          const t = (i.title || '').toLowerCase()
+          if (_nameW.some(w => t.includes(w))) return true
+          console.log(`[HARD BLOCK:${label}] removed: "${(i.title || '').slice(0, 70)}" — missing [${_nameW.join(', ')}]`)
+          return false
+        })
+        if (kept.length < items.length) console.log(`[HARD BLOCK:${label}] ${items.length} → ${kept.length}`)
+        return kept
+      }
+
+      const cleanA = hardBlock(finalA, 'A')
+      const cleanB = hardBlock(finalB, 'B')
+      const cleanC = hardBlock(freshC, 'C')
+      const cleanD = hardBlock(fD, 'D')
 
       // Track if raw results had Japanese items that were filtered out
       const langRe = LANG_EXCLUDE[lang]
@@ -1332,7 +1350,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if (!blended) {
+    if (!blended || blended.totalComps === 0) {
       if (hadJapaneseResults) {
         return res.status(404).json({
           error: 'Limited US sales found for this card.',
