@@ -1312,27 +1312,37 @@ export default async function handler(req, res) {
           if (spread > 5) {
             console.log(`[disambig] ${byNum.size} distinct card numbers with ${spread.toFixed(1)}x spread — returning picker`)
             let variants = [...byNum.entries()].map(([num, items]) => {
-              const ps = items.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
+              // Only use comps where this card number is the ONLY card number in the title
+              const exactItems = items.filter(i => {
+                const allNums = (i.title || '').match(_CNUM_RE) || []
+                return allNums.length === 1
+              })
+              const useItems = exactItems.length > 0 ? exactItems : items
+              const ps = useItems.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
               const avg = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : 0
-              // Detect rarity from titles — only append * for explicit alt art indicators
-              const allTitles = items.map(i => (i.title || '')).join(' ')
-              const starredMatch = allTitles.match(/\b(SCR\s*\*\*|SCR\s*\*|SR\s*\*|SPR\s*\*)\b/i)
-              const isAlt = /\balt(?:ernate)?\s*art\b/i.test(allTitles) || /\b(?:SCR|SR)\s*alt\b/i.test(allTitles)
+              // Detect rarity: check each title individually for rarity near the card number
               let rarity = ''
-              if (starredMatch) {
-                rarity = starredMatch[1].toUpperCase().replace(/\s+/g, '')
-              } else {
-                const plainMatch = allTitles.match(/\b(SCR|SPR|SR|UR|SEC|SSR|SAR|UC|R|C|L|SP)\b/i)
-                rarity = plainMatch ? plainMatch[1].toUpperCase() : ''
-                if (isAlt && (rarity === 'SCR' || rarity === 'SR')) rarity += '*'
+              for (const item of useItems) {
+                const t = item.title || ''
+                // Check for explicit starred rarity in THIS title
+                const starred = t.match(/\b(SCR\s*\*\*|SCR\s*\*|SR\s*\*|SPR\s*\*)\b/i)
+                if (starred) { rarity = starred[1].toUpperCase().replace(/\s+/g, ''); break }
+                // Check for alt art indicator + rarity in SAME title
+                const hasAlt = /\balt(?:ernate)?\s*art\b/i.test(t) || /\b(?:SCR|SR)\s*alt\b/i.test(t)
+                const plain = t.match(/\b(SCR|SPR|SR|UR|SEC|SSR|SAR|UC|R|C|L|SP)\b/i)
+                if (plain) {
+                  const r = plain[1].toUpperCase()
+                  if (hasAlt && (r === 'SCR' || r === 'SR')) { rarity = r + '*'; break }
+                  if (!rarity) rarity = r // keep first plain rarity found
+                }
               }
               return {
                 cardNumber: num,
                 name: processed.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() || num,
                 rarity,
                 estimatedPrice: parseFloat(avg.toFixed(2)),
-                compCount: items.length,
-                imageUrl: items[0].image?.imageUrl || null,
+                compCount: useItems.length,
+                imageUrl: useItems[0]?.image?.imageUrl || null,
               }
             })
             // Filter: require 2+ comps, remove price outliers >10x median
