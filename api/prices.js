@@ -182,7 +182,7 @@ function gradeMatch(title, grade) {
 function isGradedSlab(title) {
   const t = (title || '').toLowerCase()
   // 1. Grading company + number: psa 10, bgs 9.5, cgc9, etc
-  if (/\b(psa|bgs|cgc|sgc|hga|ace|gma|beckett|mnt|tag|ags|era)\s*\d/.test(t)) return true
+  if (/\b(psa|bgs|cgc|sgc|hga|ace|gma|beckett|mnt|tag|ags|era|csg|ccg)\s*\d/.test(t)) return true
   // 2. Grading keywords anywhere in title
   if (/\b(graded|slab|slabbed|encased|gem\s*mint|black\s*label|pristine|population|pop\s*\d|cert\s*\d|registry|authenticated)\b/.test(t)) return true
   // 3. Grade patterns: "gem 10", "pristine 10", "perfect 10", "mint 10"
@@ -282,7 +282,7 @@ function filterItems(items, grade, searchQuery, lang) {
   // ── 1b. Lot/multi-card exclusion (all grades) ────────────────────────
   // Lots and multi-card listings are never valid comps regardless of grade.
   {
-    const LOT_RE = /\b(\d+\s*card\s*lot|lot\s*of\s*\d+|card\s*lot|lot\s*psa|lot\s*bgs|lot\s*cgc|father\s*[&\/]\s*son|father\s+son|complete\s*set|bundle)\b/i
+    const LOT_RE = /\b(\d+\s*card\s*lot|lot\s*of\s*\d+|card\s*lot|lot\s*psa|lot\s*bgs|lot\s*cgc|father\s*[&\/]\s*son|father\s+son|complete\s*set|bundle)\b|\blot\s*\(\d+\)/i
     const before = filtered.length
     filtered = filtered.filter((i) => {
       const t = i.title || ''
@@ -1375,7 +1375,10 @@ export default async function handler(req, res) {
     // Only strip modifier words (rarity, grade, etc), never the card name.
     // Never retry if the result would be fewer than 2 meaningful words.
     // Maximum 1 retry to avoid catastrophic broadening (e.g. "sv3" alone).
-    if (!blended || blended.totalComps < 3) {
+    // For sports queries: only word-strip when 0 comps (not < 3) to keep specific results
+    const _isSports = /\b(rookie|rc\b|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|prizm|nfl|nba|mlb|nhl)\b/i.test(processed)
+    const stripThreshold = _isSports ? 0 : 3
+    if (!blended || blended.totalComps < stripThreshold) {
       const base = correctedQuery || processed
       const words = base.split(/\s+/)
       // Only rarity, grade, and descriptor terms can be stripped — card names and set codes are protected
