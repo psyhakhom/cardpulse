@@ -198,10 +198,13 @@ function isGradedSlab(title) {
 const VARIANT_TERMS = [
   // Art variants
   { query: /\balt\b/i, title: /\b(alt(?:ernate)?|alternative)\s*art\b/i },
-  { query: /\bsuper\s*parallel\b/i, title: /\bsuper\s*parallel\b|\bsp\s*card\b/i },
+  { query: /\bsuper\s*parallel\b/i, title: /\bsuper\s*parallel\b|\bsp\s*card\b|\bsp\s*parallel\b/i },
   { query: /\bfull\s*art\b/i, title: /\bfull\s*art\b/i },
   { query: /\bSAR\b/, title: /\bSAR\b/ },
   { query: /\bbooster\b/i, title: /\bmanga\s*booster\b|\bbooster\b/i },
+  // One Piece premium parallels
+  { query: /\bwanted\b/i, title: /\bwanted\s*(poster|parallel)\b/i },
+  { query: /\bmanga\s*(art|version)\b/i, title: /\bmanga\s*(art|version)\b/i },
   // Foil/special finish variants
   { query: /\bsilver\b/i, title: /\bsilver\b/i },
   { query: /\bgold\b/i, title: /\bgold\b/i },
