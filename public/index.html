@@ -541,6 +541,24 @@ async function search(q, elId) {
   hideAc();
   const el = document.getElementById(elId);
   el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
+  // Auto-detect grade from query keywords
+  const ql = q.toLowerCase();
+  const GRADE_DETECT = [
+    [/\bpsa\s*10\b/, 'PSA 10'], [/\bpsa\s*9\b/, 'PSA 9'],
+    [/\bbgs\s*10\b/, 'BGS 10'], [/\bbgs\s*9\.?5\b/, 'BGS 9.5'],
+    [/\bcgc\s*10\b/, 'CGC 10'],
+    [/\b(raw|ungraded)\b/, 'Raw'],
+  ];
+  for (const [re, grd] of GRADE_DETECT) {
+    if (re.test(ql) && G !== grd) {
+      G = grd;
+      document.getElementById('gc').querySelectorAll('.ch').forEach(c => {
+        c.classList.toggle('on', c.textContent.trim() === grd);
+      });
+      console.log('[grade-detect] auto-set grade to', grd);
+      break;
+    }
+  }
   // Capture selectedCard at search time (it gets cleared on next input)
   const sc = selectedCard;
   if (USE_REAL_API) {
