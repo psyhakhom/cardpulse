@@ -706,15 +706,15 @@ async function search(q, elId) {
         renderDisambiguation(el, data);
         return;
       }
-      if (data.error) {
-        if (res.status === 404) {
-          const cardImg=sc?.imageUrl?`<img src="${escH(sc.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
-          const cardName=sc?.name||q;
-          el.innerHTML = `<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p><p style="margin-top:8px;font-family:monospace;font-size:10px;color:var(--mu);line-height:1.6">This card may be too new or have limited market activity.<br>Try searching without the parallel variant (e.g., just the base card number).</p></div>`;
-        } else {
-          throw new Error(data.error);
-        }
+      if (data.type === 'no-data' || (data.error && res.status === 404)) {
+        const cardImg=sc?.imageUrl?`<img src="${escH(sc.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
+        const cardName=sc?.name||q;
+        const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${escH(data.searchTip)}</p>`:'';
+        el.innerHTML = `<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p><p style="margin-top:8px;font-size:12px;color:var(--mu);line-height:1.6">This card may be too new or have limited market activity.<br>Try searching without the parallel variant.</p>${tip}</div>`;
         return;
+      }
+      if (data.error) {
+        throw new Error(data.error);
       }
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const r = normalizeApiResponse(data, q, sc);

@@ -1540,12 +1540,14 @@ export default async function handler(req, res) {
 
     if (!blended || blended.totalComps === 0) {
       if (hadJapaneseResults) {
-        return res.status(404).json({
+        return res.status(200).json({
+          type: 'no-data',
           error: 'Limited US sales found for this card.',
           searchTip: 'This may be a Japanese-market card. Try selecting "Japanese" in the language filter.',
         })
       }
-      return res.status(404).json({
+      return res.status(200).json({
+        type: 'no-data',
         error: 'Not enough sold comps found. Try a more specific search.',
         searchTip: 'For Dragon Ball cards, include the set code like BT27 or FB09. For Pokémon, include the set name like "Base Set" or "Scarlet & Violet".',
       })
