@@ -218,7 +218,7 @@ const VARIANT_TERMS = [
 
 // 3. Language bleed — exclude foreign language listings when language filter is set
 const LANG_EXCLUDE = {
-  English: /\b(japanese|japan|jpn|jp\s*ver|korean|korean\s*ver|chinese)\b/i,
+  English: /\b(japanese|japan|jpn|jp\s*ver|korean|korean\s*ver|chinese|cross\s*worlds)\b/i,
   Japanese: /\b(english|eng\s*ver|korean|chinese)\b/i,
 }
 
@@ -374,9 +374,9 @@ function calcStats(items) {
   const mid = Math.floor(prices.length / 2)
   const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
   // Bidirectional outlier removal: drop anything below 20% of median (low junk)
-  // or above 5x median (high outliers). Protects SIR/chase cards from cheap
-  // trainer tip cards dragging the average down.
-  const clipped = prices.filter((p) => p >= median * 0.2 && p <= median * 5)
+  // or above 3x median (high outliers like misclassified graded slabs).
+  // Protects SIR/chase cards from cheap trainer tip cards dragging avg down.
+  const clipped = prices.filter((p) => p >= median * 0.2 && p <= median * 3)
   if (clipped.length < 1) return null
   const trimmed = clipped.length >= 6
     ? clipped.slice(Math.floor(clipped.length * 0.1), clipped.length - Math.floor(clipped.length * 0.1))
