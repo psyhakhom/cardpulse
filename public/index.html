@@ -74,14 +74,19 @@ header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:sp
 .shim{position:absolute;inset:0;background:linear-gradient(90deg,var(--s2) 25%,var(--bd) 50%,var(--s2) 75%);background-size:200% 100%;animation:sh 1.4s infinite}
 @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .rb{padding:20px}
-.rt{font-size:18px;font-weight:600;margin-bottom:4px;line-height:1.4;word-break:break-word;font-family:var(--font-b)}
-.rm{font-size:12px;color:var(--mu);margin-bottom:16px}
-/* price grid */
-.pg{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px;margin-bottom:16px}
-.pb{background:var(--s2);border-radius:12px;padding:14px 8px;text-align:center}
-.pb .pl{font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;font-weight:500}
+.rt{font-size:20px;font-weight:700;margin-bottom:4px;line-height:1.4;word-break:break-word;font-family:var(--font-b)}
+.rm{font-size:12px;color:var(--mu);margin-bottom:20px}
+/* price display */
+.pg{display:flex;flex-direction:column;align-items:center;margin-bottom:20px;padding:8px 0}
+.pb{background:none;border-radius:0;padding:0;text-align:center}
+.pb .pl{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.15em;margin-bottom:0;font-weight:500}
 .pb .pv{font-family:var(--font-d);font-size:24px;font-weight:400;letter-spacing:.5px}
-.pv.lo{color:var(--a2)}.pv.av{color:var(--ac);font-size:42px}.pv.hi{color:var(--a3)}
+.pv.lo{color:#888;font-size:18px}.pv.av{color:var(--ac);font-size:56px;line-height:1.1}.pv.hi{color:#888;font-size:18px}
+.pg-range{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:8px}
+.pg-range-end{text-align:center}
+.pg-range-end .pl{font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.12em;margin-bottom:2px;font-weight:600}
+.pg-range-end .pv{font-family:var(--font-d);font-size:18px;letter-spacing:.5px;color:#888}
+.pg-range-sep{color:#333;font-size:14px;letter-spacing:2px;margin-top:14px}
 /* confidence — simplified dot + word */
 .crw{display:flex;align-items:center;gap:12px;background:var(--s2);border-radius:12px;padding:14px 16px;margin-bottom:14px}
 .cr{position:relative;width:12px;height:12px;flex-shrink:0}
@@ -906,9 +911,12 @@ function renderResult(el,q,r){
     <div class="rt">${escH(q)}${lb}</div>
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}</div>
     <div class="pg">
-      <div class="pb"><div class="pl">Low</div><div class="pv lo">${fP(r.lo)}</div></div>
-      <div class="pb"><div class="pl">Wtd Avg</div><div class="pv av">${fP(r.avg)}</div></div>
-      <div class="pb"><div class="pl">High</div><div class="pv hi">${fP(r.hi)}</div></div>
+      <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
+    </div>
+    <div class="pg-range">
+      <div class="pg-range-end"><div class="pl">Low</div><div class="pv">${fP(r.lo)}</div></div>
+      <div class="pg-range-sep">——</div>
+      <div class="pg-range-end"><div class="pl">High</div><div class="pv">${fP(r.hi)}</div></div>
     </div>
     ${mpb}
     ${spread}
