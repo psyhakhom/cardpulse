@@ -96,15 +96,16 @@ async function getToken() {
 async function ebaySearch(
   query,
   token,
-  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false } = {}
+  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false } = {}
 ) {
+  const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
   if (live) {
     const now = new Date().toISOString()
     const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
-    filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}],itemLocationCountry:US`
+    filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]${locFilter}`
   } else {
-    filter = 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true,itemLocationCountry:US'
+    filter = `buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true${locFilter}`
   }
   // Build URL manually — URLSearchParams encodes curly braces which eBay rejects
   const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filter)}&sort=${sort}&limit=${limit}`
@@ -844,7 +845,7 @@ function buildQueries(name, grade, lang) {
   const gradeExactQ = grade === 'Raw' ? `${name}${langSuffix}${cardSuffix} near mint` : base
   return {
     a: { q: base, label: 'All sold (90d)', weight: 0.25, limit: 40, sort: 'endingSoonest' },
-    b: { q: base, label: 'Recent sold (30d)', weight: 0.45, limit: 15, sort: 'newlyListed' },
+    b: { q: base, label: 'Recent sold (30d)', weight: 0.45, limit: 20, sort: 'newlyListed' },
     c: {
       q: gradeExactQ,
       label: `Grade-exact (${grade || 'raw'})`,
@@ -865,8 +866,22 @@ const WEIGHTS_WITHOUT_LIVE = { a: 0.25, b: 0.45, c: 0.30 }
 function blend(results) {
   // Check if Query D (live auctions) has data to decide weight set
   const hasLive = results.some((r) => r.label === 'Live auctions' && r.stats !== null)
-  const weightMap = hasLive ? WEIGHTS_WITH_LIVE : WEIGHTS_WITHOUT_LIVE
+  const weightMap = { ...(hasLive ? WEIGHTS_WITH_LIVE : WEIGHTS_WITHOUT_LIVE) }
   const keys = ['a', 'b', 'c', 'd']
+
+  // Query C single-outlier detection: if C has only 1 comp and it's >35% below
+  // the median of A+B, zero out C and redistribute to A and B
+  const [rA, rB, rC] = results
+  if (rC?.stats?.count === 1 && rA?.stats && rB?.stats) {
+    const abMedian = (rA.stats.avg + rB.stats.avg) / 2
+    if (rC.stats.avg < abMedian * 0.65) {
+      console.log(`[blend] Query C single comp $${rC.stats.avg} is >35% below A+B median $${abMedian.toFixed(2)} — zeroing C weight`)
+      const cWeight = weightMap.c || 0
+      weightMap.c = 0
+      weightMap.a = (weightMap.a || 0) + cWeight / 2
+      weightMap.b = (weightMap.b || 0) + cWeight / 2
+    }
+  }
 
   // Apply rebalanced weights to each result
   const reweighted = results.map((r, i) => ({
@@ -1117,13 +1132,38 @@ export default async function handler(req, res) {
       const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
 
+      const totalComps = fA.length + fB.length + fC.length + fD.length
+
+      // Low-volume fallback: if US-only returned < 5 comps, retry A+B without location filter
+      let finalA = fA, finalB = fB
+      if (totalComps < 5) {
+        console.log(`[low-volume] only ${totalComps} US comps, retrying A+B globally`)
+        const [gA, gB] = await Promise.allSettled([
+          ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort, global: true }),
+          ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort, global: true }),
+        ])
+        let rawGA = gA.status === 'fulfilled' ? gA.value.itemSummaries || [] : []
+        let rawGB = gB.status === 'fulfilled' ? gB.value.itemSummaries || [] : []
+        if (grade === 'Raw') {
+          rawGA = rawGA.filter((i) => !isGradedSlab(i.title))
+          rawGB = rawGB.filter((i) => !isGradedSlab(i.title))
+        }
+        const gfA = filterByRarity(filterItems(rawGA, grade, processed, lang))
+        const gfB = filterByRarity(filterItems(rawGB, grade, processed, lang))
+        if (gfA.length + gfB.length > fA.length + fB.length) {
+          console.log(`[low-volume] global A+B: ${gfA.length}+${gfB.length} comps (was ${fA.length}+${fB.length})`)
+          finalA = gfA
+          finalB = gfB
+        }
+      }
+
       const res = [
-        { ...qs.a, stats: calcStats(fA) },
-        { ...qs.b, stats: calcStats(fB) },
+        { ...qs.a, stats: calcStats(finalA) },
+        { ...qs.b, stats: calcStats(finalB) },
         { ...qs.c, stats: calcStats(fC) },
         { ...qs.d, stats: calcStats(fD) },
       ]
-      return { results: res, blended: blend(res), allItems: [...fA, ...fB, ...fC, ...fD] }
+      return { results: res, blended: blend(res), allItems: [...finalA, ...finalB, ...fC, ...fD] }
     }
 
     // Launch card image lookup in parallel with the first eBay query batch
