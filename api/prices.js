@@ -183,7 +183,9 @@ function gradeMatch(title, grade) {
 function isGradedSlab(title) {
   const t = (title || '').toLowerCase()
   // 1. Grading company + number: psa 10, bgs 9.5, cgc9, etc
-  if (/\b(psa|bgs|cgc|sgc|hga|ace|gma|beckett|mnt|tag|ags|era|csg|ccg)\s*\d/.test(t)) return true
+  if (/\b(psa|bgs|cgc|sgc|scg|hga|ace|gma|beckett|mnt|tag|ags|era|csg|ccg)\s*\d/.test(t)) return true
+  // 1b. Standalone grading company name (no number) — catches "SCG graded" etc
+  if (/\bscg\b/.test(t)) return true
   // 2. Grading keywords anywhere in title
   if (/\b(graded|slab|slabbed|encased|gem\s*mint|black\s*label|pristine|population|pop\s*\d|cert\s*\d|registry|authenticated)\b/.test(t)) return true
   // 3. Grade patterns: "gem 10", "pristine 10", "perfect 10", "mint 10"
