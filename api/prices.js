@@ -1204,17 +1204,41 @@ export default async function handler(req, res) {
         processed = (shortName + ' ' + cardNumMatch[1]).replace(/\s+/g, ' ').trim()
         console.log(`[exact] truncated long query → "${processed}"`)
       }
-      // Only enforce rarity filtering for starred variants (SCR*, SR*, SCR**)
-      // Plain rarity codes (SR, SPR, UC) shouldn't filter — card number already identifies the card
+      // Extract rarity from query text first
       const { query: cleaned, requiredRarity: rr } = normalizeRarity(processed)
       processed = cleaned
-      // Only keep starred rarity enforcement — plain codes cause false negatives
+      // Keep starred rarity enforcement (SCR*, SR*)
       if (rr && /\*/.test(rr)) {
         requiredRarity = rr
       } else {
         // Strip plain rarity codes from the eBay query — sellers rarely include them
         processed = processed.replace(/\b(?:SPR|SCR|SR|SSR|SAR|SEC|UC|R|C|L|ST|FR|GFR|DR|DAR|DBR|IVR)\b/gi, '').replace(/\s+/g, ' ').trim()
         console.log(`[exact] stripped rarity from query → "${processed}"`)
+      }
+      // For exact=1 with a card number, look up catalog rarity to enforce high-value variants
+      // SPR/SCR bleed from cheaper SR comps significantly distorts pricing
+      if (!requiredRarity) {
+        const cardNumInQ = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
+        if (cardNumInQ && _sbConfigured) {
+          try {
+            const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
+            const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&limit=1`
+            const catRes = await fetch(catUrl, {
+              headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+              signal: AbortSignal.timeout(2000),
+            })
+            if (catRes.ok) {
+              const catRows = await catRes.json()
+              const catRarity = (catRows[0]?.rarity || '').toUpperCase()
+              if (['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(catRarity)) {
+                requiredRarity = catRarity
+                console.log(`[exact] catalog rarity lookup: ${cardNumInQ[1]} → ${catRarity}, enforcing`)
+              }
+            }
+          } catch (e) {
+            console.log(`[exact] catalog rarity lookup failed: ${e.message}`)
+          }
+        }
       }
     } else {
       const pp = preprocessQuery(q.trim(), grade)
