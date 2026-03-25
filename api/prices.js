@@ -214,6 +214,19 @@ const VARIANT_TERMS = [
   { query: /\btoken\b/i, title: /\btoken\b/i },
   { query: /\bv\.?2\b/i, title: /\bv\.?\s*2\b|\bversion\s*2\b/i },
   { query: /\bpromo\b/i, title: /\bpromo(?:tional)?\b|\bpromo\s*card\b/i },
+  // Memorabilia / relic cards — premium inserts, not standard cards
+  { query: /\brelic\b/i, title: /\brelic\b/i },
+  { query: /\bpatch\b/i, title: /\bpatch\b/i },
+  { query: /\bjersey\b/i, title: /\bjersey\b/i },
+  { query: /\bswatch\b/i, title: /\bswatch\b/i },
+  { query: /\bgame.?used\b/i, title: /\bgame[\s-]?used\b/i },
+  { query: /\bmemorabilia\b/i, title: /\bmemorabilia\b/i },
+  { query: /\b(glove|bat|shoe|sock)\b/i, title: /\b(glove|bat relic|shoe|sock)\b/i },
+  // Event exclusives
+  { query: /\bnational\b/i, title: /\b(national\s*convention|the\s*national|convention\s*exclusive|industry\s*summit)\b/i },
+  // Ultra-premium parallels
+  { query: /\brapture\b/i, title: /\brapture\b/i },
+  { query: /\bshimmer\b/i, title: /\bshimmer\b/i },
   // Always excluded — sealed product SKUs and non-card products
   { query: /(?!)/, title: /\bARS\s*\d/i },
   { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set)\b/i },
