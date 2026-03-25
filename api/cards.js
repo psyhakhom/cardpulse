@@ -25,31 +25,49 @@ async function searchCatalog(query, game) {
     // If query has a specific card number (FB02-099, BT1-031), require exact match on it
     const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+)\b/i)
 
-    let url
+    let rows
     if (cardNumMatch) {
       const num = cardNumMatch[1].toUpperCase()
       const numEnc = encodeURIComponent(num)
       console.log(`[cards:db] card number detected: ${num}`)
-      // First try exact card_number match (e.g., FB05-119 matches only FB05-119, not FB05-119-P3)
-      // Then also include variants via search_query for broader results
-      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
+      let url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
+      if (game) url += `&game=eq.${game}`
+      const res = await fetch(url, {
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+        signal: AbortSignal.timeout(3000),
+      })
+      if (!res.ok) return []
+      rows = await res.json()
     } else {
-      // General name search — strip game-name keywords (already filtered by game column)
-      // then split into words joined by * wildcards for ILIKE matching
+      // Fuzzy name search via pg_trgm similarity + ILIKE fallback
       const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world']
       const stripped = sanitized.split(/\s+/).filter(w => !GAME_WORDS.includes(w.toLowerCase()))
-      const words = (stripped.length > 0 ? stripped : sanitized.split(/\s+/)).map(w => encodeURIComponent(w))
-      const pattern = words.join('*')
-      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${pattern}*,search_query.ilike.*${pattern}*)&order=times_searched.desc&limit=16`
-    }
-    if (game) url += `&game=eq.${game}`
+      const cleanedQuery = (stripped.length > 0 ? stripped : sanitized.split(/\s+/)).join(' ')
 
-    const res = await fetch(url, {
-      headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
-      signal: AbortSignal.timeout(3000), // 3s max — must be faster than external APIs
-    })
-    if (!res.ok) return []
-    const rows = await res.json()
+      console.log(`[cards:db] calling fuzzy_search_cards with q="${cleanedQuery}", game_filter=${game || 'null'}`)
+      const rpcUrl = `${SB_URL}/rest/v1/rpc/fuzzy_search_cards`
+      const res = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: {
+          apikey: SB_KEY,
+          Authorization: `Bearer ${SB_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          q: cleanedQuery,
+          game_filter: game || null,
+          result_limit: 16,
+        }),
+        signal: AbortSignal.timeout(3000),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        console.log(`[cards:db] RPC fuzzy_search_cards failed: ${res.status} ${body}`)
+        return []
+      }
+      rows = await res.json()
+      console.log(`[cards:db] RPC returned ${rows.length} rows, first: ${rows[0]?.card_name || 'none'}`)
+    }
     if (!rows.length) return []
 
     console.log(`[cards:db] card_catalog returned ${rows.length} raw results for "${query}"${game ? ` [${game}]` : ''}`)
@@ -126,6 +144,10 @@ async function searchCatalog(query, game) {
       let imageUrl = r.image_url || null
       if (r.game === 'onepiece' && r.card_number && !imageUrl) {
         imageUrl = `https://optcgapi.com/media/static/Card_Images/${r.card_number}.jpg`
+      }
+      // Proxy One Piece images to avoid SAMPLE watermark from hotlink detection
+      if (r.game === 'onepiece' && imageUrl) {
+        imageUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
       }
       return {
         id: `db-${r.card_number || r.card_name}-${r.game}`,
@@ -506,17 +528,21 @@ async function searchOnePiece(query) {
       }).slice(0, 8)
 
       if (results.length > 0) {
-        return results.map((card) => ({
-          id: `op-${card.id || card.number || Date.now()}`,
-          name: card.name || '',
-          set: (card.number || card.id || '').replace(/-\d+$/, ''),
-          number: card.number || card.id || '',
-          rarity: card.rarity || '',
-          game: 'onepiece',
-          imageUrl: card.image || card.imageUrl || null,
-          largeImageUrl: card.image || card.imageUrl || null,
-          searchQuery: buildSearchQuery(card.name, card.number || card.id, card.rarity),
-        }))
+        return results.map((card) => {
+          let img = card.image || card.imageUrl || null
+          if (img) img = `/api/image-proxy?url=${encodeURIComponent(img)}`
+          return {
+            id: `op-${card.id || card.number || Date.now()}`,
+            name: card.name || '',
+            set: (card.number || card.id || '').replace(/-\d+$/, ''),
+            number: card.number || card.id || '',
+            rarity: card.rarity || '',
+            game: 'onepiece',
+            imageUrl: img,
+            largeImageUrl: img,
+            searchQuery: buildSearchQuery(card.name, card.number || card.id, card.rarity),
+          }
+        })
       }
     }
 
@@ -542,6 +568,7 @@ async function searchOnePiece(query) {
           const number = numMatch ? numMatch[1].toUpperCase() : ''
           let imageUrl = imgMatch ? imgMatch[1].trim() : null
           if (imageUrl && imageUrl.startsWith('/')) imageUrl = `https://en.onepiece-cardgame.com${imageUrl}`
+          if (imageUrl) imageUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
           cards.push({
             id: `op-site-${number || cards.length}`, name,
             set: number ? number.replace(/-\d+$/, '') : '', number,
