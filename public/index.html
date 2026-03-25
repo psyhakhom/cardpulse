@@ -563,15 +563,24 @@ async function search(q, elId) {
       [/\bbgs\s*10\b/i, 'BGS 10'], [/\bbgs\s*9\.?5\b/i, 'BGS 9.5'],
       [/\bcgc\s*10\b/i, 'CGC 10'],
     ];
+    let detected = false;
     for (const [re, grd] of GRADE_DETECT) {
       if (re.test(q)) {
-        G = grd;
+        G = grd; detected = true;
         document.getElementById('gc').querySelectorAll('.ch').forEach(c => {
           c.classList.toggle('on', c.textContent.trim() === grd);
         });
         console.log('[grade-detect] auto-set grade to', grd);
         break;
       }
+    }
+    // No grade term in query → reset to Raw
+    if (!detected && G !== 'Raw') {
+      G = 'Raw';
+      document.getElementById('gc').querySelectorAll('.ch').forEach(c => {
+        c.classList.toggle('on', c.textContent.trim() === 'Raw');
+      });
+      console.log('[grade-detect] no grade term, reset to Raw');
     }
   }
   _manualGrade = false;
