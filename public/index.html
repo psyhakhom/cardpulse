@@ -617,13 +617,16 @@ function selectAc(i){
   // 3. Convert "-p1"/"-p2"/"-p3" suffixes to "parallel"
   let cleanSQ;
   const hasCardNum=card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number);
+  console.log('[selectAc] card.number:', JSON.stringify(card.number), 'hasCardNum:', hasCardNum, 'card.name:', JSON.stringify(card.name));
   if(hasCardNum){
     // Card number available — build short query: "Name CardNum [Rarity]"
     const shortName=(card.name||'').split(',')[0].split(' // ')[0].trim();
     const rPart=card.rarity?(' '+card.rarity):'';
     cleanSQ=(shortName+' '+card.number+rPart).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+    console.log('[selectAc] built short query:', JSON.stringify(cleanSQ));
   }else{
     cleanSQ=(card.searchQuery||card.name||'').replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+    console.log('[selectAc] using full searchQuery:', JSON.stringify(cleanSQ));
   }
   cleanSQ=cleanSQ.replace(/\b(\w+-\d+)-p\d+\b/gi,'$1 parallel');
   selectedCard={
@@ -635,7 +638,7 @@ function selectAc(i){
     imageUrl:card.largeImageUrl||card.imageUrl||null,
     searchQuery:cleanSQ,
   };
-  console.log('[selectAc] card selected:', card.name, '| searchQuery:', card.searchQuery, '| game:', card.game);
+  console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery));
   // Show clean display name in input
   const displayName=[card.name,card.number].filter(Boolean).join(' ');
   document.getElementById('si').value=displayName;

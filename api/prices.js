@@ -98,6 +98,7 @@ async function ebaySearch(
   token,
   { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false } = {}
 ) {
+  console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
   if (live) {
@@ -1209,6 +1210,7 @@ export default async function handler(req, res) {
       requiredRarity = pp.requiredRarity || null
     }
 
+    console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}")`)
     // Helper: run the three parallel eBay queries for a given name.
     // Grade filtering is applied immediately after raw results come back,
     // before calcStats, extractComps, or image selection see any data.
