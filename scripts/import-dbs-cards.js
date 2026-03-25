@@ -63,7 +63,7 @@ async function flushBatch(batch) {
   })
   const { error } = await supabase
     .from('card_catalog')
-    .upsert(deduped, { onConflict: 'game,card_number,rarity_key', ignoreDuplicates: false })
+    .upsert(deduped, { onConflict: 'game,card_number_key,rarity_key', ignoreDuplicates: false })
   if (error) {
     console.error(`  Batch upsert failed (${deduped.length} cards):`, error.message)
   } else {
