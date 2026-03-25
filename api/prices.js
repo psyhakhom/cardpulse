@@ -1215,35 +1215,36 @@ export default async function handler(req, res) {
         processed = processed.replace(/\b(?:SPR|SCR|SR|SSR|SAR|SEC|UC|R|C|L|ST|FR|GFR|DR|DAR|DBR|IVR)\b/gi, '').replace(/\s+/g, ' ').trim()
         console.log(`[exact] stripped rarity from query → "${processed}"`)
       }
-      // For exact=1 with a card number, look up catalog rarity to enforce high-value variants
-      // SPR/SCR bleed from cheaper SR comps significantly distorts pricing
-      if (!requiredRarity) {
-        const cardNumInQ = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
-        if (cardNumInQ && _sbConfigured) {
-          try {
-            const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
-            const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&limit=1`
-            const catRes = await fetch(catUrl, {
-              headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-              signal: AbortSignal.timeout(2000),
-            })
-            if (catRes.ok) {
-              const catRows = await catRes.json()
-              const catRarity = (catRows[0]?.rarity || '').toUpperCase()
-              if (['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(catRarity)) {
-                requiredRarity = catRarity
-                console.log(`[exact] catalog rarity lookup: ${cardNumInQ[1]} → ${catRarity}, enforcing`)
-              }
-            }
-          } catch (e) {
-            console.log(`[exact] catalog rarity lookup failed: ${e.message}`)
-          }
-        }
-      }
     } else {
       const pp = preprocessQuery(q.trim(), grade)
       processed = pp.query
       requiredRarity = pp.requiredRarity || null
+    }
+
+    // Catalog rarity lookup — enforce high-value rarities (SPR/SCR) regardless of exact flag
+    // Prevents cheaper SR comps from bleeding into SPR/SCR pricing
+    if (!requiredRarity) {
+      const cardNumInQ = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
+      if (cardNumInQ && _sbConfigured) {
+        try {
+          const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
+          const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&limit=1`
+          const catRes = await fetch(catUrl, {
+            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+            signal: AbortSignal.timeout(2000),
+          })
+          if (catRes.ok) {
+            const catRows = await catRes.json()
+            const catRarity = (catRows[0]?.rarity || '').toUpperCase()
+            if (['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(catRarity)) {
+              requiredRarity = catRarity
+              console.log(`[rarity-lookup] catalog: ${cardNumInQ[1]} → ${catRarity}, enforcing`)
+            }
+          }
+        } catch (e) {
+          console.log(`[rarity-lookup] failed: ${e.message}`)
+        }
+      }
     }
 
     console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}")`)
@@ -1287,7 +1288,10 @@ export default async function handler(req, res) {
             if (/\b(?:two|2|double)\s*star\b/i.test(t)) return false
             return true
           case 'SPR':
-            return /\bSPR\b/i.test(t) && !/\bSPR\s*\*/i.test(t)
+            // Require SPR or "Special Rare" in title
+            if (/\bSPR\b/i.test(t) || /\bspecial\s*rare\b/i.test(t)) return true
+            // Reject plain SR (without SPR) — cheaper variant
+            return false
           // Other rarity codes: simple word-boundary match
           default: {
             const re = new RegExp(`\\b${requiredRarity}\\b`, 'i')
