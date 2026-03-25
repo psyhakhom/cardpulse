@@ -32,10 +32,10 @@ header{padding:12px 16px 8px;display:flex;align-items:center;justify-content:spa
 .ac-item{display:flex;align-items:center;padding:10px 12px;cursor:pointer;gap:10px;border-bottom:1px solid var(--bd);min-height:64px}
 .ac-item:last-of-type{border-bottom:none}
 .ac-item:hover,.ac-item.sel{background:var(--s2)}
-.ac-img{width:60px;height:84px;object-fit:contain;border-radius:4px;flex-shrink:0;background:var(--bd)}
-.ac-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ac-sub{font-family:monospace;font-size:13px;color:#aaa;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ac-badge{font-size:12px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--s2);border:1px solid var(--bd);white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:3px}
+.ac-img{width:64px;height:90px;object-fit:contain;border-radius:4px;flex-shrink:0;background:var(--bd)}
+.ac-name{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-sub{font-family:monospace;font-size:14px;color:#bbb;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ac-badge{font-size:13px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--s2);border:1px solid var(--bd);white-space:nowrap;flex-shrink:0;display:flex;align-items:center;gap:3px}
 .ac-badge.pkm{color:#ffcb05;border-color:#ffcb05}.ac-badge.mtg{color:#cba135;border-color:#cba135}.ac-badge.dbs{color:#ff6b35;border-color:#ff6b35}.ac-badge.dir{color:var(--mu);border-color:var(--bd)}
 .ac-attr{font-family:monospace;font-size:8px;color:var(--mu);padding:4px 12px 5px;text-align:right}
 .si:focus{border-color:var(--ac)}.si::placeholder{color:var(--mu)}
@@ -801,7 +801,7 @@ function renderDisambiguation(el, data) {
   const rows = data.variants.map((v) => {
     const img = v.imageUrl ? `<img class="ac-img" src="${escH(v.imageUrl)}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
     const rc = rarityColor(v.rarity);
-    const badge = v.rarity ? `<span style="font-size:12px;font-weight:700;color:${rc};border:1px solid ${rc};padding:1px 6px;border-radius:3px">${escH(v.rarity)}</span>` : '';
+    const badge = v.rarity ? `<span style="font-size:13px;font-weight:700;color:${rc};border:1px solid ${rc};padding:1px 6px;border-radius:3px">${escH(v.rarity)}</span>` : '';
     const price = v.estimatedPrice > 0 ? `<span style="color:#00ff88;font-weight:700;font-size:15px;white-space:nowrap">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
     const comps = v.compCount ? `<span style="font-size:11px;color:#666">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
     return `<div class="ac-item" style="cursor:pointer" onclick="disambigPick('${escH(v.cardNumber)}','${escH(data.query)}')">
