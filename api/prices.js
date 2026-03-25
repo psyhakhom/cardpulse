@@ -1223,27 +1223,32 @@ export default async function handler(req, res) {
 
     // Catalog rarity lookup — enforce high-value rarities (SPR/SCR) regardless of exact flag
     // Prevents cheaper SR comps from bleeding into SPR/SCR pricing
-    if (!requiredRarity) {
-      const cardNumInQ = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
-      if (cardNumInQ && _sbConfigured) {
-        try {
-          const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
-          const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&rarity=not.is.null&limit=1`
-          const catRes = await fetch(catUrl, {
-            headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-            signal: AbortSignal.timeout(2000),
-          })
-          if (catRes.ok) {
-            const catRows = await catRes.json()
-            const catRarity = (catRows[0]?.rarity || '').toUpperCase()
-            if (['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(catRarity)) {
-              requiredRarity = catRarity
-              console.log(`[rarity-lookup] catalog: ${cardNumInQ[1]} → ${catRarity}, enforcing`)
-            }
+    const cardNumInQ = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
+    console.log(`[rarity-lookup] cardNumInQ: ${cardNumInQ?.[1] || 'none'}, requiredRarity before: ${requiredRarity}, _sbConfigured: ${_sbConfigured}`)
+    if (!requiredRarity && cardNumInQ && _sbConfigured) {
+      try {
+        const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
+        const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&rarity=not.is.null&limit=1`
+        console.log(`[rarity-lookup] fetching: ${catUrl}`)
+        const catRes = await fetch(catUrl, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+          signal: AbortSignal.timeout(2000),
+        })
+        if (catRes.ok) {
+          const catRows = await catRes.json()
+          console.log(`[rarity-lookup] response: ${JSON.stringify(catRows)}`)
+          const catRarity = (catRows[0]?.rarity || '').toUpperCase()
+          if (['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(catRarity)) {
+            requiredRarity = catRarity
+            console.log(`[rarity-lookup] ENFORCING: ${cardNumInQ[1]} → ${catRarity}`)
+          } else {
+            console.log(`[rarity-lookup] rarity ${catRarity || 'empty'} not in enforcement list`)
           }
-        } catch (e) {
-          console.log(`[rarity-lookup] failed: ${e.message}`)
+        } else {
+          console.log(`[rarity-lookup] fetch failed: ${catRes.status}`)
         }
+      } catch (e) {
+        console.log(`[rarity-lookup] error: ${e.message}`)
       }
     }
 
@@ -1256,48 +1261,33 @@ export default async function handler(req, res) {
     if (requiredRarity) console.log(`[rarity] enforcing tier: ${requiredRarity}`)
 
     function filterByRarity(items) {
-      if (!requiredRarity || !items?.length) return items
+      if (!requiredRarity || !items?.length) {
+        console.log(`[filterByRarity] SKIPPED — requiredRarity: ${requiredRarity}, items: ${items?.length || 0}`)
+        return items
+      }
+      console.log(`[filterByRarity] RUNNING — requiredRarity: ${requiredRarity}, items: ${items.length}`)
       const kept = items.filter((i) => {
         const t = i.title || ''
+        let pass = false
         switch (requiredRarity) {
-          // Starred variants: title must contain the star version
           case 'SR*':
-            // Must have SR* (star after SR), exclude plain SR and SR**
-            return /\bSR\s*\*/i.test(t) && !/\bSR\s*\*\*/i.test(t)
+            pass = /\bSR\s*\*/i.test(t) && !/\bSR\s*\*\*/i.test(t); break
           case 'SCR*':
-            // Must have SCR* or "SCR Alt" but not SCR** / "Two Star"
-            if (/\bSCR\s*\*\*/i.test(t) || /\b(?:two|2|double)\s*star\b/i.test(t)) return false
-            return /\bSCR\s*\*/i.test(t) || /\bSCR\s*alt\b/i.test(t) || /\balt(?:ernate)?\s*art\b/i.test(t)
+            if (/\bSCR\s*\*\*/i.test(t) || /\b(?:two|2|double)\s*star\b/i.test(t)) { pass = false; break }
+            pass = /\bSCR\s*\*/i.test(t) || /\bSCR\s*alt\b/i.test(t) || /\balt(?:ernate)?\s*art\b/i.test(t); break
           case 'SCR**':
-            // Must have SCR** or "Two Star" / "Double Star"
-            return /\bSCR\s*\*\*/i.test(t) || /\b(?:two|2|double)\s*star\b/i.test(t)
-          // Plain rarity: title must have the code but NOT the starred version
+            pass = /\bSCR\s*\*\*/i.test(t) || /\b(?:two|2|double)\s*star\b/i.test(t); break
           case 'SR':
-            if (!/\bSR\b/i.test(t)) return false
-            if (/\bSR\s*\*/i.test(t)) return false
-            if (/\bSR\s*alt\b/i.test(t)) return false
-            if (/\balt(?:ernate)?\s*art\b/i.test(t)) return false
-            return true
+            pass = /\bSR\b/i.test(t) && !/\bSR\s*\*/i.test(t) && !/\bSR\s*alt\b/i.test(t) && !/\balt(?:ernate)?\s*art\b/i.test(t); break
           case 'SCR':
-            // Plain SCR: exclude starred variants (SCR*, SCR**) and text equivalents
-            // "SCR Alt", "Alt Art", "Two Star", "2 Star", "Double Star" are all different products
-            if (!/\bSCR\b/i.test(t)) return false
-            if (/\bSCR\s*\*/i.test(t)) return false
-            if (/\bSCR\s*alt\b/i.test(t)) return false
-            if (/\balt(?:ernate)?\s*art\b/i.test(t)) return false
-            if (/\b(?:two|2|double)\s*star\b/i.test(t)) return false
-            return true
+            pass = /\bSCR\b/i.test(t) && !/\bSCR\s*\*/i.test(t) && !/\bSCR\s*alt\b/i.test(t) && !/\balt(?:ernate)?\s*art\b/i.test(t) && !/\b(?:two|2|double)\s*star\b/i.test(t); break
           case 'SPR':
-            // Require SPR or "Special Rare" in title
-            if (/\bSPR\b/i.test(t) || /\bspecial\s*rare\b/i.test(t)) return true
-            // Reject plain SR (without SPR) — cheaper variant
-            return false
-          // Other rarity codes: simple word-boundary match
-          default: {
-            const re = new RegExp(`\\b${requiredRarity}\\b`, 'i')
-            return re.test(t)
-          }
+            pass = /\bSPR\b/i.test(t) || /\bspecial\s*rare\b/i.test(t); break
+          default:
+            pass = new RegExp(`\\b${requiredRarity}\\b`, 'i').test(t); break
         }
+        console.log(`[filterByRarity] "${t.slice(0,70)}" → ${pass ? 'KEEP' : 'DROP'}`)
+        return pass
       })
       if (kept.length < items.length) {
         const dropped = items.filter((i) => !kept.includes(i))
