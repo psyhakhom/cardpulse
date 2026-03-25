@@ -34,10 +34,12 @@ async function searchCatalog(query, game) {
       // Then also include variants via search_query for broader results
       url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
     } else {
-      // General name search — split into words joined by % wildcards so
-      // "son gohan future" matches "Son Gohan : Future" (colon between words)
-      const words = sanitized.split(/\s+/).map(w => encodeURIComponent(w))
-      const pattern = words.join('*')  // son*gohan*future → ILIKE *son*gohan*future*
+      // General name search — strip game-name keywords (already filtered by game column)
+      // then split into words joined by * wildcards for ILIKE matching
+      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world']
+      const stripped = sanitized.split(/\s+/).filter(w => !GAME_WORDS.includes(w.toLowerCase()))
+      const words = (stripped.length > 0 ? stripped : sanitized.split(/\s+/)).map(w => encodeURIComponent(w))
+      const pattern = words.join('*')
       url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_name.ilike.*${pattern}*,search_query.ilike.*${pattern}*)&order=times_searched.desc&limit=16`
     }
     if (game) url += `&game=eq.${game}`
