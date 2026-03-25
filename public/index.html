@@ -823,11 +823,12 @@ function renderDisambiguation(el, data) {
 }
 function disambigPick(cardNum, origQuery) {
   const si = document.getElementById('si');
-  // Build query with specific card number
-  const newQ = origQuery.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() + ' ' + cardNum;
-  si.value = newQ.trim();
-  selectedCard = null;
-  search(newQ.trim(), 'sr');
+  // Build query: original query + specific card number (no rarity appended)
+  const newQ = (origQuery.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() + ' ' + cardNum).trim();
+  si.value = newQ;
+  // Set selectedCard with searchQuery so exact=1 is passed (bypasses preprocessor/rarity normalizer)
+  selectedCard = { searchQuery: newQ, name: newQ };
+  search(newQ, 'sr');
 }
 
 function dot(cls){return'<span class="dot '+cls+'"></span>';}
