@@ -24,7 +24,7 @@ header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:sp
 .pane{padding:16px 20px 40px;display:none}.pane.on{display:block}
 /* search input */
 .sw{position:relative;margin-bottom:12px}
-.si{width:100%;background:var(--s1);border:1.5px solid var(--bd);border-radius:26px;padding:14px 76px 14px 20px;font-size:16px;color:var(--tx);outline:none;min-height:52px;font-family:var(--font-b);transition:border-color .2s}
+.si{width:100%;background:var(--s1);border:1.5px solid var(--bd);border-radius:26px;padding:14px 76px 14px 20px;font-size:16px;color:var(--tx);outline:none;min-height:52px;font-family:var(--font-b);transition:border-color .2s;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
 .si:focus{border-color:var(--ac)}.si::placeholder{color:#555;font-size:14px}
 .scl{position:absolute;right:52px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--mu);font-size:20px;line-height:1;cursor:pointer;padding:6px 8px;display:none}
 .scl.vis{display:block}
@@ -88,7 +88,7 @@ header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:sp
 .pg-range-end .pv{font-family:var(--font-d);font-size:18px;letter-spacing:.5px;color:#888}
 .pg-range-sep{color:#333;font-size:14px;letter-spacing:2px;margin-top:14px}
 /* confidence — simplified dot + word */
-.crw{display:flex;align-items:center;gap:12px;background:var(--s2);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.crw{display:flex;align-items:center;gap:12px;background:var(--s2);border-radius:12px;padding:14px 16px;margin-top:16px;margin-bottom:16px}
 .cr{position:relative;width:12px;height:12px;flex-shrink:0}
 .cr svg{display:none}
 .cr .cl{position:static;display:none}
@@ -955,7 +955,8 @@ function renderResult(el,q,r){
     ?`⚠ Wide price spread detected. Sports cards vary greatly by year, set, and parallel. For accurate pricing, try adding:<br>• The year: <strong>'mahomes 2017'</strong><br>• The set: <strong>'prizm'</strong>, <strong>'bowman'</strong>, <strong>'topps'</strong><br>• The card number: <strong>'#269'</strong><br>• The parallel: <strong>'base'</strong>, <strong>'silver'</strong>, <strong>'gold'</strong><br>Example: <strong>'mahomes 2017 prizm 269'</strong>`
     :`⚠ Wide price spread detected. For accurate pricing, try adding:<br>• The set code: <strong>'BT03'</strong>, <strong>'FB02'</strong>, <strong>'OP01'</strong><br>• The card number: <strong>'BT3-033'</strong>, <strong>'FB02-139'</strong><br>• The rarity: <strong>'SCR'</strong>, <strong>'SPR'</strong>, <strong>'SR*'</strong><br>• The variant: <strong>'alt art'</strong>, <strong>'holo'</strong>, <strong>'1st edition'</strong><br>Example: <strong>'vegito fb02-139 scr'</strong> or <strong>'charizard base set holo'</strong>`
   }</div>`:'';
-  const tip=r.searchTip?`<div class="stb">💡 ${escH(r.searchTip)}</div>`:'';
+  const _hasCardNum=/\b[A-Z]{1,4}\d+-\d+/i.test(q);
+  const tip=r.searchTip&&!(conf>=60||r.comps.length>=5||_hasCardNum)?`<div class="stb">💡 ${escH(r.searchTip)}</div>`:'';
   const ring=`<div class="crw"><div class="cr"><svg viewBox="0 0 44 44"><circle class="dot" cx="22" cy="22" r="${rad}" style="fill:none;stroke:var(--bd);stroke-width:4"/><circle cx="22" cy="22" r="${rad}" style="fill:none;stroke:${cc};stroke-width:4;stroke-linecap:round;stroke-dasharray:${dash.toFixed(1)} ${circ.toFixed(1)};transform:rotate(-90deg);transform-origin:50% 50%"/></svg><div class="cl" style="color:${cc}">${conf}%</div></div><div><div class="crt">${conf>=75?'High confidence':conf>=50?'Moderate confidence':'Low confidence'}</div><div class="crs">${r.sd.filter(s=>s.ok).length}/${r.sd.length} sources · ${r.comps.length} comps</div></div></div>`;
   const wrows=r.sd.map(s=>{
     if(!s.ok){const noMsg=s.d==='live-pulse'?'<span style="font-family:monospace;font-size:8px;color:var(--mu);margin-left:4px">No live auctions ending soon</span>':'<span class="ndb">no data</span>';return`<div class="wr"><div class="wrt"><span class="wsn">${dot(s.d)}${s.n}${noMsg}</span><span class="wpc" style="color:var(--bd)">—</span></div><div class="wtr"><div class="wf ${s.f}" style="width:0%"></div></div></div>`;}
