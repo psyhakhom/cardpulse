@@ -542,17 +542,18 @@ async function search(q, elId) {
   hideAc();
   const el = document.getElementById(elId);
   el.innerHTML = '<div class="ld"><div class="sp"></div><p>Checking eBay sold listings…</p></div>';
-  // Auto-detect grade from query keywords (skip if user just clicked a grade button)
+  // Strip grade terms from query and auto-detect grade (always strip, even on manual pick)
+  const GRADE_STRIP_RE = /\b(?:psa\s*10|psa\s*9|bgs\s*10|bgs\s*9\.?5|cgc\s*10|raw|ungraded)\b/gi;
+  const GRADE_DETECT = [
+    [/\bpsa\s*10\b/i, 'PSA 10'], [/\bpsa\s*9\b/i, 'PSA 9'],
+    [/\bbgs\s*10\b/i, 'BGS 10'], [/\bbgs\s*9\.?5\b/i, 'BGS 9.5'],
+    [/\bcgc\s*10\b/i, 'CGC 10'],
+    [/\b(raw|ungraded)\b/i, 'Raw'],
+  ];
+  // Auto-detect grade if user didn't manually click a grade button
   if (!_manualGrade) {
-    const ql = q.toLowerCase();
-    const GRADE_DETECT = [
-      [/\bpsa\s*10\b/, 'PSA 10'], [/\bpsa\s*9\b/, 'PSA 9'],
-      [/\bbgs\s*10\b/, 'BGS 10'], [/\bbgs\s*9\.?5\b/, 'BGS 9.5'],
-      [/\bcgc\s*10\b/, 'CGC 10'],
-      [/\b(raw|ungraded)\b/, 'Raw'],
-    ];
     for (const [re, grd] of GRADE_DETECT) {
-      if (re.test(ql) && G !== grd) {
+      if (re.test(q)) {
         G = grd;
         document.getElementById('gc').querySelectorAll('.ch').forEach(c => {
           c.classList.toggle('on', c.textContent.trim() === grd);
@@ -563,6 +564,11 @@ async function search(q, elId) {
     }
   }
   _manualGrade = false;
+  // Always strip grade terms from query — grade is passed as a separate param
+  q = q.replace(GRADE_STRIP_RE, '').replace(/\s{2,}/g, ' ').trim();
+  // Update the search input to show the cleaned query
+  const si = document.getElementById('si');
+  if (si && si.value.toLowerCase() !== q.toLowerCase()) si.value = q;
   // Capture selectedCard at search time (it gets cleared on next input)
   const sc = selectedCard;
   if (USE_REAL_API) {
