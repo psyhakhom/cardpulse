@@ -869,18 +869,23 @@ function blend(results) {
   const weightMap = { ...(hasLive ? WEIGHTS_WITH_LIVE : WEIGHTS_WITHOUT_LIVE) }
   const keys = ['a', 'b', 'c', 'd']
 
-  // Query C single-outlier detection: if C has only 1 comp and it's >35% below
-  // the median of A+B, zero out C and redistribute to A and B
+  // Query C outlier detection: if C avg is >35% below A+B median, zero out C
+  // and redistribute weight to A and B. Catches grade-exact queries that match
+  // wrong condition/variant listings.
   const [rA, rB, rC] = results
-  if (rC?.stats?.count === 1 && rA?.stats && rB?.stats) {
+  if (rC?.stats && rA?.stats && rB?.stats) {
     const abMedian = (rA.stats.avg + rB.stats.avg) / 2
-    if (rC.stats.avg < abMedian * 0.65) {
-      console.log(`[blend] Query C single comp $${rC.stats.avg} is >35% below A+B median $${abMedian.toFixed(2)} — zeroing C weight`)
+    const shouldZero = rC.stats.avg < abMedian * 0.65
+    console.log(`[blend] Query C check: C_avg=$${rC.stats.avg} C_count=${rC.stats.count} AB_median=$${abMedian.toFixed(2)} zeroing=${shouldZero}`)
+    if (shouldZero) {
+      console.log(`[blend] Query C avg $${rC.stats.avg} is >35% below A+B median $${abMedian.toFixed(2)} — zeroing C weight`)
       const cWeight = weightMap.c || 0
       weightMap.c = 0
       weightMap.a = (weightMap.a || 0) + cWeight / 2
       weightMap.b = (weightMap.b || 0) + cWeight / 2
     }
+  } else {
+    console.log(`[blend] Query C outlier check skipped: A=${!!rA?.stats} B=${!!rB?.stats} C=${!!rC?.stats}`)
   }
 
   // Apply rebalanced weights to each result
@@ -1133,6 +1138,7 @@ export default async function handler(req, res) {
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
 
       const totalComps = fA.length + fB.length + fC.length + fD.length
+      console.log(`[comps] US item counts: A=${fA.length} B=${fB.length} C=${fC.length} D=${fD.length} total=${totalComps}`)
 
       // Low-volume fallback: if US-only returned < 5 comps, retry A+B without location filter
       let finalA = fA, finalB = fB
