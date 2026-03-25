@@ -102,9 +102,9 @@ async function ebaySearch(
   if (live) {
     const now = new Date().toISOString()
     const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
-    filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]`
+    filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}],itemLocationCountry:US`
   } else {
-    filter = 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true'
+    filter = 'buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true,itemLocationCountry:US'
   }
   // Build URL manually — URLSearchParams encodes curly braces which eBay rejects
   const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filter)}&sort=${sort}&limit=${limit}`
@@ -146,6 +146,8 @@ const GRADE_EXCLUDE = {
     // Code cards and digital products
     'code card', 'digital code', 'online code', 'tcg online', 'tcgo', 'ptcgo',
     'redeem', 'reward card', 'rewards card', 'digital version',
+    // Heavily damaged condition (lightly played is OK)
+    'heavily played', 'poor condition', 'damaged condition', 'damaged card',
     // Multi-word phrases safe for includes() (no false-positive risk)
     'gem mint', 'gem-mint', 'black label',
   ],
@@ -228,6 +230,8 @@ const RAW_EXCLUDE_PATTERNS = [
   /\bautograph(?:ed)?\b/i,
   /\bauto\b/i,
   /\bsignature\b/i,
+  /\bheavily\s*played\b/i,
+  /\b(poor|damaged)\b/i,
 ]
 
 function filterItems(items, grade, searchQuery, lang) {
