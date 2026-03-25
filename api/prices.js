@@ -1066,11 +1066,14 @@ export default async function handler(req, res) {
 
   try {
     const token = await getToken()
-    // When exact=1 (card catalog selection), skip preprocessor entirely
+    // When exact=1 (card catalog selection), skip preprocessor but still extract rarity
     let requiredRarity = null
     let processed
     if (exact === '1') {
       processed = q.trim()
+      // Still need rarity detection for filtering (SCR vs SCR* vs SCR** etc)
+      const { requiredRarity: rr } = normalizeRarity(processed)
+      requiredRarity = rr
     } else {
       const pp = preprocessQuery(q.trim(), grade)
       processed = pp.query
@@ -1125,6 +1128,12 @@ export default async function handler(req, res) {
           }
         }
       })
+      if (kept.length < items.length) {
+        const dropped = items.filter((i) => !kept.includes(i))
+        for (const d of dropped) {
+          console.log(`[rarity] dropped "${(d.title || '').slice(0, 80)}" (tier=${requiredRarity})`)
+        }
+      }
       console.log(`[rarity] ${items.length} → ${kept.length} with tier "${requiredRarity}"`)
       // Do NOT fall back — wrong rarity comps are worse than no data
       return kept
