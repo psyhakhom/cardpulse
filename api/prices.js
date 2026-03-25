@@ -260,8 +260,16 @@ function filterItems(items, grade, searchQuery, lang) {
 
   // ── 0. Minimum price filter — strip invalid/junk $0 listings ──────────
   let filtered = items.filter((i) => parseFloat(i.price?.value || 0) >= 0.50)
+
+  // Detect sports card queries — skip TCG-specific filters (set codes, holo, foil etc)
+  const SPORTS_RE = /\b(rookie|rc\b|refractor|prizm|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|score|nfl|nba|mlb|nhl|quarterback|qb|mvp|draft\s*pick)\b/i
+  const TCG_RE = /\b(pokemon|pokémon|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon)\b/i
+  const isSportsQuery = SPORTS_RE.test(ql) && !TCG_RE.test(ql)
+  if (isSportsQuery) console.log(`[filter] sports card query detected`)
+
+  // ── 1. Graded slab hard block (Raw only) — runs FIRST, no bypass ──────
   if (grade === 'Raw') {
-    filtered = items.filter((i) => {
+    filtered = filtered.filter((i) => {
       if (isGradedSlab(i.title)) {
         console.log(`[filter:slab] dropped "${(i.title || '').slice(0, 70)}"`)
         return false
@@ -287,9 +295,14 @@ function filterItems(items, grade, searchQuery, lang) {
     if (filtered.length < before) console.log(`[filter:lot] ${before} → ${filtered.length}`)
   }
 
-  // ── 2. Variant exclusion (all grades) ─────────────────────────────────
+  // ── 2. Variant exclusion ─────────────────────────────────────────────
+  // For sports cards: only apply "always excluded" variants (sealed, fan art, memorabilia)
+  // For TCG cards: apply all variant terms
   const preVariantFiltered = [...filtered] // snapshot before variant filtering
   for (const vt of VARIANT_TERMS) {
+    // Sports queries skip TCG-specific variants (foil, holo, chrome, refractor, silver, gold, rainbow, prismatic)
+    // but keep: memorabilia, sealed product, fan art, promo exclusions
+    if (isSportsQuery && !vt._alwaysCheck && vt.query.toString() !== '/(?!)/') continue
     if (!vt.query.test(ql)) {
       const before = filtered.length
       filtered = filtered.filter((i) => {
@@ -310,37 +323,38 @@ function filterItems(items, grade, searchQuery, lang) {
     filtered = preVariantFiltered
   }
 
-  // ── 2b. Holo exclusion (non-Pokemon only) ─────────────────────────────
-  // Holo is a base rarity for Pokemon, so only exclude for other games
-  const isPokemon = /\bpokemon\b|\bpokémon\b|\bcharizard\b|\bpikachu\b/i.test(ql)
-  if (!isPokemon && !/\bholo\b/i.test(ql)) {
-    const before = filtered.length
-    const holoFiltered = filtered.filter((i) => !/\bholo\b/i.test(i.title || ''))
-    if (holoFiltered.length >= 2) {
-      filtered = holoFiltered
-      if (filtered.length < before) console.log(`[filter:holo] ${before} → ${filtered.length}`)
+  // ── 2b. Holo exclusion (non-Pokemon only, skip for sports) ────────────
+  if (!isSportsQuery) {
+    const isPokemon = /\bpokemon\b|\bpokémon\b|\bcharizard\b|\bpikachu\b/i.test(ql)
+    if (!isPokemon && !/\bholo\b/i.test(ql)) {
+      const before = filtered.length
+      const holoFiltered = filtered.filter((i) => !/\bholo\b/i.test(i.title || ''))
+      if (holoFiltered.length >= 2) {
+        filtered = holoFiltered
+        if (filtered.length < before) console.log(`[filter:holo] ${before} → ${filtered.length}`)
+      }
     }
   }
 
-  // ── 2c. Wrong set code exclusion (DBS + Pokemon) ─────────────────────
-  // If query contains a specific set code, exclude comps from different sets
-  const SET_CODE_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH|SV|SM|XY|BW|DP|EX|OP|ST)\d+[A-Z]?\b/i
-  const querySetMatch = ql.match(SET_CODE_RE)
-  if (querySetMatch) {
-    const querySet = querySetMatch[0].toUpperCase()
-    const before = filtered.length
-    const setFiltered = filtered.filter((i) => {
-      const t = (i.title || '').toUpperCase()
-      // Title must contain the queried set code
-      if (!t.includes(querySet)) {
-        console.log(`[filter:set] dropped "${(i.title || '').slice(0, 70)}" missing set ${querySet}`)
-        return false
+  // ── 2c. Wrong set code exclusion (TCG only, skip for sports) ──────────
+  if (!isSportsQuery) {
+    const SET_CODE_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH|SV|SM|XY|BW|DP|EX|OP|ST)\d+[A-Z]?\b/i
+    const querySetMatch = ql.match(SET_CODE_RE)
+    if (querySetMatch) {
+      const querySet = querySetMatch[0].toUpperCase()
+      const before = filtered.length
+      const setFiltered = filtered.filter((i) => {
+        const t = (i.title || '').toUpperCase()
+        if (!t.includes(querySet)) {
+          console.log(`[filter:set] dropped "${(i.title || '').slice(0, 70)}" missing set ${querySet}`)
+          return false
+        }
+        return true
+      })
+      if (setFiltered.length >= 2) {
+        filtered = setFiltered
+        console.log(`[filter:set] ${before} → ${filtered.length} enforcing set ${querySet}`)
       }
-      return true
-    })
-    if (setFiltered.length >= 2) {
-      filtered = setFiltered
-      console.log(`[filter:set] ${before} → ${filtered.length} enforcing set ${querySet}`)
     }
   }
 
