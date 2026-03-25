@@ -224,7 +224,7 @@ const VARIANT_TERMS = [
 
 // 3. Language bleed — exclude foreign language listings when language filter is set
 const LANG_EXCLUDE = {
-  English: /\b(japanese|japan|jpn|jp\s+ver|korean|korean\s*ver|chinese|cross\s*worlds)\b|\bJP\b|\b(?:dragon\s*ball\s*super|dbs(?:cg)?)\s*master\b|\bruler\s*of\s*the\s*black\s*flame\b/i,
+  English: /\b(japanese|japan|jpn|jp\s+ver|korean|korean\s*ver|chinese|cross\s*worlds)\b|\bJP\b|\b(?:dragon\s*ball\s*super|dbs(?:cg)?)\s*master\b/i,
   Japanese: /\b(english|eng\s*ver|korean|chinese)\b/i,
 }
 
