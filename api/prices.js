@@ -1191,6 +1191,15 @@ export default async function handler(req, res) {
     let processed
     if (exact === '1') {
       processed = q.trim()
+      // Truncate long catalog queries: keep name up to first comma + card number
+      // "Vegeta, Combination Attack in Hell BT22-049 UC" → "Vegeta BT22-049 UC"
+      const cardNumMatch = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
+      if (cardNumMatch && processed.length > 50) {
+        const shortName = processed.split(',')[0].split(' // ')[0].trim()
+        const afterNum = processed.slice(processed.indexOf(cardNumMatch[1]))
+        processed = (shortName + ' ' + afterNum).replace(/\s+/g, ' ').trim()
+        console.log(`[exact] truncated long query → "${processed}"`)
+      }
       // Still need rarity detection for filtering (SCR vs SCR* vs SCR** etc)
       const { requiredRarity: rr } = normalizeRarity(processed)
       requiredRarity = rr
