@@ -58,6 +58,19 @@ async function searchCatalog(query, game) {
     } else {
       // Fuzzy name search via pg_trgm similarity + ILIKE fallback
       const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world']
+
+      // Classic DBS card name → card number aliases (stopgap until full BT import)
+      const CLASSIC_ALIASES = {
+        'kamis power piccolo': 'BT3-018', 'piccolo awakening': 'BT3-018',
+        'broly br': 'BT9-SP3', 'gogeta blue': 'BT6-109',
+        'vegeta blue evolution': 'BT3-063', 'blue evolution vegeta': 'BT3-063',
+        'super saiyan blue goku': 'BT1-030', 'ssb goku': 'BT1-030',
+        'beerus god of destruction': 'BT1-029', 'golden frieza': 'BT1-089',
+        'ultra instinct goku': 'BT9-127', 'ui goku': 'BT9-127',
+        'ss4 gogeta': 'BT12-136', 'super saiyan 4 gogeta': 'BT12-136',
+        'cell max': 'BT22-070', 'android 21': 'BT20-024',
+      }
+
       const ALIASES = {
         'vegita': 'vegeta', 'vegetta': 'vegeta',
         'freiza': 'frieza', 'friesa': 'frieza', 'freezer': 'frieza',
@@ -105,6 +118,29 @@ async function searchCatalog(query, game) {
       }
       rows = await res.json()
       console.log(`[cards:db] RPC returned ${rows.length} rows, first: ${rows[0]?.card_name || 'none'}`)
+
+      // Classic alias retry: if fuzzy search returned 0 results, check name aliases
+      if (rows.length === 0) {
+        const lowerQ = cleanedQuery.toLowerCase().trim()
+        const aliasNum = CLASSIC_ALIASES[lowerQ]
+        if (aliasNum) {
+          console.log(`[cards:db] classic alias match: "${lowerQ}" → ${aliasNum}, retrying as card number`)
+          const numEnc = encodeURIComponent(aliasNum)
+          let retryUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
+          if (game) retryUrl += `&game=eq.${game}`
+          const retryRes = await fetch(retryUrl, {
+            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+            signal: AbortSignal.timeout(3000),
+          })
+          if (retryRes.ok) {
+            const retryRows = await retryRes.json()
+            if (retryRows.length > 0) {
+              console.log(`[cards:db] classic alias found ${retryRows.length} results for ${aliasNum}`)
+              rows = retryRows
+            }
+          }
+        }
+      }
 
       // Post-filter by set code if detected
       if (detectedSetCode && rows.length > 0) {
