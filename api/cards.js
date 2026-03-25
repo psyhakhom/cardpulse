@@ -120,17 +120,25 @@ async function searchCatalog(query, game) {
     }
 
     console.log(`[cards:db] ${deduped.length} unique results (${deduped.filter(r => r.image_url).length} with images)`)
-    return deduped.map((r) => ({
-      id: `db-${r.card_number || r.card_name}-${r.game}`,
-      name: r.card_name,
-      set: r.set_code || '',
-      number: r.card_number || '',
-      rarity: r.rarity || '',
-      game: r.game,
-      imageUrl: r.image_url || null,
-      largeImageUrl: r.image_url || null,
-      searchQuery: r.search_query || r.card_name,
-    }))
+    return deduped.map((r) => {
+      // Rewrite One Piece images: optcgapi.com URLs use direct card image files
+      // which work without hotlink blocking (unlike Bandai official URLs)
+      let imageUrl = r.image_url || null
+      if (r.game === 'onepiece' && r.card_number && !imageUrl) {
+        imageUrl = `https://optcgapi.com/media/static/Card_Images/${r.card_number}.jpg`
+      }
+      return {
+        id: `db-${r.card_number || r.card_name}-${r.game}`,
+        name: r.card_name,
+        set: r.set_code || '',
+        number: r.card_number || '',
+        rarity: r.rarity || '',
+        game: r.game,
+        imageUrl,
+        largeImageUrl: imageUrl,
+        searchQuery: r.search_query || r.card_name,
+      }
+    })
   } catch (err) {
     console.log(`[cards:db] catalog query failed: ${err.message}`)
     return []
