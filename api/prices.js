@@ -1004,6 +1004,15 @@ function blend(results) {
     console.log(`[blend] Query C outlier check skipped: A=${!!rA?.stats} B=${!!rB?.stats} C=${!!rC?.stats}`)
   }
 
+  // Query A stale-data detection: if A avg is >60% below B avg AND B has 3+ comps,
+  // A is likely dominated by older cheap variants (UC/common). Zero A, give weight to B.
+  if (rA?.stats && rB?.stats && rB.stats.count >= 3 && rA.stats.avg < rB.stats.avg * 0.4) {
+    console.log(`[blend] Query A stale: A_avg=$${rA.stats.avg} is >60% below B_avg=$${rB.stats.avg} (B has ${rB.stats.count} comps) — zeroing A`)
+    const aWeight = weightMap.a || 0
+    weightMap.a = 0
+    weightMap.b = (weightMap.b || 0) + aWeight
+  }
+
   // Recency boost: if Query B (recent 30d) has very few comps (1-2) while A has
   // more older comps, the recent price signal is being diluted. Boost B to 0.60
   // so the most recent sale carries majority weight over stale data.
