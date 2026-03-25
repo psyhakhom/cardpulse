@@ -1488,6 +1488,51 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── DISAMBIGUATION: detect multiple distinct cards in results ──────
+    // When 3+ distinct card numbers appear with wide price spread and user
+    // didn't specify a card number, return a pick-list instead of blended price.
+    const CARD_NUM_EXTRACT = /\b([A-Z]{1,4}\d+-\d+[A-Z]?)\b/gi
+    const queryHasCardNum = /\b[A-Z]{1,4}\d+-\d+/i.test(processed)
+    if (!queryHasCardNum && exact !== '1' && deduped.length >= 3) {
+      const byNumber = new Map()
+      for (const item of deduped) {
+        const t = item.title || ''
+        const nums = t.match(CARD_NUM_EXTRACT)
+        const num = nums ? nums[0].toUpperCase() : null
+        if (!num) continue
+        if (!byNumber.has(num)) byNumber.set(num, [])
+        byNumber.get(num).push(item)
+      }
+      if (byNumber.size >= 3) {
+        const prices = deduped.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
+        const spread = prices.length >= 2 ? prices[prices.length - 1] / prices[0] : 1
+        if (spread > 5) {
+          console.log(`[disambig] ${byNumber.size} distinct card numbers with ${spread.toFixed(1)}x spread — returning picker`)
+          const variants = [...byNumber.entries()].map(([num, items]) => {
+            const ps = items.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
+            const avg = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : 0
+            // Try to extract rarity from title
+            const rarityMatch = items[0].title?.match(/\b(SCR|SPR|SR|UR|SEC|SSR|SAR|UC|R|C|L|SP)\b/i)
+            return {
+              cardNumber: num,
+              name: processed.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() || num,
+              rarity: rarityMatch ? rarityMatch[1].toUpperCase() : '',
+              estimatedPrice: parseFloat(avg.toFixed(2)),
+              compCount: items.length,
+              imageUrl: items[0].image?.imageUrl || null,
+            }
+          }).sort((a, b) => b.compCount - a.compCount || a.estimatedPrice - b.estimatedPrice)
+          return res.status(200).json({
+            type: 'disambiguation',
+            query: q.trim(),
+            grade,
+            lang,
+            variants,
+          })
+        }
+      }
+    }
+
     const response = {
       lo: blended.lo,
       avg: blended.avg,

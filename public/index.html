@@ -601,6 +601,11 @@ async function search(q, elId) {
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
+      // Disambiguation: multiple distinct cards found — show picker
+      if (data.type === 'disambiguation') {
+        renderDisambiguation(el, data);
+        return;
+      }
       if (data.error) {
         if (res.status === 404) {
           const cardImg=sc?.imageUrl?`<img src="${escH(sc.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
@@ -781,6 +786,38 @@ function price(q,g,cond,l){
   }).sort((a,b)=>b.date-a.date);
   const conf=Math.min(100,thin?30:Math.round(ac.length/srcs.length*70+30));
   return{lo:wL,avg:wA,hi:wH,t30,t90,comps,conf,ct,sd,thin,jx,showFX:ac.some(s=>s.c==='JPY'),l,img:getImg(q)};
+}
+
+function renderDisambiguation(el, data) {
+  const rows = data.variants.map((v, i) => {
+    const img = v.imageUrl ? `<img class="ac-img" src="${escH(v.imageUrl)}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
+    const badge = v.rarity ? `<span class="ac-badge">${escH(v.rarity)}</span>` : '';
+    const price = v.estimatedPrice > 0 ? `<span style="color:var(--gn);font-weight:700;font-size:13px;white-space:nowrap">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
+    const comps = v.compCount ? `<span style="font-size:9px;color:var(--mu)">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
+    return `<div class="ac-item" style="cursor:pointer" onclick="disambigPick('${escH(v.cardNumber)}','${escH(data.query)}')">
+      ${img}
+      <div style="min-width:0;flex:1">
+        <div class="ac-name">${escH(v.name)}</div>
+        <div class="ac-sub">${escH(v.cardNumber)} ${badge}</div>
+      </div>
+      <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px">${price}${comps}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="padding:16px 0">
+    <div style="text-align:center;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:var(--tx)">Multiple cards found</div>
+      <div style="font-size:11px;color:var(--mu);margin-top:4px">Which one are you looking for?</div>
+    </div>
+    <div style="background:var(--s1);border:1px solid var(--bd);border-radius:10px;overflow:hidden">${rows}</div>
+  </div>`;
+}
+function disambigPick(cardNum, origQuery) {
+  const si = document.getElementById('si');
+  // Build query with specific card number
+  const newQ = origQuery.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() + ' ' + cardNum;
+  si.value = newQ.trim();
+  selectedCard = null;
+  search(newQ.trim(), 'sr');
 }
 
 function dot(cls){return'<span class="dot '+cls+'"></span>';}
