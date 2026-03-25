@@ -256,6 +256,7 @@ function filterItems(items, grade, searchQuery, lang) {
   }
 
   // ── 2. Variant exclusion (all grades) ─────────────────────────────────
+  const preVariantFiltered = [...filtered] // snapshot before variant filtering
   for (const vt of VARIANT_TERMS) {
     if (!vt.query.test(ql)) {
       const before = filtered.length
@@ -270,11 +271,11 @@ function filterItems(items, grade, searchQuery, lang) {
       if (filtered.length < before) console.log(`[filter:variant] ${before} → ${filtered.length}`)
     }
   }
-  // If variant filter gutted results, fall back (but keep slab exclusion)
-  if (filtered.length < 2 && grade === 'Raw') {
-    filtered = items.filter((i) => !isGradedSlab(i.title))
-  } else if (filtered.length < 2) {
-    filtered = items
+  // If variant filter gutted results, fall back to pre-variant state (not original items).
+  // This preserves slab exclusion from step 1.
+  if (filtered.length < 2) {
+    console.log(`[filter:variant] fallback: ${filtered.length} → ${preVariantFiltered.length} (pre-variant)`)
+    filtered = preVariantFiltered
   }
 
   // ── 2b. Holo exclusion (non-Pokemon only) ─────────────────────────────
@@ -368,6 +369,10 @@ function filterItems(items, grade, searchQuery, lang) {
   }
 
   // ── 4. Grade-specific filtering ───────────────────────────────────────
+  // Save state after identity filters (name/lang/set) — Raw grade fallback must
+  // never restore items dropped by these filters.
+  const afterIdentityFilters = [...filtered]
+
   const excludeTerms = GRADE_EXCLUDE[grade]
   if (excludeTerms) {
     const kept = filtered.filter((i) => {
@@ -380,9 +385,10 @@ function filterItems(items, grade, searchQuery, lang) {
     })
     console.log(`[filter:Raw] ${filtered.length} → ${kept.length} kept`)
     if (kept.length >= 2) return kept
-    // Fallback: always keep graded slab exclusion for Raw
-    const safeItems = filtered.filter((i) => !isGradedSlab(i.title))
-    console.log(`[filter:Raw] fallback: ${filtered.length} → ${safeItems.length}`)
+    // Fallback: restore to post-identity-filter state (preserves name/lang/set drops)
+    // but still exclude graded slabs
+    const safeItems = afterIdentityFilters.filter((i) => !isGradedSlab(i.title))
+    console.log(`[filter:Raw] fallback: ${kept.length} → ${safeItems.length} (post-identity, pre-grade)`)
     return safeItems
   }
   if (grade && grade !== 'Raw') {
