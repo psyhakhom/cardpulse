@@ -369,8 +369,17 @@ function filterItems(items, grade, searchQuery, lang) {
   return filtered
 }
 
-function calcStats(items) {
+function calcStats(items, label) {
   if (!items?.length) return null
+  // Log each comp's price and date for debugging
+  if (label) {
+    const details = items.map((i) => {
+      const p = parseFloat(i.price?.value || 0)
+      const d = (i.itemEndDate || '').slice(0, 10)
+      return `$${p}(${d})`
+    })
+    console.log(`[calcStats:${label}] ${items.length} items: ${details.join(', ')}`)
+  }
   const prices = items
     .map((i) => parseFloat(i.price?.value))
     .filter((p) => !isNaN(p) && p > 0)
@@ -888,6 +897,23 @@ function blend(results) {
     console.log(`[blend] Query C outlier check skipped: A=${!!rA?.stats} B=${!!rB?.stats} C=${!!rC?.stats}`)
   }
 
+  // Recency boost: if Query B (recent 30d) has very few comps (1-2) while A has
+  // more older comps, the recent price signal is being diluted. Boost B to 0.60
+  // so the most recent sale carries majority weight over stale data.
+  if (rB?.stats && rA?.stats && rB.stats.count <= 2 && rA.stats.count > rB.stats.count) {
+    const oldBw = weightMap.b
+    weightMap.b = 0.60
+    // Redistribute what we took from other queries proportionally from A (and C if active)
+    const excess = weightMap.b - oldBw
+    if (weightMap.c > 0) {
+      weightMap.a = Math.max(0.05, (weightMap.a || 0) - excess * 0.6)
+      weightMap.c = Math.max(0.05, (weightMap.c || 0) - excess * 0.4)
+    } else {
+      weightMap.a = Math.max(0.05, (weightMap.a || 0) - excess)
+    }
+    console.log(`[blend] recency boost: B has ${rB.stats.count} recent comps vs A=${rA.stats.count} older — B weight → ${weightMap.b}`)
+  }
+
   // Apply rebalanced weights to each result
   const reweighted = results.map((r, i) => ({
     ...r,
@@ -1164,10 +1190,10 @@ export default async function handler(req, res) {
       }
 
       const res = [
-        { ...qs.a, stats: calcStats(finalA) },
-        { ...qs.b, stats: calcStats(finalB) },
-        { ...qs.c, stats: calcStats(fC) },
-        { ...qs.d, stats: calcStats(fD) },
+        { ...qs.a, stats: calcStats(finalA, 'A') },
+        { ...qs.b, stats: calcStats(finalB, 'B') },
+        { ...qs.c, stats: calcStats(fC, 'C') },
+        { ...qs.d, stats: calcStats(fD, 'D') },
       ]
       return { results: res, blended: blend(res), allItems: [...finalA, ...finalB, ...fC, ...fD] }
     }
