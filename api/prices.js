@@ -1291,6 +1291,49 @@ export default async function handler(req, res) {
         rawD = preFilter(rawD, 'D')
       }
 
+      // ── EARLY DISAMBIGUATION: check before variant/rarity filters strip alt arts ──
+      const queryHasCardNum = /\b[A-Z]{1,4}\d+-\d+/i.test(processed)
+      if (!queryHasCardNum && exact !== '1') {
+        // Merge raw items (after slab/lot pre-filter) for card number analysis
+        const allRawForDisambig = [...rawA, ...rawB, ...rawC].filter(i => parseFloat(i.price?.value || 0) >= 0.50)
+        const _CNUM_RE = /\b([A-Z]{1,4}\d+-\d+[A-Z]?)\b/gi
+        const byNum = new Map()
+        for (const item of allRawForDisambig) {
+          const t = item.title || ''
+          const nums = t.match(_CNUM_RE)
+          if (!nums) continue
+          const num = nums[0].toUpperCase()
+          if (!byNum.has(num)) byNum.set(num, [])
+          byNum.get(num).push(item)
+        }
+        if (byNum.size >= 3) {
+          const allPrices = allRawForDisambig.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
+          const spread = allPrices.length >= 2 ? allPrices[allPrices.length - 1] / allPrices[0] : 1
+          if (spread > 5) {
+            console.log(`[disambig] ${byNum.size} distinct card numbers with ${spread.toFixed(1)}x spread — returning picker`)
+            const variants = [...byNum.entries()].map(([num, items]) => {
+              const ps = items.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
+              const avg = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : 0
+              // Detect rarity + variant from titles (check all items for this card number)
+              const allTitles = items.map(i => (i.title || '')).join(' ')
+              const rarityMatch = allTitles.match(/\b(SCR\s*\*\*|SCR\s*\*|SCR|SPR|SR\s*\*|SR|UR|SEC|SSR|SAR|UC|R|C|L|SP)\b/i)
+              const isAlt = /\balt(?:ernate)?\s*art\b/i.test(allTitles) || /\bSCR\s*alt\b/i.test(allTitles)
+              let rarity = rarityMatch ? rarityMatch[1].toUpperCase().replace(/\s+/g, '') : ''
+              if (isAlt && rarity && !rarity.includes('*')) rarity += '*'
+              return {
+                cardNumber: num,
+                name: processed.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() || num,
+                rarity,
+                estimatedPrice: parseFloat(avg.toFixed(2)),
+                compCount: items.length,
+                imageUrl: items[0].image?.imageUrl || null,
+              }
+            }).sort((a, b) => b.compCount - a.compCount || a.estimatedPrice - b.estimatedPrice)
+            return { disambiguation: true, variants, query: processed }
+          }
+        }
+      }
+
       // Filter by grade + variant + rarity — filtered items are used for everything downstream
       const fA = filterByRarity(filterItems(rawA, grade, processed, lang))
       const fB = filterByRarity(filterItems(rawB, grade, processed, lang))
@@ -1389,7 +1432,19 @@ export default async function handler(req, res) {
       runQueries(processed),
       fetchCardImage(q.trim()),
     ])
-    let { results, blended, allItems, hadJapaneseResults } = queriesResult.value
+    const qResult = queriesResult.value
+    // Check for early disambiguation from runQueries
+    if (qResult.disambiguation) {
+      console.log(`[disambig] returning picker with ${qResult.variants.length} variants`)
+      return res.status(200).json({
+        type: 'disambiguation',
+        query: q.trim(),
+        grade,
+        lang,
+        variants: qResult.variants,
+      })
+    }
+    let { results, blended, allItems, hadJapaneseResults } = qResult
     const dedicatedImageUrl = cardImageResult.status === 'fulfilled' ? cardImageResult.value : null
 
     let correctedQuery = null  // set if we used spell correction or word-strip
@@ -1485,51 +1540,6 @@ export default async function handler(req, res) {
           return false
         })
         if (deduped.length < before) console.log(`[HARD BLOCK] ${before} → ${deduped.length} after card name enforcement`)
-      }
-    }
-
-    // ── DISAMBIGUATION: detect multiple distinct cards in results ──────
-    // When 3+ distinct card numbers appear with wide price spread and user
-    // didn't specify a card number, return a pick-list instead of blended price.
-    const CARD_NUM_EXTRACT = /\b([A-Z]{1,4}\d+-\d+[A-Z]?)\b/gi
-    const queryHasCardNum = /\b[A-Z]{1,4}\d+-\d+/i.test(processed)
-    if (!queryHasCardNum && exact !== '1' && deduped.length >= 3) {
-      const byNumber = new Map()
-      for (const item of deduped) {
-        const t = item.title || ''
-        const nums = t.match(CARD_NUM_EXTRACT)
-        const num = nums ? nums[0].toUpperCase() : null
-        if (!num) continue
-        if (!byNumber.has(num)) byNumber.set(num, [])
-        byNumber.get(num).push(item)
-      }
-      if (byNumber.size >= 3) {
-        const prices = deduped.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
-        const spread = prices.length >= 2 ? prices[prices.length - 1] / prices[0] : 1
-        if (spread > 5) {
-          console.log(`[disambig] ${byNumber.size} distinct card numbers with ${spread.toFixed(1)}x spread — returning picker`)
-          const variants = [...byNumber.entries()].map(([num, items]) => {
-            const ps = items.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0).sort((a, b) => a - b)
-            const avg = ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : 0
-            // Try to extract rarity from title
-            const rarityMatch = items[0].title?.match(/\b(SCR|SPR|SR|UR|SEC|SSR|SAR|UC|R|C|L|SP)\b/i)
-            return {
-              cardNumber: num,
-              name: processed.replace(/\b[A-Z]{1,4}\d+\b/gi, '').trim() || num,
-              rarity: rarityMatch ? rarityMatch[1].toUpperCase() : '',
-              estimatedPrice: parseFloat(avg.toFixed(2)),
-              compCount: items.length,
-              imageUrl: items[0].image?.imageUrl || null,
-            }
-          }).sort((a, b) => b.compCount - a.compCount || a.estimatedPrice - b.estimatedPrice)
-          return res.status(200).json({
-            type: 'disambiguation',
-            query: q.trim(),
-            grade,
-            lang,
-            variants,
-          })
-        }
       }
     }
 
