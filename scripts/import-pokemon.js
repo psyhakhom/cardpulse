@@ -11,7 +11,7 @@ async function fetchPage(page) {
   const headers = { Accept: 'application/json' }
   if (API_KEY) headers['X-Api-Key'] = API_KEY
   const url = `https://api.pokemontcg.io/v2/cards?pageSize=250&page=${page}&select=id,name,number,rarity,set,images`
-  const res = await fetch(url, { headers, signal: AbortSignal.timeout(30000) })
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(120000) })
   if (!res.ok) throw new Error(`API ${res.status}`)
   return res.json()
 }
@@ -28,7 +28,7 @@ function dedup(batch) {
 async function flush(batch) {
   const d = dedup(batch)
   if (!d.length) return
-  const { error } = await supabase.from('card_catalog').upsert(d, { onConflict: 'card_name,game,rarity_key', ignoreDuplicates: false })
+  const { error } = await supabase.from('card_catalog').upsert(d, { onConflict: 'game,card_number,rarity_key', ignoreDuplicates: false })
   if (error) console.error(`  Upsert failed (${d.length}):`, error.message)
   else console.log(`  → Upserted ${d.length} cards`)
 }
