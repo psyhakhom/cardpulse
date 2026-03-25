@@ -840,9 +840,11 @@ async function searchEbayFallback(query) {
     const CARD_NUM_RE = /\b((?:[A-Z]{1,4}-?\d+-\d+[A-Z]?)|(?:\d{1,3}\/\d{1,3}))\b/
     const seen = new Set()
     const cards = []
+    const LANG_JUNK_RE = /\b(cross\s*worlds|japanese|japan|jpn)\b/i
     for (const item of items) {
       const title = item.title || ''
       if (LISTING_JUNK_RE.test(title)) continue
+      if (LANG_JUNK_RE.test(title)) continue
       let name = title
         .replace(/\b(psa|bgs|cgc|sgc|beckett)\s*\d+[\d.]*/gi, '')
         .replace(/\bnear\s*mint\b|\bnm\b|\bmp\b|\blp\b|\bhp\b/gi, '')
