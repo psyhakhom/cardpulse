@@ -412,9 +412,8 @@ function calcStats(items, label) {
 
 // ─── COMP EXTRACTION ─────────────────────────────────────────────────────────
 function extractComps(items, limit = 10, grade = null) {
-  const now = Date.now()
-  const cutoff = now - 90 * 24 * 60 * 60 * 1000
-
+  // Items are already date-filtered and grade-filtered upstream in runQueries.
+  // This function just formats for display + final safety nets.
   const priced = items.filter((i) => parseFloat(i.price?.value || 0) > 0)
   // Final safety net: graded slabs must NEVER appear in Raw comps
   const slabFree = grade === 'Raw'
@@ -426,19 +425,8 @@ function extractComps(items, limit = 10, grade = null) {
         return true
       })
     : priced
-  const gradeOk = slabFree.filter((i) => !grade || gradeMatch(i.title, grade))
 
-  let dateDropped = 0
-  const dateOk = gradeOk.filter((i) => {
-    const d = i.itemEndDate || i.itemCreationDate
-    if (!d) { dateDropped++; return false }
-    const ts = new Date(d).getTime()
-    if (isNaN(ts) || ts < cutoff) { dateDropped++; return false }
-    return true
-  })
-  if (dateDropped > 0) console.log(`[extractComps] dropped ${dateDropped}/${gradeOk.length} items outside 90-day window`)
-
-  return dateOk
+  return slabFree
     .slice(0, limit)
     .map((i) => ({
       title: i.title,
@@ -1210,14 +1198,17 @@ export default async function handler(req, res) {
         }
       }
 
+      // Single item list used for BOTH calcStats (pricing) AND allItems (display).
+      // No separate filtering paths — what you see is what feeds the average.
+      const cleanA = finalA, cleanB = finalB, cleanC = freshC, cleanD = fD
+
       const res = [
-        { ...qs.a, stats: calcStats(finalA, 'A') },
-        { ...qs.b, stats: calcStats(finalB, 'B') },
-        { ...qs.c, stats: calcStats(freshC, 'C') },
-        { ...qs.d, stats: calcStats(fD, 'D') },
+        { ...qs.a, stats: calcStats(cleanA, 'A') },
+        { ...qs.b, stats: calcStats(cleanB, 'B') },
+        { ...qs.c, stats: calcStats(cleanC, 'C') },
+        { ...qs.d, stats: calcStats(cleanD, 'D') },
       ]
-      // allItems uses unfiltered fA/fB/fC for display (extractComps has its own date filter)
-      return { results: res, blended: blend(res), allItems: [...fA, ...fB, ...fC, ...fD] }
+      return { results: res, blended: blend(res), allItems: [...cleanA, ...cleanB, ...cleanC, ...cleanD] }
     }
 
     // Launch card image lookup in parallel with the first eBay query batch
