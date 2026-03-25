@@ -487,6 +487,18 @@ async function fetchAc(q){
   }catch(err){if(err.name==='AbortError')return;console.error('[ac] fetch error:', err);hideAc();}
   finally{if(acAbort===ctrl)acAbort=null;}
 }
+function rarityPill(r){
+  const u=(r||'').toUpperCase();
+  let bg='#333',fg='#999';
+  if(/^SCR\*|^SR\*/.test(u)){bg='#FF8C00';fg='#000';}
+  else if(/^SCR|^SR$|^SPR|^SEC|^SSR|^SAR/.test(u)){bg='#ffd700';fg='#000';}
+  else if(u==='UC'){bg='#1565c0';fg='#fff';}
+  else if(u==='R'){bg='#2e7d32';fg='#fff';}
+  else if(u==='L'||u==='SP'){bg='#6a1b9a';fg='#fff';}
+  else if(u==='C'){bg='#333';fg='#999';}
+  else if(/^PR/.test(u)){bg='#00695c';fg='#fff';}
+  return`<span style="background:${bg};color:${fg};font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap">${escH(r)}</span>`;
+}
 function renderAc(d,q){
   const drop=document.getElementById('ac-drop');
   // Filter: first query word must appear in card name (prevents "james" matching "Jessie & James")
@@ -509,10 +521,12 @@ function renderAc(d,q){
       return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(directText)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
     }
     const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='#1a1a2e';this.style.display='none';this.parentElement.querySelector('.ac-ph')&&(this.parentElement.querySelector('.ac-ph').style.display='flex')"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:`<div class="ac-img" style="background:#1a1a2e;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;font-family:monospace;text-align:center;line-height:1.2">${escH(c.set||c.game||'')}</div>`;
-    const sub=[c.isSet?null:c.set,c.number,c.rarity].filter(Boolean).join(' \u00b7 ');
+    const subParts=[c.isSet?null:c.set,c.number].filter(Boolean).join(' \u00b7 ');
+    const rPill=c.rarity?rarityPill(c.rarity):'';
     const nameStyle=c.isSet?' style="color:var(--a2)"':'';
     const ebayBadge=c.viaEbay?'<span style="font-family:monospace;font-size:8px;color:var(--mu);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px;flex-shrink:0">via eBay</span>':'';
-    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(c.name)}</div>${sub?`<div class="ac-sub">${escH(sub)}</div>`:''}</div>${ebayBadge}</div>`;
+    const subHTML=subParts||rPill?`<div class="ac-sub">${escH(subParts)}${rPill?' '+rPill:''}</div>`:'';
+    return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(c.name)}</div>${subHTML}</div>${ebayBadge}</div>`;
   }).join('');
   // Japanese exclusive set banner — suggest but don't force language change
   if(d.jpExclusive && catalogCards.length>0){
@@ -818,15 +832,14 @@ function renderDisambiguation(el, data) {
   };
   const rows = data.variants.map((v) => {
     const img = v.imageUrl ? `<img class="ac-img" src="${escH(v.imageUrl)}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
-    const rc = rarityColor(v.rarity);
-    const badge = v.rarity ? `<span style="font-size:13px;font-weight:700;color:${rc};border:1px solid ${rc};padding:1px 6px;border-radius:3px">${escH(v.rarity)}</span>` : '';
-    const price = v.estimatedPrice > 0 ? `<span style="color:#00ff88;font-weight:700;font-size:15px;white-space:nowrap">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
+    const badge = v.rarity ? rarityPill(v.rarity) : '';
+    const price = v.estimatedPrice > 0 ? `<span style="color:var(--ac);font-family:var(--font-d);font-weight:400;font-size:20px;white-space:nowrap;letter-spacing:.5px">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
     const comps = v.compCount ? `<span style="font-size:11px;color:#666">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
     return `<div class="ac-item" style="cursor:pointer" onclick="disambigPick('${escH(v.cardNumber)}','${escH(data.query)}')">
       ${img}
       <div style="min-width:0;flex:1">
         <div class="ac-name">${escH(v.name)}</div>
-        <div class="ac-sub" style="display:flex;align-items:center;gap:6px;margin-top:3px">${escH(v.cardNumber)}${badge}</div>
+        <div class="ac-sub" style="display:flex;align-items:center;gap:6px;margin-top:3px">${escH(v.cardNumber)} ${badge}</div>
       </div>
       <div style="text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px">${price}${comps}</div>
     </div>`;
