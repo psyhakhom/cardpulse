@@ -1046,6 +1046,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  console.log('PRICES.JS VERSION: rarity-filter-v3', new Date().toISOString())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
