@@ -98,6 +98,8 @@ async function ebaySearch(
   token,
   { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false } = {}
 ) {
+  // Strip apostrophes (straight + smart) — they break eBay search matching
+  query = query.replace(/['''`]/g, '').replace(/\s+/g, ' ').trim()
   console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
