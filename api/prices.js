@@ -242,8 +242,8 @@ function filterItems(items, grade, searchQuery, lang) {
   if (!items?.length) return items
   const ql = (searchQuery || '').toLowerCase()
 
-  // ── 1. Graded slab hard block (Raw only) — runs FIRST, no bypass ──────
-  let filtered = items
+  // ── 0. Minimum price filter — strip invalid/junk $0 listings ──────────
+  let filtered = items.filter((i) => parseFloat(i.price?.value || 0) >= 0.50)
   if (grade === 'Raw') {
     filtered = items.filter((i) => {
       if (isGradedSlab(i.title)) {
@@ -1262,13 +1262,18 @@ export default async function handler(req, res) {
       // No separate filtering paths — what you see is what feeds the average.
       const cleanA = finalA, cleanB = finalB, cleanC = freshC, cleanD = fD
 
+      // Track if raw results had Japanese items that were filtered out
+      const langRe = LANG_EXCLUDE[lang]
+      const allRaw = [...rawA, ...rawB, ...rawC]
+      const hadJapaneseResults = langRe && allRaw.some((i) => langRe.test(i.title || ''))
+
       const res = [
         { ...qs.a, stats: calcStats(cleanA, 'A') },
         { ...qs.b, stats: calcStats(cleanB, 'B') },
         { ...qs.c, stats: calcStats(cleanC, 'C') },
         { ...qs.d, stats: calcStats(cleanD, 'D') },
       ]
-      return { results: res, blended: blend(res), allItems: [...cleanA, ...cleanB, ...cleanC, ...cleanD] }
+      return { results: res, blended: blend(res), allItems: [...cleanA, ...cleanB, ...cleanC, ...cleanD], hadJapaneseResults }
     }
 
     // Launch card image lookup in parallel with the first eBay query batch
@@ -1276,7 +1281,7 @@ export default async function handler(req, res) {
       runQueries(processed),
       fetchCardImage(q.trim()),
     ])
-    let { results, blended, allItems } = queriesResult.value
+    let { results, blended, allItems, hadJapaneseResults } = queriesResult.value
     const dedicatedImageUrl = cardImageResult.status === 'fulfilled' ? cardImageResult.value : null
 
     let correctedQuery = null  // set if we used spell correction or word-strip
@@ -1288,7 +1293,7 @@ export default async function handler(req, res) {
         console.log(`[spellcorrect] "${processed}" → "${corrected}"`)
         const attempt = await runQueries(corrected)
         if (attempt.blended && attempt.blended.totalComps > 0) {
-          ;({ results, blended, allItems } = attempt)
+          ;({ results, blended, allItems, hadJapaneseResults } = attempt)
           correctedQuery = corrected
         }
       }
@@ -1320,7 +1325,7 @@ export default async function handler(req, res) {
         console.log(`[word-strip] trying "${candidate}"`)
         const attempt = await runQueries(candidate)
         if (attempt.blended && attempt.blended.totalComps > (blended?.totalComps || 0)) {
-          ;({ results, blended, allItems } = attempt)
+          ;({ results, blended, allItems, hadJapaneseResults } = attempt)
           console.log(`[word-strip] accepted "${candidate}" with ${blended.totalComps} comps`)
           break // maximum 1 successful retry
         }
@@ -1328,6 +1333,12 @@ export default async function handler(req, res) {
     }
 
     if (!blended) {
+      if (hadJapaneseResults) {
+        return res.status(404).json({
+          error: 'Limited US sales found for this card.',
+          searchTip: 'This may be a Japanese-market card. Try selecting "Japanese" in the language filter.',
+        })
+      }
       return res.status(404).json({
         error: 'Not enough sold comps found. Try a more specific search.',
         searchTip: 'For Dragon Ball cards, include the set code like BT27 or FB09. For Pokémon, include the set name like "Base Set" or "Scarlet & Violet".',
