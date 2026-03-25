@@ -141,7 +141,8 @@ const GRADE_EXCLUDE = {
     '100x', '50x', '25x', '10x',
     '2 card', '3 card', '4 card', '5 card', '10 card', '21 card',
     'booster box', 'booster pack', 'manga booster', 'booster 01', 'sealed',
-    'single card lot', 'parallel single',
+    'single card lot', 'parallel single', 'card lot', 'lot psa', 'lot bgs', 'lot cgc',
+    'father & son', 'father son', 'father/son',
     'bulk', 'bulk lot', 'wholesale', 'random card', 'random lot',
     'buy 3 get 1', 'buy 2 get 1', 'buy 1 get 1', 'bogo', 'get 1 free', 'get one free',
     // Code cards and digital products
@@ -158,6 +159,8 @@ function gradeMatch(title, grade) {
   const t = (title || '').toLowerCase()
   if (grade === 'PSA 10') {
     if (t.includes('psa 9') || t.includes('psa9')) return false
+    if (/\b(equal|equivalent)\b/.test(t)) return false
+    if (/\bbgs\s*9\.5\b/.test(t)) return false
     return t.includes('psa 10') || t.includes('psa10') || t.includes('gem mint') || t.includes('gem-mint')
   }
   if (grade === 'PSA 9') return t.includes('psa 9') || t.includes('psa9')
