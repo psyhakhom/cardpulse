@@ -1094,16 +1094,28 @@ export default async function handler(req, res) {
             // Must have SR* (star after SR), exclude plain SR and SR**
             return /\bSR\s*\*/i.test(t) && !/\bSR\s*\*\*/i.test(t)
           case 'SCR*':
-            // Must have SCR* but not SCR**
-            return /\bSCR\s*\*/i.test(t) && !/\bSCR\s*\*\*/i.test(t)
+            // Must have SCR* or "SCR Alt" but not SCR** / "Two Star"
+            if (/\bSCR\s*\*\*/i.test(t) || /\b(?:two|2|double)\s*star\b/i.test(t)) return false
+            return /\bSCR\s*\*/i.test(t) || /\bSCR\s*alt\b/i.test(t) || /\balt(?:ernate)?\s*art\b/i.test(t)
           case 'SCR**':
-            // Must have SCR**
-            return /\bSCR\s*\*\*/i.test(t)
+            // Must have SCR** or "Two Star" / "Double Star"
+            return /\bSCR\s*\*\*/i.test(t) || /\b(?:two|2|double)\s*star\b/i.test(t)
           // Plain rarity: title must have the code but NOT the starred version
           case 'SR':
-            return /\bSR\b/i.test(t) && !/\bSR\s*\*/i.test(t)
+            if (!/\bSR\b/i.test(t)) return false
+            if (/\bSR\s*\*/i.test(t)) return false
+            if (/\bSR\s*alt\b/i.test(t)) return false
+            if (/\balt(?:ernate)?\s*art\b/i.test(t)) return false
+            return true
           case 'SCR':
-            return /\bSCR\b/i.test(t) && !/\bSCR\s*\*/i.test(t)
+            // Plain SCR: exclude starred variants (SCR*, SCR**) and text equivalents
+            // "SCR Alt", "Alt Art", "Two Star", "2 Star", "Double Star" are all different products
+            if (!/\bSCR\b/i.test(t)) return false
+            if (/\bSCR\s*\*/i.test(t)) return false
+            if (/\bSCR\s*alt\b/i.test(t)) return false
+            if (/\balt(?:ernate)?\s*art\b/i.test(t)) return false
+            if (/\b(?:two|2|double)\s*star\b/i.test(t)) return false
+            return true
           case 'SPR':
             return /\bSPR\b/i.test(t) && !/\bSPR\s*\*/i.test(t)
           // Other rarity codes: simple word-boundary match
