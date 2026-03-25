@@ -78,6 +78,7 @@ async function main() {
         if (exists) {
           batch.push({
             card_name: cardNumber,  // Card number as name — real name added when user searches
+            card_number: cardNumber,
             game: 'dbs',
             set_code: `${prefix}${pad(setNum)}`,  // Padded for consistency: BT01, BT02
             rarity: null,
