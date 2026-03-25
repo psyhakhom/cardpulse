@@ -205,6 +205,7 @@ const VARIANT_TERMS = [
   // One Piece premium parallels
   { query: /\bwanted\b/i, title: /\bwanted\s*(poster|parallel)\b/i },
   { query: /\bmanga\s*(art|version)\b/i, title: /\bmanga\s*(art|version)\b/i },
+  { query: /\bSPC\b/i, title: /\bSPC\b/i },
   // Foil/special finish variants
   { query: /\bsilver\b/i, title: /\bsilver\b/i },
   { query: /\bgold\b/i, title: /\bgold\b/i },
@@ -241,7 +242,7 @@ const VARIANT_TERMS = [
   { query: /\btiger\s*stripe\b/i, title: /\btiger\s*stripe\b/i, _sports: true },
   // Always excluded — sealed product SKUs and non-card products
   { query: /(?!)/, title: /\bARS\s*\d/i },
-  { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set)\b/i },
+  { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set|magnetic)\b/i },
   { query: /(?!)/, title: /\b(manga\s*volume|vol\.\s*\d|volume\s*\d)\b/i },
   // Always excluded — fan art, custom/proxy cards, third-party products
   { query: /(?!)/, title: /\b(fan\s*art|fanart|ai\s*art|custom\s*card|proxy|proxies)\b/i },
