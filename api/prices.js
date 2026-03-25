@@ -1228,7 +1228,7 @@ export default async function handler(req, res) {
       if (cardNumInQ && _sbConfigured) {
         try {
           const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
-          const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&limit=1`
+          const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&rarity=not.is.null&limit=1`
           const catRes = await fetch(catUrl, {
             headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
             signal: AbortSignal.timeout(2000),
