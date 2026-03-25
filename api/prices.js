@@ -258,6 +258,22 @@ function filterItems(items, grade, searchQuery, lang) {
     console.log(`[filter:slab] ${items.length} → ${filtered.length} after graded slab hard block`)
   }
 
+  // ── 1b. Lot/multi-card exclusion (all grades) ────────────────────────
+  // Lots and multi-card listings are never valid comps regardless of grade.
+  {
+    const LOT_RE = /\b(\d+\s*card\s*lot|lot\s*of\s*\d+|card\s*lot|lot\s*psa|lot\s*bgs|lot\s*cgc|father\s*[&\/]\s*son|father\s+son|complete\s*set|bundle)\b/i
+    const before = filtered.length
+    filtered = filtered.filter((i) => {
+      const t = i.title || ''
+      if (LOT_RE.test(t)) {
+        console.log(`[filter:lot] dropped "${t.slice(0, 70)}"`)
+        return false
+      }
+      return true
+    })
+    if (filtered.length < before) console.log(`[filter:lot] ${before} → ${filtered.length}`)
+  }
+
   // ── 2. Variant exclusion (all grades) ─────────────────────────────────
   const preVariantFiltered = [...filtered] // snapshot before variant filtering
   for (const vt of VARIANT_TERMS) {
