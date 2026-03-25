@@ -203,16 +203,25 @@ const DBS_KW = [
   'special beam cannon', 'makankosappo',
   'energy marker',
 ]
-const DBS_CODE_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|PUMS|SDBH)\d+|\bE-\d+/i
+const DBS_CODE_RE = /\b(?:BT|FB|FS|SD|SB|TB|D-BT|PUMS|SDBH)\d+|\bE-\d+/i
 const OP_KW = [
-  'one piece', 'onepiece', 'optcg', 'luffy', 'zoro', 'nami', 'sanji',
-  'chopper', 'robin', 'franky', 'brook',
+  'one piece', 'onepiece', 'optcg',
+  // Character names
+  'luffy', 'zoro', 'nami', 'sanji', 'usopp', 'chopper', 'robin', 'franky', 'brook', 'jinbe',
+  'shanks', 'ace', 'whitebeard', 'blackbeard', 'hancock', 'mihawk',
+  'crocodile', 'doflamingo', 'katakuri', 'kaido', 'big mom', 'yamato', 'uta',
+  // Set codes (with and without hyphen)
   'op-01', 'op-02', 'op-03', 'op-04', 'op-05', 'op-06', 'op-07',
   'op-08', 'op-09', 'op-10', 'op-11', 'op-12', 'op-13', 'op-14',
-  'shanks', 'whitebeard', 'blackbeard', 'hancock', 'mihawk',
-  'crocodile', 'doflamingo', 'katakuri', 'kaido', 'big mom', 'yamato', 'uta',
+  'op01', 'op02', 'op03', 'op04', 'op05', 'op06', 'op07',
+  'op08', 'op09', 'op10', 'op11', 'op12', 'op13', 'op14',
+  'st-01', 'st-02', 'st-03', 'st-04', 'st-05', 'st-06', 'st-07', 'st-08', 'st-09',
+  'st-10', 'st-11', 'st-12', 'st-13', 'st-14', 'st-15', 'st-16', 'st-17', 'st-18',
+  'st01', 'st02', 'st03', 'st04', 'st05', 'st06', 'st07', 'st08', 'st09',
+  'st10', 'st11', 'st12', 'st13', 'st14', 'st15', 'st16', 'st17', 'st18',
+  'eb-01', 'eb-02', 'eb01', 'eb02',
 ]
-const OP_CODE_RE = /\bOP-?\d{2}/i
+const OP_CODE_RE = /\b(?:OP|ST|EB)-?\d{2}/i
 const LORCANA_KW = ['lorcana', 'disney lorcana']
 
 function detectGame(query) {

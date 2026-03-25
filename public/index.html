@@ -601,10 +601,16 @@ function normalizeApiResponse(data, q, sc) {
   if (['pokemon','charizard','pikachu','mtg','magic ','yugioh','yu-gi-oh',
        'blue-eyes','blue eyes','dark magician','exodia','red-eyes','kuriboh',
        'lorcana','disney lorcana','one piece','onepiece','optcg',
+       'luffy','zoro','nami','sanji','usopp','chopper','robin','franky','brook','jinbe',
+       'shanks','ace','whitebeard','blackbeard','hancock','mihawk',
+       'crocodile','doflamingo','katakuri','kaido','big mom','yamato','uta',
        'op-01','op-02','op-03','op-04','op-05','op-06','op-07',
        'op-08','op-09','op-10','op-11','op-12','op-13','op-14',
-       'shanks','whitebeard','blackbeard','hancock','mihawk',
-       'crocodile','doflamingo','katakuri','kaido','big mom','yamato','uta',
+       'op01','op02','op03','op04','op05','op06','op07','op08','op09',
+       'op10','op11','op12','op13','op14',
+       'st01','st02','st03','st04','st05','st06','st07','st08','st09',
+       'st10','st11','st12','st13','st14','st15','st16','st17','st18',
+       'eb01','eb02',
        'ash','misty','brock','team rocket','jessie','james','giovanni',
        'gary','professor oak','nurse joy','gym leader','elite four','trainer'].some(k => ql.includes(k))) return 'tcg';
   return g !== 'Raw' ? 'sg' : 'sr';
@@ -679,7 +685,7 @@ const FX={JPY:149.5,KRW:1320,CNY:7.24,USD:1};
 function cardType(q,g){
   const ql=q.toLowerCase();
   if(['dragon ball','dragonball','dbs','dbscg','fusion world','d-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8','bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16','bt17','bt18','bt19','bt20','kamehameha','final flash','galick gun','spirit bomb','instant transmission','hakai','ultra instinct','god kamehameha','destructo disc','special beam cannon','makankosappo'].some(k=>ql.includes(k)))return'dbs';
-  if(['pokemon','charizard','pikachu','mtg','magic ','yugioh','yu-gi-oh','blue-eyes','blue eyes','dark magician','exodia','red-eyes','kuriboh','lorcana','disney lorcana','one piece','onepiece','optcg','op-01','op-02','op-03','op-04','op-05','op-06','op-07','op-08','op-09','op-10','op-11','op-12','op-13','op-14','shanks','whitebeard','blackbeard','hancock','mihawk','crocodile','doflamingo','katakuri','kaido','big mom','yamato','uta','ash','misty','brock','team rocket','jessie','james','giovanni','gary','professor oak','nurse joy','gym leader','elite four','trainer'].some(k=>ql.includes(k)))return'tcg';
+  if(['pokemon','charizard','pikachu','mtg','magic ','yugioh','yu-gi-oh','blue-eyes','blue eyes','dark magician','exodia','red-eyes','kuriboh','lorcana','disney lorcana','one piece','onepiece','optcg','luffy','zoro','nami','sanji','usopp','chopper','robin','franky','brook','jinbe','shanks','ace','whitebeard','blackbeard','hancock','mihawk','crocodile','doflamingo','katakuri','kaido','big mom','yamato','uta','op-01','op-02','op-03','op-04','op-05','op-06','op-07','op-08','op-09','op-10','op-11','op-12','op-13','op-14','op01','op02','op03','op04','op05','op06','op07','op08','op09','op10','op11','op12','op13','op14','st01','st02','st03','st04','st05','st06','st07','st08','st09','st10','st11','st12','st13','st14','st15','st16','st17','st18','eb01','eb02','ash','misty','brock','team rocket','jessie','james','giovanni','gary','professor oak','nurse joy','gym leader','elite four','trainer'].some(k=>ql.includes(k)))return'tcg';
   return g!=='Raw'?'sg':'sr';
 }
 function jpEx(q){return['heroes','hero ','dbh','divers','xros','cross spirits'].some(k=>q.toLowerCase().includes(k));}
