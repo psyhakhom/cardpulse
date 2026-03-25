@@ -19,8 +19,10 @@ const _sbReady = !!(SB_URL && SB_KEY)
 async function searchCatalog(query, game) {
   if (!_sbReady) return []
   try {
-    const sanitized = query.replace(/'/g, "''")
-    const encoded = encodeURIComponent(sanitized)
+    // Double apostrophes only for PostgREST URL params (SQL escaping)
+    const sqlSanitized = query.replace(/'/g, "''")
+    // Keep original apostrophes for RPC JSON body (no SQL escaping needed)
+    const sanitized = query
 
     // If query has a specific card number (FB02-099, BT1-031), require exact match on it
     const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+)\b/i)
