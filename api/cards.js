@@ -32,7 +32,7 @@ async function searchCatalog(query, game) {
       console.log(`[cards:db] card number detected: ${num}`)
       // First try exact card_number match (e.g., FB05-119 matches only FB05-119, not FB05-119-P3)
       // Then also include variants via search_query for broader results
-      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_number.eq.${numEnc},card_number.like.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
+      url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
     } else {
       // General name search — split into words joined by % wildcards so
       // "son gohan future" matches "Son Gohan : Future" (colon between words)
