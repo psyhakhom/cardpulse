@@ -38,6 +38,23 @@ async function searchCatalog(query, game) {
       })
       if (!res.ok) return []
       rows = await res.json()
+
+      // Re-rank: if query has name terms beyond the card number, boost rows that match them
+      const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?\b|\bE\d+-\d+\b|\bE-\d+\b/gi
+      const RARITY_RE = /\b(spr|scr|sr|ssr|ur|sec|sar|r|c|uc|sp|pr|sdr)\b/gi
+      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','raw','english']
+      const nameTerms = query.toLowerCase().replace(CARD_NUM_RE, '').replace(RARITY_RE, '').split(/\s+/)
+        .filter(w => w.length >= 2 && !GAME_WORDS.includes(w))
+      if (nameTerms.length > 0 && rows.length > 1) {
+        console.log(`[cards:db] re-ranking with name terms: [${nameTerms.join(', ')}]`)
+        rows.sort((a, b) => {
+          const aName = (a.card_name || '').toLowerCase()
+          const bName = (b.card_name || '').toLowerCase()
+          const aHits = nameTerms.filter(t => aName.includes(t)).length
+          const bHits = nameTerms.filter(t => bName.includes(t)).length
+          return bHits - aHits // more name hits = ranked higher
+        })
+      }
     } else {
       // Fuzzy name search via pg_trgm similarity + ILIKE fallback
       const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world']
