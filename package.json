@@ -11,6 +11,9 @@
     "import-onepiece": "node --env-file=.env.local scripts/import-onepiece.js",
     "import-lorcana": "node --env-file=.env.local scripts/import-lorcana-cards.js",
     "import-dbs-classic": "node --env-file=.env.local scripts/import-dbs-classic.js",
+    "import-fb07": "node --env-file=.env.local scripts/import-fb07-cards.js",
+    "import-fb08": "node --env-file=.env.local scripts/import-fb07-cards.js FB08",
+    "import-fb09": "node --env-file=.env.local scripts/import-fb07-cards.js FB09",
     "import-all": "node --env-file=.env.local scripts/import-all.js"
   },
   "dependencies": {
