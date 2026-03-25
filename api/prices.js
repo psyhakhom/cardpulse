@@ -1191,10 +1191,14 @@ export default async function handler(req, res) {
           rawGA = rawGA.filter((i) => !isGradedSlab(i.title))
           rawGB = rawGB.filter((i) => !isGradedSlab(i.title))
         }
-        // Filter global results to USD only — GBP/EUR listings have converted prices that skew averages
-        const usdOnly = (items) => items.filter((i) => !i.price?.currency || i.price.currency === 'USD')
-        const gfA = dropStale(usdOnly(filterByRarity(filterItems(rawGA, grade, processed, lang))), 'A-global')
-        const gfB = dropStale(usdOnly(filterByRarity(filterItems(rawGB, grade, processed, lang))), 'B-global')
+        // Filter global results to North America only — UK/EU sellers list in USD but ship internationally,
+        // their prices don't reflect the US market
+        const naOnly = (items) => items.filter((i) => {
+          const c = i.itemLocation?.country
+          return !c || c === 'US' || c === 'CA'
+        })
+        const gfA = dropStale(naOnly(filterByRarity(filterItems(rawGA, grade, processed, lang))), 'A-global')
+        const gfB = dropStale(naOnly(filterByRarity(filterItems(rawGB, grade, processed, lang))), 'B-global')
         if (gfA.length + gfB.length > freshA.length + freshB.length) {
           console.log(`[low-volume] global A+B: ${gfA.length}+${gfB.length} comps (was ${freshA.length}+${freshB.length})`)
           finalA = gfA
