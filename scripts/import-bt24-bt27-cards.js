@@ -2,7 +2,7 @@
  * Import DBS Classic BT24-BT27 cards from the official Bandai card game site
  * into card_catalog with proper card names and rarities.
  *
- * Source: https://www.dbs-cardgame.com/asia/cardlist/ (POST with category_exp)
+ * Source: https://www.dbs-cardgame.com/us-en/cardlist/ (POST with category_exp)
  *
  * Set IDs:
  *   BT24 (Zenith of Power)       = 428024
@@ -22,7 +22,7 @@ import { createClient } from '@supabase/supabase-js'
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
-const BASE_URL = 'https://www.dbs-cardgame.com/asia/cardlist/index.php'
+const BASE_URL = 'https://www.dbs-cardgame.com/us-en/cardlist/index.php'
 const IMG_BASE = 'https://www.dbs-cardgame.com/images/cardlist/cardimg'
 
 const SETS = {
@@ -106,7 +106,7 @@ async function fetchSetCards(setCode, setId) {
 // ─── Fetch rarity from detail page (fallback when list doesn't have it) ───────
 
 async function fetchRarity(cardNumber) {
-  const url = `https://www.dbs-cardgame.com/asia/cardlist/detail.php?card_no=${cardNumber}`
+  const url = `https://www.dbs-cardgame.com/us-en/cardlist/detail.php?card_no=${cardNumber}`
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
     if (!res.ok) return null
