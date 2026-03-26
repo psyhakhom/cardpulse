@@ -676,6 +676,7 @@ function selectAc(i){
     // Detect parallel suffix BEFORE stripping — parallels need keyword-based queries
     const isParallel=/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number);
     _isParallel=isParallel;
+    console.log('[selectAc] parallel check: card.number=',JSON.stringify(card.number),'isParallel=',isParallel);
     const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
     const rUp=(card.rarity||'').toUpperCase();
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
@@ -761,11 +762,12 @@ async function search(q, elId) {
     try {
       // When a catalog card was selected, bypass preprocessor with exact query
       const searchQ = sc ? sc.searchQuery : q;
-      console.log('[search] grade=', JSON.stringify(G), 'lang=', JSON.stringify(L), 'q=', searchQ, sc ? '(catalog)' : '(free text)');
+      console.log('[search] grade=', JSON.stringify(G), 'lang=', JSON.stringify(L), 'q=', searchQ, sc ? '(catalog)' : '(free text)', 'parallel=', sc?.parallel);
       const params = new URLSearchParams({ q: searchQ, grade: G, lang: L });
       if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
       if (sc?.parallel) params.set('parallel', '1'); // tell backend to fire parallel-specific queries
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
+      console.log('[search] API URL params:', params.toString());
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
       console.log('[api-response] type:', data.type, 'keys:', Object.keys(data).join(','));

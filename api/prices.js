@@ -1259,6 +1259,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { q, lang = 'English', history, exact, parallel, cardImageUrl } = req.query
+  console.log(`[prices] q="${q}" exact=${exact} parallel=${parallel}`)
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
   const rawGrade = req.query.grade || 'Raw'
@@ -1436,6 +1437,7 @@ export default async function handler(req, res) {
       let rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
 
       // Merge parallel-specific results into A and B (dedup by itemId later)
+      console.log(`[parallel] parallelIdx=${parallelIdx} parallel=${parallel} settled.length=${settled.length}`)
       if (parallelIdx >= 0) {
         const pAlt = settled[parallelIdx]?.status === 'fulfilled' ? settled[parallelIdx].value.itemSummaries || [] : []
         const pPar = settled[parallelIdx + 1]?.status === 'fulfilled' ? settled[parallelIdx + 1].value.itemSummaries || [] : []
