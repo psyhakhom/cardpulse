@@ -110,10 +110,42 @@ async function searchCatalog(query, game) {
       // Extract set code from query (FB07, BT01, OP01, ST01, SV3, etc.) for post-filtering
       const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|OP|SV|SM|XY|SS|SW|BS|EX)\d{1,3}\b/i
       const setCodeMatch = sanitized.match(SET_CODE_RE)
-      const detectedSetCode = setCodeMatch ? setCodeMatch[0].toUpperCase() : null
+      let detectedSetCode = setCodeMatch ? setCodeMatch[0].toUpperCase() : null
+
+      // Pokemon set keyword → set_code prefix mapping (check longest matches first)
+      const PKM_SET_KEYWORDS = [
+        ['base set 2','BASE4'],['base set','BASE1'],['base','BASE'],
+        ['jungle','BASE2'],['fossil','BASE3'],['team rocket','BASE5'],['legendary collection','BASE6'],
+        ['gym heroes','GYM1'],['gym challenge','GYM2'],
+        ['neo genesis','NEO1'],['neo discovery','NEO2'],['neo revelation','NEO3'],['neo destiny','NEO4'],
+        ['expedition','ECARD1'],['aquapolis','ECARD2'],['skyridge','ECARD3'],
+        ['scarlet violet','SV'],['sword shield','SWSH'],['sun moon','SM'],
+        ['black white','BW'],['diamond pearl','DP'],['evolutions','XY12'],
+        ['hidden fates','SM115'],['champions path','SWSH35'],['shining legends','SM35'],
+        ['brilliant stars','SWSH9'],['astral radiance','SWSH10'],['lost origin','SWSH11'],
+        ['cosmic eclipse','SM12'],['evolving skies','SWSH7'],['obsidian flames','SV3'],
+        ['paldea evolved','SV2'],['surging sparks','SV8'],['prismatic evolutions','SV8PT5'],
+        ['temporal forces','SV5'],['paradox rift','SV4'],['151','SV3PT5'],
+      ]
+      let pkmSetStrip = null
+      if (!detectedSetCode) {
+        const ql = sanitized.toLowerCase()
+        for (const [kw, code] of PKM_SET_KEYWORDS) {
+          if (ql.includes(kw)) {
+            detectedSetCode = code
+            pkmSetStrip = kw
+            console.log(`[cards:db] Pokemon set keyword "${kw}" → ${code}`)
+            break
+          }
+        }
+      }
 
       const stripped = sanitized.split(/\s+/).filter(w => !GAME_WORDS.includes(w.toLowerCase()) && !(detectedSetCode && w.toUpperCase() === detectedSetCode))
       let cleanedQuery = (stripped.length > 0 ? stripped : sanitized.split(/\s+/)).join(' ')
+      // Strip Pokemon set keyword phrase from fuzzy search query
+      if (pkmSetStrip) {
+        cleanedQuery = cleanedQuery.toLowerCase().replace(pkmSetStrip, '').replace(/\s+/g, ' ').trim()
+      }
 
       if (detectedSetCode) console.log(`[cards:db] set code detected: ${detectedSetCode}, searching name: "${cleanedQuery}"`)
 
@@ -194,16 +226,41 @@ async function searchCatalog(query, game) {
         }
       }
 
-      // Post-filter by set code if detected
+      // Post-filter by set code if detected (supports exact match and prefix match)
       if (detectedSetCode && rows.length > 0) {
         const before = rows.length
+        const dsc = detectedSetCode
         const filtered = rows.filter(r => {
           const sc = (r.set_code || '').toUpperCase()
           const cn = (r.card_number || '').toUpperCase()
-          return sc === detectedSetCode || sc.startsWith(detectedSetCode + '-') || cn.startsWith(detectedSetCode + '-')
+          return sc === dsc || sc.startsWith(dsc) || cn.startsWith(dsc + '-')
         })
         console.log(`[cards:db] set code filter ${detectedSetCode}: ${before} → ${filtered.length} rows`)
         if (filtered.length > 0) rows = filtered
+      }
+      // Direct set_code + name query when fuzzy results didn't include the target set
+      const setFilterFailed = detectedSetCode && rows.length > 0 && !rows.some(r => (r.set_code || '').toUpperCase().startsWith(detectedSetCode))
+      if (detectedSetCode && (rows.length === 0 || setFilterFailed) && cleanedQuery.length >= 2) {
+        console.log(`[cards:db] fuzzy missed set ${detectedSetCode}, trying direct set_code query`)
+        const nameEnc = encodeURIComponent(`%${cleanedQuery}%`)
+        const scEnc = encodeURIComponent(`${detectedSetCode}%`)
+        let directUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&card_name=ilike.${nameEnc}&set_code=ilike.${scEnc}&order=times_searched.desc&limit=16`
+        if (game) directUrl += `&game=eq.${game}`
+        try {
+          const directRes = await fetch(directUrl, {
+            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+            signal: AbortSignal.timeout(3000),
+          })
+          if (directRes.ok) {
+            const directRows = await directRes.json()
+            if (directRows.length > 0) {
+              console.log(`[cards:db] direct set query found ${directRows.length} results`)
+              rows = directRows
+            }
+          }
+        } catch (e) {
+          console.log(`[cards:db] direct set query failed: ${e.message}`)
+        }
       }
     }
     if (!rows.length) return []
