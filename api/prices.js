@@ -1624,8 +1624,10 @@ export default async function handler(req, res) {
     }
 
     // Detect SR/SPR rarity split — mixed comps from different rarity tiers
-    // Only trigger when user didn't already specify a rarity
-    if (!requiredRarity && deduped.length >= 4) {
+    // Only trigger when user didn't specify a card number or rarity
+    const _hasCardNum = /\b[A-Z]{2,5}\d{1,2}-\d{2,3}\b/i.test(q)
+    const _hasRarity = /\b(SCR\*{0,2}|SPR|SR\*?|DBR|SGR|SEC|SSR|SAR)\b/i.test(q)
+    if (!requiredRarity && !_hasCardNum && !_hasRarity && deduped.length >= 4) {
       const sprComps = deduped.filter(i => /\bSPR\b/i.test(i.title) || /\bspecial\s*rare\b/i.test(i.title))
       const srComps = deduped.filter(i => /\bSR\b/i.test(i.title) && !/\bSPR\b/i.test(i.title) && !/\bSR\s*\*/i.test(i.title))
       const sprPct = sprComps.length / deduped.length
