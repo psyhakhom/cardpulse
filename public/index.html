@@ -630,6 +630,11 @@ function selectAc(i){
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
     cleanSQ=(shortName+' '+card.number+variantSuffix).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
     console.log('[selectAc] built short query:', JSON.stringify(cleanSQ), 'rarity:', JSON.stringify(card.rarity));
+  }else if(card.game==='mtg'&&card.set){
+    // MTG: use card name + set name (sellers don't use collector numbers)
+    const shortName=(card.name||'').split(' // ')[0].trim();
+    cleanSQ=(shortName+' '+card.set).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+    console.log('[selectAc] MTG query:', JSON.stringify(cleanSQ));
   }else{
     cleanSQ=(card.searchQuery||card.name||'').replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
     console.log('[selectAc] using full searchQuery:', JSON.stringify(cleanSQ));

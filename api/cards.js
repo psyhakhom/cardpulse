@@ -565,7 +565,7 @@ async function searchMtg(query) {
       game: 'mtg',
       imageUrl: card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || null,
       largeImageUrl: card.image_uris?.normal || card.card_faces?.[0]?.image_uris?.normal || null,
-      searchQuery: buildSearchQuery(card.name, card.collector_number, card.set_name),
+      searchQuery: [card.name, card.set_name].filter(Boolean).join(' ').slice(0, 60),
     }))
   })
 }
