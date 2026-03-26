@@ -533,6 +533,7 @@ async function fetchAc(q){
     if(ctrl.signal.aborted)return; // superseded by newer request
     if(!r.ok){hideAc();return;}
     const d=await r.json();
+    console.log('[ac-response] attribution:', d.attribution, 'cards:', d.cards?.length, 'first:', d.cards?.[0]?.name, 'game:', d.game);
     acCacheSet(q,d); // store in client cache
     renderAc(d,q);
   }catch(err){if(err.name==='AbortError')return;console.error('[ac] fetch error:', err);hideAc();}
@@ -561,6 +562,7 @@ function renderAc(d,q){
     if(!_firstWord||c.isDirect)return true;
     return(c.name||'').toLowerCase().includes(_firstWord);
   });
+  console.log('[renderAc] _firstWord:', JSON.stringify(_firstWord), 'input cards:', (d.cards||[]).length, 'after filter:', catalogCards.length, 'attribution:', d.attribution);
   // If no catalog results, only show the eBay direct option
   acList=catalogCards.length>0?[...catalogCards,d.ebayDirect].filter(Boolean):[d.ebayDirect].filter(Boolean);
   acSel=-1;
