@@ -15,6 +15,7 @@
     "import-fb08": "node --env-file=.env.local scripts/import-fb07-cards.js FB08",
     "import-fb09": "node --env-file=.env.local scripts/import-fb07-cards.js FB09",
     "import-bt19-bt23": "node --env-file=.env.local scripts/import-bt19-bt23-cards.js",
+    "import-bt24-bt27": "node --env-file=.env.local scripts/import-bt24-bt27-cards.js",
     "import-dbs-ex": "node --env-file=.env.local scripts/import-dbs-ex-cards.js",
     "import-all": "node --env-file=.env.local scripts/import-all.js"
   },
