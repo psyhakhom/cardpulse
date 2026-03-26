@@ -99,7 +99,8 @@ async function ebaySearch(
   { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false } = {}
 ) {
   // Strip apostrophes (straight + smart) — they break eBay search matching
-  query = query.replace(/['''`]/g, '').replace(/\s+/g, ' ').trim()
+  // Strip leading dashes on words — eBay interprets "-Sign-" as exclusion operator
+  query = query.replace(/['''`]/g, '').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
   console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
