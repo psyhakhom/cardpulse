@@ -679,7 +679,7 @@ function selectAc(i){
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
     if(isParallel){
       // Parallel cards: use set-specific keyword instead of card number
-      const PARALLEL_KW={'SB01':'manga booster','SB02':'manga booster','FB01':'alt art','FB02':'alt art','FB03':'alt art','FB04':'alt art','FB05':'alt art','FB06':'alt art','FB07':'alt art','FB08':'alt art','FB09':'alt art','FS01':'alt art','FS02':'alt art','FS09':'alt art'};
+      const PARALLEL_KW={'SB01':'alt art','SB02':'alt art','FB01':'alt art','FB02':'alt art','FB03':'alt art','FB04':'alt art','FB05':'alt art','FB06':'alt art','FB07':'alt art','FB08':'alt art','FB09':'alt art','FS01':'alt art','FS02':'alt art','FS09':'alt art'};
       const setPfx=(baseNumber.match(/^([A-Z]{2,4}\d{2})-/i)||[])[1]?.toUpperCase();
       const pKw=PARALLEL_KW[setPfx];
       if(pKw){

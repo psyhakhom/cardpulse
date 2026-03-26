@@ -247,7 +247,7 @@ const VARIANT_TERMS = [
   { query: /\bsuper\s*parallel\b/i, title: /\bsuper\s*parallel\b|\bsp\s*card\b|\bsp\s*parallel\b/i },
   { query: /\bfull\s*art\b/i, title: /\bfull\s*art\b/i },
   { query: /\bSAR\b/, title: /\bSAR\b/ },
-  { query: /\bbooster\b/i, title: /\bmanga\s*booster\b|\bbooster\b/i, _skipWhenQueryContains: /\bmanga\s*booster\b/i },
+  { query: /\bbooster\b/i, title: /\bmanga\s*booster\b|\bbooster\b/i },
   // One Piece premium parallels
   { query: /\bwanted\b/i, title: /\bwanted\s*(poster|parallel)\b/i, _skipWhenQueryContains: /\bwanted\s*poster\b/i },
   { query: /\bmanga\s*(art|version)\b/i, title: /\bmanga\s*(art|version)\b/i },
