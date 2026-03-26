@@ -619,26 +619,29 @@ function selectAc(i){
   // 1. Use card number + short name (truncated at first comma) for best eBay results
   // 2. Strip colons and special chars
   // 3. Convert "-p1"/"-p2"/"-p3" suffixes to "parallel"
+  // Build eBay query per game — use the identifier sellers actually put in titles
   let cleanSQ;
-  const hasCardNum=card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number);
-  console.log('[selectAc] card.number:', JSON.stringify(card.number), 'hasCardNum:', hasCardNum, 'card.name:', JSON.stringify(card.name));
-  if(hasCardNum){
-    // Card number available — build short query: "Name CardNum [variant keyword]"
-    const shortName=(card.name||'').split(',')[0].split(' // ')[0].trim();
+  const g=card.game||'';
+  const shortName=(card.name||'').split(',')[0].split(' // ')[0].trim();
+  if(g==='mtg'||g==='pokemon'||g==='lorcana'){
+    // Set-name games: sellers use "Card Name Set Name" not collector numbers
+    cleanSQ=(shortName+(card.set?' '+card.set:'')).trim();
+    console.log('[selectAc]',g,'query:',JSON.stringify(cleanSQ));
+  }else if(g==='yugioh'){
+    // YGO: sellers rarely include set name or card number
+    cleanSQ=shortName;
+    console.log('[selectAc] yugioh query:',JSON.stringify(cleanSQ));
+  }else if(card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number)){
+    // DBS, One Piece, etc: sellers use card numbers (FB07-079, OP05-119, BT22-049)
     const rUp=(card.rarity||'').toUpperCase();
-    // Append variant keywords for starred/premium rarities so eBay finds the right version
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
-    cleanSQ=(shortName+' '+card.number+variantSuffix).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
-    console.log('[selectAc] built short query:', JSON.stringify(cleanSQ), 'rarity:', JSON.stringify(card.rarity));
-  }else if(card.game==='mtg'&&card.set){
-    // MTG: use card name + set name (sellers don't use collector numbers)
-    const shortName=(card.name||'').split(' // ')[0].trim();
-    cleanSQ=(shortName+' '+card.set).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
-    console.log('[selectAc] MTG query:', JSON.stringify(cleanSQ));
+    cleanSQ=(shortName+' '+card.number+variantSuffix).trim();
+    console.log('[selectAc] card-number query:',JSON.stringify(cleanSQ),'rarity:',JSON.stringify(card.rarity));
   }else{
-    cleanSQ=(card.searchQuery||card.name||'').replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
-    console.log('[selectAc] using full searchQuery:', JSON.stringify(cleanSQ));
+    cleanSQ=(card.searchQuery||card.name||'').trim();
+    console.log('[selectAc] fallback query:',JSON.stringify(cleanSQ));
   }
+  cleanSQ=cleanSQ.replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
   cleanSQ=cleanSQ.replace(/\b(\w+-\d+)-p\d+\b/gi,'$1 parallel');
   selectedCard={
     name:card.name,
