@@ -1623,6 +1623,37 @@ export default async function handler(req, res) {
       }
     }
 
+    // Detect SR/SPR rarity split — mixed comps from different rarity tiers
+    // Only trigger when user didn't already specify a rarity
+    if (!requiredRarity && deduped.length >= 4) {
+      const sprComps = deduped.filter(i => /\bSPR\b/i.test(i.title) || /\bspecial\s*rare\b/i.test(i.title))
+      const srComps = deduped.filter(i => /\bSR\b/i.test(i.title) && !/\bSPR\b/i.test(i.title) && !/\bSR\s*\*/i.test(i.title))
+      const sprPct = sprComps.length / deduped.length
+      const srPct = srComps.length / deduped.length
+      if (sprPct >= 0.2 && srPct >= 0.2) {
+        const sprPrices = sprComps.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0)
+        const srPrices = srComps.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0)
+        const sprAvg = sprPrices.length ? sprPrices.reduce((a, b) => a + b, 0) / sprPrices.length : 0
+        const srAvg = srPrices.length ? srPrices.reduce((a, b) => a + b, 0) / srPrices.length : 0
+        // Only trigger if price gap is significant (>2x difference)
+        if (sprAvg > 0 && srAvg > 0 && (sprAvg / srAvg > 2 || srAvg / sprAvg > 2)) {
+          console.log(`[rarity-split] detected SR ($${srAvg.toFixed(2)}, ${srComps.length} comps) vs SPR ($${sprAvg.toFixed(2)}, ${sprComps.length} comps)`)
+          const cardNum = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)?.[1] || ''
+          return res.status(200).json({
+            type: 'rarity-split',
+            query: q.trim(),
+            grade,
+            lang,
+            cardNumber: cardNum,
+            variants: [
+              { rarity: 'SPR', label: 'Special Rare (SPR)', estimatedPrice: sprAvg, compCount: sprComps.length },
+              { rarity: 'SR', label: 'Super Rare (SR)', estimatedPrice: srAvg, compCount: srComps.length },
+            ],
+          })
+        }
+      }
+    }
+
     const response = {
       lo: blended.lo,
       avg: blended.avg,
@@ -1667,12 +1698,18 @@ export default async function handler(req, res) {
           c.forEach((comp, i) => console.log(`  [comp ${i}] $${comp.price} "${comp.title?.slice(0, 80)}"`))
         }
         // Flag outliers: >2x median or <0.4x median (display-only, doesn't affect pricing)
+        // Skip when price gap is explained by rarity split (SR vs SPR in same result set)
         if (c.length >= 3) {
-          const prices = c.map(x => x.price).sort((a, b) => a - b)
-          const mid = Math.floor(prices.length / 2)
-          const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
-          for (const comp of c) {
-            if (comp.price > median * 2 || comp.price < median * 0.4) comp.outlier = true
+          const sprCount = c.filter(x => /\bSPR\b/i.test(x.title) || /\bspecial\s*rare\b/i.test(x.title)).length
+          const srCount = c.filter(x => /\bSR\b/i.test(x.title) && !/\bSPR\b/i.test(x.title)).length
+          const isRaritySplit = sprCount >= 1 && srCount >= 1
+          if (!isRaritySplit) {
+            const prices = c.map(x => x.price).sort((a, b) => a - b)
+            const mid = Math.floor(prices.length / 2)
+            const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
+            for (const comp of c) {
+              if (comp.price > median * 2 || comp.price < median * 0.4) comp.outlier = true
+            }
           }
         }
         return c
