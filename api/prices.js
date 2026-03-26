@@ -211,7 +211,7 @@ const VARIANT_TERMS = [
   { query: /\bSAR\b/, title: /\bSAR\b/ },
   { query: /\bbooster\b/i, title: /\bmanga\s*booster\b|\bbooster\b/i },
   // One Piece premium parallels
-  { query: /\bwanted\b/i, title: /\bwanted\s*(poster|parallel)\b/i },
+  { query: /\bwanted\b/i, title: /\bwanted\s*(poster|parallel)\b/i, _skipWhenQueryContains: /\bwanted\s*poster\b/i },
   { query: /\bmanga\s*(art|version)\b/i, title: /\bmanga\s*(art|version)\b/i },
   { query: /\bSPC\b/i, title: /\bSPC\b/i },
   // Anniversary/special sets — different product from base release
@@ -251,7 +251,7 @@ const VARIANT_TERMS = [
   { query: /\bcracked\s*ice\b/i, title: /\bcracked\s*ice\b/i, _sports: true },
   { query: /\btiger\s*stripe\b/i, title: /\btiger\s*stripe\b/i, _sports: true },
   // Always excluded — sealed product SKUs and non-card products
-  { query: /(?!)/, title: /\bARS\s*\d/i },
+  { query: /(?!)/, title: /\bARS\s*\d/i, _skipWhenQueryContains: /\b(OP|ST|EB)\d{1,2}-\d{3}\b/i },
   { query: /(?!)/, title: /\b(figure|plush|sleeve|deck\s*box|binder|album|tin|display|box\s*set|magnetic|lighter)\b/i },
   { query: /(?!)/, title: /\b(manga\s*volume|vol\.\s*\d|volume\s*\d)\b/i },
   // Always excluded — fan art, custom/proxy cards, third-party products
@@ -348,6 +348,7 @@ function filterItems(items, grade, searchQuery, lang) {
     // Sports queries skip TCG-specific variants (foil, holo, chrome, refractor, silver, gold, rainbow, prismatic)
     // but keep: memorabilia (_sports), sealed product (/(?!)/), fan art (/(?!)/)
     if (isSportsQuery && !vt._sports && vt.query.toString() !== '/(?!)/') continue
+    if (vt._skipWhenQueryContains && vt._skipWhenQueryContains.test(ql)) continue
     if (!vt.query.test(ql)) {
       const before = filtered.length
       filtered = filtered.filter((i) => {

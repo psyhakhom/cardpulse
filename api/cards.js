@@ -108,7 +108,7 @@ async function searchCatalog(query, game) {
         'pikchu': 'pikachu', 'mewtow': 'mewtwo',
       }
       // Extract set code from query (FB07, BT01, OP01, ST01, SV3, etc.) for post-filtering
-      const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|OP|SV|SM|XY|SS|SW|BS|EX)\d{1,3}\b/i
+      const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|OP|SV|SM|XY|SS|SW|BS|EX|D-BT|SWSH)\d{1,3}\b/i
       const setCodeMatch = sanitized.match(SET_CODE_RE)
       let detectedSetCode = setCodeMatch ? setCodeMatch[0].toUpperCase() : null
 
@@ -126,6 +126,20 @@ async function searchCatalog(query, game) {
         ['cosmic eclipse','SM12'],['evolving skies','SWSH7'],['obsidian flames','SV3'],
         ['paldea evolved','SV2'],['surging sparks','SV8'],['prismatic evolutions','SV8PT5'],
         ['temporal forces','SV5'],['paradox rift','SV4'],['151','SV3PT5'],
+        ['stellar crown','SV7'],['journey together','SV9'],['destined rivals','SV10'],
+        ['twilight masquerade','SV6'],
+        ['vivid voltage','SWSH4'],['battle styles','SWSH5'],['chilling reign','SWSH6'],
+        ['fusion strike','SWSH8'],
+        ['silver tempest','SWSH12'],['burning shadows','SM3'],
+        ['guardians rising','SM2'],['team up','SM9'],['unbroken bonds','SM10'],
+        ['unified minds','SM11'],['darkness ablaze','SWSH3'],
+        ['rebel clash','SWSH2'],['dragon majesty','SM75'],
+        ['crimson invasion','SM4'],['forbidden light','SM6'],
+        ['celestial storm','SM7'],['lost thunder','SM8'],
+        ['ruby sapphire','EX1'],['delta species','EX11'],
+        ['phantom forces','XY4'],['flashfire','XY2'],['furious fists','XY3'],
+        ['roaring skies','XY6'],['ancient origins','XY7'],['steam siege','XY11'],
+        ['fates collide','XY10'],
       ]
       let pkmSetStrip = null
       if (!detectedSetCode) {
@@ -317,7 +331,7 @@ async function searchCatalog(query, game) {
     }
 
     // Sort: exact name prefix matches first, then rarity priority as tiebreaker
-    const RARITY_PRIORITY = { 'SCR': 0, 'SCR*': 1, 'SCR**': 2, 'SR': 3, 'SR*': 4, 'SPR': 5, 'SEC': 6, 'SSR': 7, 'SAR': 8, 'R': 9, 'UC': 10, 'C': 11, 'L': 12, 'ST': 13 }
+    const RARITY_PRIORITY = { 'SCR': 0, 'SCR*': 1, 'SCR**': 2, 'SR': 3, 'SR*': 4, 'SPR': 5, 'SEC': 6, 'SSR': 7, 'SAR': 8, 'R': 9, 'UC': 10, 'C': 11, 'L': 12, 'ST': 13, 'CR': 7, 'EX': 8, 'GFR': 2, 'IVR': 4, 'DAR': 4, 'DBR': 1, 'SGR': 1, 'GDR': 2, 'SLR': 3, 'RLR': 5, 'FR': 6, 'PR': 14 }
     const byRarity = (a, b) => (RARITY_PRIORITY[(a.rarity || '').toUpperCase()] ?? 99) - (RARITY_PRIORITY[(b.rarity || '').toUpperCase()] ?? 99)
     const allResults = [...byNumber.values()]
     const stripPunct = s => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
