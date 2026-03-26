@@ -1242,12 +1242,13 @@ export default async function handler(req, res) {
       }).catch(e => { console.log(`[rarity-lookup] error: ${e.message}`); return null })
     }
 
+    // Infer starred rarity from "alt art" keyword in query (added by selectAc for SR*/SCR* cards)
+    if (!requiredRarity && /\balt\s*art\b/i.test(processed)) {
+      requiredRarity = 'SR*'
+      console.log(`[rarity] inferred SR* from "alt art" keyword in query`)
+    }
+
     console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}")`)
-    // Helper: run the three parallel eBay queries for a given name.
-    // Grade filtering is applied immediately after raw results come back,
-    // before calcStats, extractComps, or image selection see any data.
-    // Rarity-tier enforcement — uses requiredRarity from normalizeRarity()
-    // Distinguishes between SR (plain) vs SR* (alt art) vs SCR vs SCR* vs SCR**
     if (requiredRarity) console.log(`[rarity] enforcing tier: ${requiredRarity}`)
 
     function filterByRarity(items) {

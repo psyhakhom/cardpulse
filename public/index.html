@@ -623,9 +623,12 @@ function selectAc(i){
   const hasCardNum=card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number);
   console.log('[selectAc] card.number:', JSON.stringify(card.number), 'hasCardNum:', hasCardNum, 'card.name:', JSON.stringify(card.name));
   if(hasCardNum){
-    // Card number available — build short query: "Name CardNum" (no rarity — sellers rarely include it)
+    // Card number available — build short query: "Name CardNum [variant keyword]"
     const shortName=(card.name||'').split(',')[0].split(' // ')[0].trim();
-    cleanSQ=(shortName+' '+card.number).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+    const rUp=(card.rarity||'').toUpperCase();
+    // Append variant keywords for starred/premium rarities so eBay finds the right version
+    const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
+    cleanSQ=(shortName+' '+card.number+variantSuffix).replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
     console.log('[selectAc] built short query:', JSON.stringify(cleanSQ), 'rarity:', JSON.stringify(card.rarity));
   }else{
     cleanSQ=(card.searchQuery||card.name||'').replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
