@@ -633,6 +633,8 @@ function selectAc(i){
     console.log('[selectAc] yugioh query:',JSON.stringify(cleanSQ));
   }else if(card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number)){
     // DBS, One Piece, etc: sellers use card numbers (FB07-079, OP05-119, BT22-049)
+    // Strip promo/parallel suffixes — catalog identifiers, not eBay search terms
+    card.number=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'');
     const rUp=(card.rarity||'').toUpperCase();
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
     cleanSQ=(shortName+' '+card.number+variantSuffix).trim();
