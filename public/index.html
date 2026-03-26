@@ -622,7 +622,7 @@ function selectAc(i){
   // Build eBay query per game — use the identifier sellers actually put in titles
   let cleanSQ;
   const g=card.game||'';
-  const shortName=(card.name||'').split(',')[0].split(' // ')[0].trim();
+  const shortName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').split(',')[0].split(' // ')[0].trim();
   if(g==='mtg'||g==='pokemon'||g==='lorcana'){
     // Set-name games: sellers use "Card Name Set Name" not collector numbers
     cleanSQ=(shortName+(card.set?' '+card.set:'')).trim();
@@ -634,7 +634,7 @@ function selectAc(i){
   }else if(card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number)){
     // DBS, One Piece, etc: sellers use card numbers (FB07-079, OP05-119, BT22-049)
     // Strip promo/parallel suffixes — catalog identifiers, not eBay search terms
-    card.number=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'');
+    card.number=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
     const rUp=(card.rarity||'').toUpperCase();
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
     cleanSQ=(shortName+' '+card.number+variantSuffix).trim();
