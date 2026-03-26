@@ -575,7 +575,8 @@ function renderAc(d,q){
       return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(directText)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
     }
     const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='#1a1a2e';this.style.display='none';this.parentElement.querySelector('.ac-ph')&&(this.parentElement.querySelector('.ac-ph').style.display='flex')"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:`<div class="ac-img" style="background:#1a1a2e;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;font-family:monospace;text-align:center;line-height:1.2">${escH(c.set||c.game||'')}</div>`;
-    const subParts=[c.isSet?null:c.set,c.number].filter(Boolean).join(' \u00b7 ');
+    const showSet=!c.isSet&&c.set&&c.number&&!c.number.toUpperCase().startsWith(c.set.toUpperCase())?c.set:null;
+    const subParts=[showSet,c.number].filter(Boolean).join(' \u00b7 ');
     const rPill=c.rarity?rarityPill(c.rarity):'';
     const nameStyle=c.isSet?' style="color:var(--a2)"':'';
     const ebayBadge=c.viaEbay?'<span style="font-family:monospace;font-size:8px;color:var(--mu);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px;flex-shrink:0">via eBay</span>':'';
