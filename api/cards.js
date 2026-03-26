@@ -236,9 +236,10 @@ async function searchCatalog(query, game) {
     const RARITY_PRIORITY = { 'SCR': 0, 'SCR*': 1, 'SCR**': 2, 'SR': 3, 'SR*': 4, 'SPR': 5, 'SEC': 6, 'SSR': 7, 'SAR': 8, 'R': 9, 'UC': 10, 'C': 11, 'L': 12, 'ST': 13 }
     const byRarity = (a, b) => (RARITY_PRIORITY[(a.rarity || '').toUpperCase()] ?? 99) - (RARITY_PRIORITY[(b.rarity || '').toUpperCase()] ?? 99)
     const allResults = [...byNumber.values()]
-    const qLower = query.toLowerCase().replace(/[,:']/g, '').replace(/\s+/g, ' ').trim()
-    const nameMatch = allResults.filter(r => (r.card_name || '').toLowerCase().replace(/[,:']/g, '').replace(/\s+/g, ' ').startsWith(qLower))
-    const nameRest = allResults.filter(r => !(r.card_name || '').toLowerCase().replace(/[,:']/g, '').replace(/\s+/g, ' ').startsWith(qLower))
+    const stripPunct = s => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+    const qLower = stripPunct(query)
+    const nameMatch = allResults.filter(r => stripPunct(r.card_name || '').startsWith(qLower))
+    const nameRest = allResults.filter(r => !stripPunct(r.card_name || '').startsWith(qLower))
     let deduped = [...nameMatch.sort(byRarity), ...nameRest.sort(byRarity)].slice(0, 8)
 
     // If user searched for a base card number (no -p suffix) but we only found
