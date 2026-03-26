@@ -576,7 +576,7 @@ function renderAc(d,q){
       c.searchQuery=currentInput||q;
       return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(directText)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
     }
-    const imgUrl=proxyImg(c.imageUrl);
+    const imgUrl=c.imageUrl;
     const img=imgUrl?`<img class="ac-img" src="${escH(imgUrl)}" loading="lazy" onerror="this.style.background='#1a1a2e';this.style.display='none';this.parentElement.querySelector('.ac-ph')&&(this.parentElement.querySelector('.ac-ph').style.display='flex')"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:`<div class="ac-img" style="background:#1a1a2e;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;font-family:monospace;text-align:center;line-height:1.2">${escH(c.set||c.game||'')}</div>`;
     const showSet=!c.isSet&&c.set&&c.number&&!c.number.toUpperCase().startsWith(c.set.toUpperCase())?c.set:null;
     const subParts=[showSet,c.number].filter(Boolean).join(' \u00b7 ');
@@ -660,7 +660,7 @@ function selectAc(i){
     number:card.number,
     rarity:card.rarity,
     game:card.game,
-    imageUrl:proxyImg(card.largeImageUrl||card.imageUrl||null),
+    imageUrl:card.largeImageUrl||card.imageUrl||null,
     searchQuery:cleanSQ,
   };
   console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery));
@@ -739,7 +739,7 @@ async function search(q, elId) {
         return;
       }
       if (data.type === 'no-data' || (data.error && res.status === 404)) {
-        const cardImg=sc?.imageUrl?`<img src="${escH(proxyImg(sc.imageUrl))}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
+        const cardImg=sc?.imageUrl?`<img src="${escH(sc.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
         const cardName=sc?.name||q;
         const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${escH(data.searchTip)}</p>`:'';
         el.innerHTML = `<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p><p style="margin-top:8px;font-size:12px;color:var(--mu);line-height:1.6">This card may be too new or have limited market activity.<br>Try searching without the parallel variant.</p>${tip}</div>`;
@@ -858,7 +858,7 @@ function normalizeApiResponse(data, q, sc) {
     jx,
     showFX:  false,
     l:       L,
-    img:     proxyImg(sc?.imageUrl || data.imageUrl) || getImg(q),
+    img:     sc?.imageUrl || data.imageUrl || getImg(q),
     comps,
     searchTip: data.searchTip || null,
     multipleProducts: data.multipleProducts || false,
@@ -946,7 +946,7 @@ function renderDisambiguation(el, data) {
     return '#888';
   };
   const rows = data.variants.map((v) => {
-    const img = v.imageUrl ? `<img class="ac-img" src="${escH(proxyImg(v.imageUrl))}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
+    const img = v.imageUrl ? `<img class="ac-img" src="${escH(v.imageUrl)}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
     const badge = v.rarity ? rarityPill(v.rarity) : '';
     const price = v.estimatedPrice > 0 ? `<span style="color:var(--ac);font-family:var(--font-d);font-weight:400;font-size:20px;white-space:nowrap;letter-spacing:.5px">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
     const comps = v.compCount ? `<span style="font-size:11px;color:#666">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
@@ -1018,7 +1018,6 @@ function disambigPick(cardNum, origQuery) {
 
 function dot(cls){return'<span class="dot '+cls+'"></span>';}
 function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function proxyImg(url){if(!url)return null;if(url.includes('pokemontcg.io'))return'/api/image-proxy?url='+encodeURIComponent(url);return url;}
 
 function renderResult(el,q,r){
   hideAc(); // ensure dropdown is closed when results render

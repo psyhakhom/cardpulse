@@ -400,10 +400,6 @@ async function searchCatalog(query, game) {
       if (r.game === 'onepiece' && imageUrl) {
         imageUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
       }
-      // Proxy Pokemon images from pokemontcg.io to avoid hotlink blocking
-      if (imageUrl && imageUrl.includes('pokemontcg.io')) {
-        imageUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
-      }
       // Resolve Pokemon set codes to human-readable names for eBay queries
       const setDisplay = r.game === 'pokemon' && r.set_code ? (PKM_SET_NAMES[r.set_code.toUpperCase()] || r.set_code) : (r.set_code || '')
       return {
@@ -584,12 +580,6 @@ function isJpExclusiveSet(setName) {
   return JP_EXCLUSIVE_SETS.some((jp) => sl.includes(jp))
 }
 
-function proxyPkmImg(url) {
-  if (!url) return null
-  if (url.includes('pokemontcg.io')) return `/api/image-proxy?url=${encodeURIComponent(url)}`
-  return url
-}
-
 function mapPokemonCard(card) {
   const jpExclusive = isJpExclusiveSet(card.set?.name)
   return {
@@ -599,8 +589,8 @@ function mapPokemonCard(card) {
     number: card.number || '',
     rarity: card.rarity || '',
     game: 'pokemon',
-    imageUrl: proxyPkmImg(card.images?.small),
-    largeImageUrl: proxyPkmImg(card.images?.large),
+    imageUrl: card.images?.small || null,
+    largeImageUrl: card.images?.large || null,
     searchQuery: buildPokemonQuery(card),
     jpExclusive,
   }
