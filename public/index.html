@@ -965,11 +965,22 @@ function renderResult(el,q,r){
   const rad=17,circ=2*Math.PI*rad,dash=(conf/100)*circ;
   const cqb=r.correctedQuery?`<div class="cqb">Showing results for: <em>${escH(r.correctedQuery)}</em></div>`:'';
   const mpb=r.multipleProducts&&r.clusters?`<div class="mpb"><div class="mpb-title">⚠ Multiple card types found</div>${r.clusters.map(c=>`<div class="mpc"><span>${escH(c.label)} <span style="color:var(--mu)">(${c.count} sold)</span></span><span style="font-weight:700">${fP(c.avg)} avg</span></div>`).join('')}<div style="margin-top:4px;color:rgba(255,150,50,.7)">Add the set name or card number to narrow results.</div></div>`:'';
-  const _isSport=r.ct==='sr'||r.ct==='sg';
-  const spread=r.lo>0&&(r.hi/r.lo)>5?`<div class="spb">${_isSport
-    ?`⚠ Wide price spread detected. Sports cards vary greatly by year, set, and parallel. For accurate pricing, try adding:<br>• The year: <strong>'mahomes 2017'</strong><br>• The set: <strong>'prizm'</strong>, <strong>'bowman'</strong>, <strong>'topps'</strong><br>• The card number: <strong>'#269'</strong><br>• The parallel: <strong>'base'</strong>, <strong>'silver'</strong>, <strong>'gold'</strong><br>Example: <strong>'mahomes 2017 prizm 269'</strong>`
-    :`⚠ Wide price spread detected. For accurate pricing, try adding:<br>• The set code: <strong>'BT03'</strong>, <strong>'FB02'</strong>, <strong>'OP01'</strong><br>• The card number: <strong>'BT3-033'</strong>, <strong>'FB02-139'</strong><br>• The rarity: <strong>'SCR'</strong>, <strong>'SPR'</strong>, <strong>'SR*'</strong><br>• The variant: <strong>'alt art'</strong>, <strong>'holo'</strong>, <strong>'1st edition'</strong><br>Example: <strong>'vegito fb02-139 scr'</strong> or <strong>'charizard base set holo'</strong>`
-  }</div>`:'';
+  const _spreadTips={
+    sr:`• The year: <strong>'mahomes 2017'</strong><br>• The set: <strong>'prizm'</strong>, <strong>'bowman'</strong>, <strong>'topps'</strong><br>• The card number: <strong>'#269'</strong><br>• The parallel: <strong>'base'</strong>, <strong>'silver'</strong>, <strong>'gold'</strong><br>Example: <strong>'mahomes 2017 prizm 269'</strong>`,
+    sg:`• The year: <strong>'mahomes 2017'</strong><br>• The set: <strong>'prizm'</strong>, <strong>'bowman'</strong>, <strong>'topps'</strong><br>• The card number: <strong>'#269'</strong><br>• The parallel: <strong>'base'</strong>, <strong>'silver'</strong>, <strong>'gold'</strong><br>Example: <strong>'mahomes 2017 prizm 269'</strong>`,
+    dbs:`• The set code: <strong>'BT27'</strong>, <strong>'FB07'</strong><br>• The card number: <strong>'BT3-033'</strong>, <strong>'FB07-079'</strong><br>• The rarity: <strong>'SCR'</strong>, <strong>'SPR'</strong>, <strong>'SR*'</strong><br>Example: <strong>'vegito fb02-139 scr'</strong> or <strong>'golden frieza fb07-079 sr*'</strong>`,
+    tcg:`• The set name: <strong>'Base Set'</strong>, <strong>'Scarlet & Violet'</strong><br>• The collector number: <strong>'004/102'</strong>, <strong>'6/102'</strong><br>• The condition: <strong>'1st edition'</strong>, <strong>'shadowless'</strong><br>Example: <strong>'charizard base set holo'</strong> or <strong>'pikachu 58/102 1st edition'</strong>`,
+  };
+  const _spreadTipsMtg=`• The set name: <strong>'Alpha'</strong>, <strong>'Beta'</strong>, <strong>'Unlimited'</strong><br>• The edition: <strong>'1st edition'</strong>, <strong>'foil'</strong><br>Example: <strong>'black lotus alpha'</strong> or <strong>'lightning bolt beta foil'</strong>`;
+  const _spreadGame=r.ct||'tcg';
+  // Detect specific sub-games from query for more relevant tips
+  const _ql=(q||'').toLowerCase();
+  let _spreadText=_spreadTips[_spreadGame]||_spreadTips.tcg;
+  if(['mtg','magic'].some(k=>_ql.includes(k)))_spreadText=_spreadTipsMtg;
+  else if(['lorcana'].some(k=>_ql.includes(k)))_spreadText=`• The set name: <strong>'The First Chapter'</strong>, <strong>'Rise of the Floodborn'</strong><br>• The rarity: <strong>'enchanted'</strong>, <strong>'legendary'</strong><br>Example: <strong>'ariel the first chapter enchanted'</strong>`;
+  else if(['yugioh','yu-gi-oh','blue-eyes','dark magician','exodia'].some(k=>_ql.includes(k)))_spreadText=`• The set name: <strong>'LOB'</strong>, <strong>'Metal Raiders'</strong><br>• The edition: <strong>'1st edition'</strong>, <strong>'unlimited'</strong><br>Example: <strong>'blue-eyes white dragon LOB 1st edition'</strong>`;
+  else if(['one piece','onepiece','luffy','zoro','nami','op0','op1'].some(k=>_ql.includes(k)))_spreadText=`• The card number: <strong>'OP05-119'</strong>, <strong>'OP01-001'</strong><br>• The language: <strong>'english'</strong>, <strong>'japanese'</strong><br>Example: <strong>'luffy op05-119'</strong> or <strong>'nami op01 japanese'</strong>`;
+  const spread=r.lo>0&&(r.hi/r.lo)>5?`<div class="spb">⚠ Wide price spread detected. For accurate pricing, try adding:<br>${_spreadText}</div>`:'';
   const _tipQuery=document.getElementById('si')?.value||q;
   const _hasCardNum=/\b[A-Z]{1,4}\d+-\d+/i.test(_tipQuery);
   const tip=r.searchTip&&!(conf>=60||r.comps.length>=5||_hasCardNum)?`<div class="stb">💡 ${escH(r.searchTip)}</div>`:'';
