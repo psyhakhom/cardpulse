@@ -222,6 +222,24 @@ Set in Vercel dashboard → Settings → Environment Variables:
 **GitHub**: https://github.com/psyhakhom/cardpulse
 **Deployed**: Vercel — auto-deploys on git push to master.
 
+## Price History (post-launch milestone)
+
+`price_history` table logs every search to Supabase (fire-and-forget). Data is accumulating now but not yet used in pricing results.
+
+**Thresholds before enabling historical prices in results:**
+- Per card: 5+ logged prices before showing "CardPulse historical avg"
+- Time window: 30+ days of data before trends are reliable
+- Overall traffic: 200+ DAU before dataset is dense enough for most cards
+
+**Implementation plan (when ready):**
+- Query `price_history` for card name + game, calculate 30d and 90d averages
+- Blend as a 5th source alongside the 4 eBay queries
+- Weight: start at 10-15%, increase as data volume grows
+- Powers sparkline charts on Pro tier ($6/month)
+- Popular cards (Charizard, Black Lotus, key DBS SCRs) will reach threshold within 2-3 weeks of launch at 200+ DAU
+
+**Do NOT implement until post-launch with sufficient data volume.**
+
 ## Next Tasks
 
 1. Add ZXing barcode scanning to replace mock scan loop
