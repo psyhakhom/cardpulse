@@ -144,6 +144,29 @@ async function searchCatalog(query, game) {
         }
       }
 
+      // ILIKE prefix fallback: catches truncated words ("powe" → "power")
+      if (rows.length === 0 && cleanedQuery.length >= 5) {
+        console.log(`[cards:db] fuzzy returned 0, trying ILIKE fallback for "${cleanedQuery}"`)
+        const ilikeEnc = encodeURIComponent(`%${cleanedQuery}%`)
+        let ilikeUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query&card_name=ilike.${ilikeEnc}&order=times_searched.desc&limit=16`
+        if (game) ilikeUrl += `&game=eq.${game}`
+        try {
+          const ilikeRes = await fetch(ilikeUrl, {
+            headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+            signal: AbortSignal.timeout(3000),
+          })
+          if (ilikeRes.ok) {
+            const ilikeRows = await ilikeRes.json()
+            if (ilikeRows.length > 0) {
+              console.log(`[cards:db] ILIKE fallback found ${ilikeRows.length} results`)
+              rows = ilikeRows
+            }
+          }
+        } catch (e) {
+          console.log(`[cards:db] ILIKE fallback failed: ${e.message}`)
+        }
+      }
+
       // Post-filter by set code if detected
       if (detectedSetCode && rows.length > 0) {
         const before = rows.length
