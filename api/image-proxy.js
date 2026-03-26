@@ -2,6 +2,7 @@ const ALLOWED_HOSTS = [
   'optcgapi.com',
   'en.onepiece-cardgame.com',
   'www.dbs-cardgame.com',
+  'images.pokemontcg.io',
 ]
 
 export default async function handler(request) {

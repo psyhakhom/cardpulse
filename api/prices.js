@@ -5,6 +5,38 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY
 const _sbConfigured = !!(SUPABASE_URL && SUPABASE_KEY)
 console.log(`[supabase] configured: ${_sbConfigured}, URL: ${SUPABASE_URL ? 'set' : 'missing'}, KEY: ${SUPABASE_KEY ? 'set' : 'missing'}`)
 
+// Cache for Pokemon set total card counts (set_code → count)
+const _pkmSetCountCache = {}
+
+async function getPkmSetCount(setCode) {
+  if (_pkmSetCountCache[setCode] !== undefined) return _pkmSetCountCache[setCode]
+  if (!_sbConfigured) return null
+  try {
+    // Use limit=0 + Prefer:count=exact to get only the count via content-range header
+    const url = `${SUPABASE_URL}/rest/v1/card_catalog?select=card_number&game=eq.pokemon&set_code=eq.${encodeURIComponent(setCode)}&limit=0`
+    console.log(`[pkm-set-count] fetching count for set_code=${setCode}`)
+    const r = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${SUPABASE_KEY}`,
+        Prefer: 'count=exact',
+        Range: '0-0',
+      },
+      signal: AbortSignal.timeout(3000),
+    })
+    // PostgREST returns 206 for Range requests or 200 — both are fine
+    if (!r.ok && r.status !== 206) { console.log(`[pkm-set-count] fetch failed: ${r.status}`); return null }
+    const contentRange = r.headers.get('content-range')
+    console.log(`[pkm-set-count] content-range header: ${contentRange}`)
+    const count = parseInt(contentRange?.split('/')?.[1] || '0', 10)
+    if (count > 0) {
+      _pkmSetCountCache[setCode] = count
+      console.log(`[pkm-set-count] ${setCode} → ${count} cards (cached)`)
+    }
+    return count || null
+  } catch (e) { console.log(`[pkm-set-count] error: ${e.message}`); return null }
+}
+
 function sbFetch(table, method, body, options = {}) {
   if (!_sbConfigured) return Promise.resolve({ error: 'not configured' })
   const headers = {
@@ -286,7 +318,7 @@ function filterItems(items, grade, searchQuery, lang) {
 
   // Detect sports card queries — skip TCG-specific filters (set codes, holo, foil etc)
   const SPORTS_RE = /\b(rookie|rc\b|refractor|prizm|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|score|nfl|nba|mlb|nhl|quarterback|qb|mvp|draft\s*pick)\b/i
-  const TCG_RE = /\b(pokemon|pokémon|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon)\b/i
+  const TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|deoxys|rayquaza|jirachi|gardevoir|blaziken|sceptile|swampert|flygon|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|holon\s*phantoms|holon|delta\s*species|legend\s*maker|unseen\s*forces|hidden\s*legends|team\s*rocket\s*returns|firered\s*leafgreen|team\s*magma|team\s*aqua|sandstorm|expedition|aquapolis|skyridge|neo\s*genesis|neo\s*discovery|neo\s*revelation|neo\s*destiny|gym\s*heroes|gym\s*challenge|jungle|fossil|base\s*set|rare\s*holo|rare\s*ultra|vmax|vstar|gx\s*card)\b/i
   const isSportsQuery = SPORTS_RE.test(ql) && !TCG_RE.test(ql)
   if (isSportsQuery) console.log(`[filter] sports card query detected`)
 
@@ -635,7 +667,8 @@ function calcTrend(recentAvg, allAvg) {
 const POKEMON_KEYWORDS = ['pokemon', 'pokémon', 'charizard', 'pikachu', 'mewtwo', 'eevee',
   'blastoise', 'venusaur', 'gengar', 'snorlax', 'gyarados', 'dragonite', 'meowth',
   'lugia', 'ho-oh', 'rayquaza', 'mew', 'umbreon', 'espeon', 'sylveon', 'gardevoir',
-  'lucario', 'greninja', 'alakazam', 'bulbasaur', 'squirtle']
+  'lucario', 'greninja', 'alakazam', 'bulbasaur', 'squirtle', 'deoxys', 'jirachi',
+  'blaziken', 'sceptile', 'swampert', 'flygon']
 
 const MTG_KEYWORDS = ['mtg', 'magic the gathering', 'magic: the gathering', 'planeswalker']
 
@@ -1273,6 +1306,31 @@ export default async function handler(req, res) {
 
     console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}")`)
     if (requiredRarity) console.log(`[rarity] enforcing tier: ${requiredRarity}`)
+
+    // Pokemon internal card number → collector number conversion
+    // eBay sellers use "5/110" format, not "EX13-5" (pokemontcg.io internal codes)
+    const PKM_SET_PREFIXES = /^(EX|BASE|ECARD|SM|SV|SWSH|XY|BW|DP|NEO|GYM|POP|NP|RUM)\d*$/i
+    const pkmCardNumMatch = processed.match(/\b([A-Z]{2,6}\d+)-(\d+)\b/i)
+    console.log(`[pkm-convert] processed="${processed}" match=${JSON.stringify(pkmCardNumMatch)}`)
+    if (pkmCardNumMatch) {
+      const pkmSetCode = pkmCardNumMatch[1].toUpperCase()
+      const collectorNum = pkmCardNumMatch[2]
+      console.log(`[pkm-convert] setCode=${pkmSetCode} num=${collectorNum} isPkm=${PKM_SET_PREFIXES.test(pkmSetCode)}`)
+      // Only convert for Pokemon-style set codes — skip DBS/OP codes (FB07, BT22, OP05, ST01, etc.)
+      if (PKM_SET_PREFIXES.test(pkmSetCode)) {
+        const totalCount = await getPkmSetCount(pkmSetCode)
+        console.log(`[pkm-convert] totalCount=${totalCount}`)
+        if (totalCount) {
+          const ebayNum = `${collectorNum}/${totalCount}`
+          processed = processed.replace(pkmCardNumMatch[0], ebayNum)
+          console.log(`[pkm-convert] converted ${pkmCardNumMatch[0]} → ${ebayNum}, final="${processed}"`)
+        } else {
+          // Set count unavailable — just use bare collector number
+          processed = processed.replace(pkmCardNumMatch[0], collectorNum)
+          console.log(`[pkm-convert] fallback stripped prefix: ${pkmCardNumMatch[0]} → ${collectorNum}, final="${processed}"`)
+        }
+      }
+    }
 
     function filterByRarity(items) {
       if (!requiredRarity || !items?.length) {

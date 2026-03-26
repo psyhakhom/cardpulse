@@ -106,6 +106,7 @@ async function searchCatalog(query, game) {
         'gokou': 'goku', 'picolo': 'piccolo', 'piccalo': 'piccolo',
         'charizrd': 'charizard', 'charazard': 'charizard',
         'pikchu': 'pikachu', 'mewtow': 'mewtwo',
+        'delta': 'δ',
       }
       // Extract set code from query (FB07, BT01, OP01, ST01, SV3, etc.) for post-filtering
       const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|OP|SV|SM|XY|SS|SW|BS|EX|D-BT|SWSH)\d{1,3}\b/i
@@ -136,7 +137,14 @@ async function searchCatalog(query, game) {
         ['rebel clash','SWSH2'],['dragon majesty','SM75'],
         ['crimson invasion','SM4'],['forbidden light','SM6'],
         ['celestial storm','SM7'],['lost thunder','SM8'],
-        ['ruby sapphire','EX1'],['delta species','EX11'],
+        ['ruby sapphire','EX1'],
+        ['holon phantoms','EX13'],['delta species','EX13'],
+        ['legend maker','EX12'],['unseen forces','EX11'],
+        ['emerald','EX10'],['hidden legends','EX9'],
+        ['deoxys','EX8'],['team rocket returns','EX7'],
+        ['firered leafgreen','EX6'],
+        ['team magma vs team aqua','EX5'],['magma aqua','EX5'],
+        ['sandstorm','EX4'],['dragon','EX3'],
         ['phantom forces','XY4'],['flashfire','XY2'],['furious fists','XY3'],
         ['roaring skies','XY6'],['ancient origins','XY7'],['steam siege','XY11'],
         ['fates collide','XY10'],
@@ -160,10 +168,14 @@ async function searchCatalog(query, game) {
       if (pkmSetStrip) {
         cleanedQuery = cleanedQuery.toLowerCase().replace(pkmSetStrip, '').replace(/\s+/g, ' ').trim()
       }
+      // Strip standalone "ex" when an EX-era set is detected (it's the set prefix, not a card suffix)
+      if (detectedSetCode && /^EX\d*$/.test(detectedSetCode)) {
+        cleanedQuery = cleanedQuery.replace(/\bex\b/gi, '').replace(/\s+/g, ' ').trim()
+      }
 
       if (detectedSetCode) console.log(`[cards:db] set code detected: ${detectedSetCode}, searching name: "${cleanedQuery}"`)
 
-      // Apply alias corrections for common misspellings
+      // Apply alias corrections for common misspellings (includes delta → δ)
       const corrected = cleanedQuery.toLowerCase().split(' ').map(w => ALIASES[w] || w).join(' ')
       if (corrected !== cleanedQuery.toLowerCase()) {
         console.log(`[cards:db] alias corrected: "${cleanedQuery}" → "${corrected}"`)
@@ -193,6 +205,26 @@ async function searchCatalog(query, game) {
       }
       rows = await res.json()
       console.log(`[cards:db] RPC returned ${rows.length} rows, first: ${rows[0]?.card_name || 'none'}`)
+      if (rows.length > 0) console.log(`[cards:db] RPC set_codes: ${[...new Set(rows.map(r => r.set_code))].join(', ')}`)
+
+      // Delta species retry: collectors type "ex" but catalog uses "δ"
+      if (rows.length === 0 && /\bex\b/i.test(cleanedQuery)) {
+        const deltaQuery = cleanedQuery.replace(/\bex\b/gi, 'δ').replace(/\s+/g, ' ').trim()
+        console.log(`[cards:db] retrying with delta symbol: "${deltaQuery}"`)
+        const deltaRes = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: deltaQuery, game_filter: game || null, result_limit: 16 }),
+          signal: AbortSignal.timeout(3000),
+        })
+        if (deltaRes.ok) {
+          const deltaRows = await deltaRes.json()
+          if (deltaRows.length > 0) {
+            console.log(`[cards:db] delta retry found ${deltaRows.length} results`)
+            rows = deltaRows
+          }
+        }
+      }
 
       // Classic alias retry: if fuzzy search returned 0 results, check name aliases
       if (rows.length === 0) {
@@ -437,8 +469,15 @@ const POKEMON_KW = [
   'venusaur', 'gengar', 'snorlax', 'gyarados', 'meowth', 'lugia', 'ho-oh',
   'rayquaza', 'mew', 'umbreon', 'espeon', 'sylveon', 'gardevoir', 'lucario',
   'greninja', 'alakazam', 'bulbasaur', 'squirtle', 'jigglypuff', 'dragonite',
+  'deoxys', 'jirachi', 'blaziken', 'sceptile', 'swampert', 'flygon',
   'ash', 'misty', 'brock', 'team rocket', 'jessie', 'james', 'giovanni',
   'gary', 'professor oak', 'nurse joy', 'gym leader', 'elite four', 'trainer',
+  // EX-era set names — detect as Pokemon when no other game keyword present
+  'holon phantoms', 'holon', 'delta species', 'legend maker', 'unseen forces',
+  'hidden legends', 'team rocket returns', 'firered leafgreen',
+  'team magma', 'team aqua', 'sandstorm', 'aquapolis', 'skyridge',
+  'neo genesis', 'neo discovery', 'neo revelation', 'neo destiny',
+  'gym heroes', 'gym challenge',
 ]
 const MTG_KW = ['mtg', 'magic the gathering', 'magic:', 'planeswalker', 'mana ']
 const YGO_KW = [
@@ -1106,6 +1145,7 @@ export default async function handler(req, res) {
 
   // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
   const catalogResults = await searchCatalog(query, game)
+  console.log(`[catalog] catalogResults: ${catalogResults.length}`, catalogResults.map(r => `${r.name} (${r.number})`))
   const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)-?\d+(?:-\d+)?|\bE-?\d+/i.test(query)
 
   if (catalogResults.length >= 5) {
@@ -1126,36 +1166,36 @@ export default async function handler(req, res) {
     return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
   }
 
-  // ── Step 2: 1-4 catalog results — merge with external API results ──────
+  // ── Step 2: 1-4 catalog results — save them, then fill remaining slots ──
   if (catalogResults.length >= 1) {
     console.log(`[cards] catalog has ${catalogResults.length} partial results, merging with external API`)
-    cards = [...catalogResults]
     incrementSearchCount(catalogResults)
   }
 
   // ── Step 3: Run external APIs (catalog had <5 results or 0 for name search) ─
+  let externalCards = []
   if (game === 'pokemon') {
     try {
       const result = await searchPokemon(query)
-      cards = result.cards || []
+      externalCards = result.cards || []
       jpExclusive = result.jpExclusive || false
     } catch (err) { console.error('[cards] pokemon error:', err.message) }
-    if (cards.length) attribution = 'pokemontcg.io'
+    if (externalCards.length) attribution = 'pokemontcg.io'
   } else if (game === 'mtg') {
-    try { cards = await searchMtg(query) } catch (err) { console.error('[cards] mtg error:', err.message) }
-    if (cards.length) attribution = 'Scryfall'
+    try { externalCards = await searchMtg(query) } catch (err) { console.error('[cards] mtg error:', err.message) }
+    if (externalCards.length) attribution = 'Scryfall'
   } else if (game === 'yugioh') {
-    try { cards = await searchYugioh(query) } catch (err) { console.error('[cards] yugioh error:', err.message) }
-    if (cards.length) attribution = 'YGOProDeck'
+    try { externalCards = await searchYugioh(query) } catch (err) { console.error('[cards] yugioh error:', err.message) }
+    if (externalCards.length) attribution = 'YGOProDeck'
   } else if (game === 'onepiece') {
-    try { cards = await searchOnePiece(query) } catch (err) { console.error('[cards] onepiece error:', err.message) }
-    if (cards.length) attribution = 'One Piece Card Game'
+    try { externalCards = await searchOnePiece(query) } catch (err) { console.error('[cards] onepiece error:', err.message) }
+    if (externalCards.length) attribution = 'One Piece Card Game'
   } else if (game === 'dbs') {
-    try { cards = await searchDbs(query) } catch (err) { console.error('[cards] dbs error:', err.message) }
-    if (cards.length) attribution = 'DBS Card Game'
+    try { externalCards = await searchDbs(query) } catch (err) { console.error('[cards] dbs error:', err.message) }
+    if (externalCards.length) attribution = 'DBS Card Game'
   } else if (game === 'lorcana') {
-    try { cards = await searchLorcana(query) } catch (err) { console.error('[cards] lorcana error:', err.message) }
-    if (cards.length) attribution = 'Lorcana'
+    try { externalCards = await searchLorcana(query) } catch (err) { console.error('[cards] lorcana error:', err.message) }
+    if (externalCards.length) attribution = 'Lorcana'
   } else {
     // No game detected — search all databases in parallel
     console.log('[cards] no game detected, searching all databases')
@@ -1164,34 +1204,45 @@ export default async function handler(req, res) {
     ])
     if (pkm.status === 'fulfilled') {
       const result = pkm.value
-      cards.push(...(result.cards || []))
+      externalCards.push(...(result.cards || []))
       if (result.jpExclusive) jpExclusive = true
     }
-    if (mtg.status === 'fulfilled') cards.push(...mtg.value)
-    if (ygo.status === 'fulfilled') cards.push(...ygo.value)
-    if (lor.status === 'fulfilled') cards.push(...lor.value)
+    if (mtg.status === 'fulfilled') externalCards.push(...mtg.value)
+    if (ygo.status === 'fulfilled') externalCards.push(...ygo.value)
+    if (lor.status === 'fulfilled') externalCards.push(...lor.value)
 
-    if (cards.length) attribution = 'Multiple sources'
-    console.log(`[cards] parallel search found ${cards.length} total results`)
+    if (externalCards.length) attribution = 'Multiple sources'
+    console.log(`[cards] parallel search found ${externalCards.length} total results`)
   }
 
-  // General eBay fallback — when official databases return nothing and query is 2+ words
-  if (!cards.length && query.split(/\s+/).length >= 2) {
-    console.log('[cards] no catalog results, trying eBay fallback')
+  console.log(`[external] externalCards: ${externalCards.length}`)
+
+  // General eBay fallback — when no catalog AND no external API results
+  if (!catalogResults.length && !externalCards.length && query.split(/\s+/).length >= 2) {
+    console.log('[cards] no catalog or external results, trying eBay fallback')
     try {
-      cards = await searchEbayFallback(query)
-      if (cards.length) attribution = 'eBay listings'
+      externalCards = await searchEbayFallback(query)
+      if (externalCards.length) attribution = 'eBay listings'
     } catch (err) { console.error('[cards] eBay fallback error:', err.message) }
   }
 
-  // Deduplicate merged results (catalog + external API) by card number or name
-  const seenNames = new Set()
-  const finalCards = cards.filter((c) => {
+  // Merge: catalog results FIRST, then external fills remaining slots up to 8
+  // Catalog always takes priority — external only fills gaps
+  const seenKeys = new Set()
+  const merged = []
+  // Add catalog results first
+  for (const c of catalogResults) {
     const key = (c.number || c.name || '').toLowerCase()
-    if (!key || seenNames.has(key)) return false
-    seenNames.add(key)
-    return true
-  })
+    if (key && !seenKeys.has(key)) { seenKeys.add(key); merged.push(c) }
+  }
+  // Fill remaining slots with external results (dedup against catalog)
+  for (const c of externalCards) {
+    if (merged.length >= 8) break
+    const key = (c.number || c.name || '').toLowerCase()
+    if (key && !seenKeys.has(key)) { seenKeys.add(key); merged.push(c) }
+  }
+  if (catalogResults.length > 0) attribution = 'CardPulse catalog'
+  console.log(`[cards] final: ${catalogResults.length} catalog + ${merged.length - catalogResults.length} external = ${merged.length} total`)
 
-  return res.status(200).json({ cards: finalCards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
+  return res.status(200).json({ cards: merged.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
 }

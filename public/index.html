@@ -574,7 +574,8 @@ function renderAc(d,q){
       c.searchQuery=currentInput||q;
       return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})"><div class="ac-img" style="display:flex;align-items:center;justify-content:center">${GAME_ICONS.direct}</div><div style="min-width:0;flex:1"><div class="ac-name" style="color:var(--mu);font-size:12px">${escH(directText)}</div></div><span class="ac-badge dir">${GAME_ICONS.direct}</span></div>`;
     }
-    const img=c.imageUrl?`<img class="ac-img" src="${escH(c.imageUrl)}" loading="lazy" onerror="this.style.background='#1a1a2e';this.style.display='none';this.parentElement.querySelector('.ac-ph')&&(this.parentElement.querySelector('.ac-ph').style.display='flex')"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:`<div class="ac-img" style="background:#1a1a2e;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;font-family:monospace;text-align:center;line-height:1.2">${escH(c.set||c.game||'')}</div>`;
+    const imgUrl=proxyImg(c.imageUrl);
+    const img=imgUrl?`<img class="ac-img" src="${escH(imgUrl)}" loading="lazy" onerror="this.style.background='#1a1a2e';this.style.display='none';this.parentElement.querySelector('.ac-ph')&&(this.parentElement.querySelector('.ac-ph').style.display='flex')"${c.isSet?' style="object-fit:contain;padding:8px"':''}>`:`<div class="ac-img" style="background:#1a1a2e;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;font-family:monospace;text-align:center;line-height:1.2">${escH(c.set||c.game||'')}</div>`;
     const showSet=!c.isSet&&c.set&&c.number&&!c.number.toUpperCase().startsWith(c.set.toUpperCase())?c.set:null;
     const subParts=[showSet,c.number].filter(Boolean).join(' \u00b7 ');
     const rPill=c.rarity?rarityPill(c.rarity):'';
@@ -590,7 +591,7 @@ function renderAc(d,q){
   }
   // Attribution line
   if(d.attribution){
-    const attrText=d.game==='pokemon'?'Powered by pokemontcg.io':d.game==='mtg'?'Powered by Scryfall':`Powered by ${d.attribution}`;
+    const attrText=d.attribution==='CardPulse catalog'?'Powered by CardPulse catalog':d.game==='pokemon'?'Powered by pokemontcg.io':d.game==='mtg'?'Powered by Scryfall':`Powered by ${d.attribution}`;
     drop.innerHTML+=`<div class="ac-attr">${escH(attrText)}</div>`;
   }
   drop.classList.add('open');
@@ -625,7 +626,13 @@ function selectAc(i){
   const shortName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').split(',')[0].split(' // ')[0].trim();
   if(g==='mtg'||g==='pokemon'||g==='lorcana'){
     // Set-name games: sellers use "Card Name Set Name" not collector numbers
-    cleanSQ=(shortName+(card.set?' '+card.set:'')).trim();
+    // For Pokemon: strip internal set prefix from card number (EX13-5 → 5)
+    let collectorNum='';
+    if(g==='pokemon'&&card.number){
+      const m=card.number.match(/^[A-Z]{2,6}\d*-(\d+)$/i);
+      if(m)collectorNum=' '+m[1];
+    }
+    cleanSQ=(shortName+(card.set?' '+card.set:'')+collectorNum).trim();
     console.log('[selectAc]',g,'query:',JSON.stringify(cleanSQ));
   }else if(g==='yugioh'){
     // YGO: sellers rarely include set name or card number
@@ -651,7 +658,7 @@ function selectAc(i){
     number:card.number,
     rarity:card.rarity,
     game:card.game,
-    imageUrl:card.largeImageUrl||card.imageUrl||null,
+    imageUrl:proxyImg(card.largeImageUrl||card.imageUrl||null),
     searchQuery:cleanSQ,
   };
   console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery));
@@ -730,7 +737,7 @@ async function search(q, elId) {
         return;
       }
       if (data.type === 'no-data' || (data.error && res.status === 404)) {
-        const cardImg=sc?.imageUrl?`<img src="${escH(sc.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
+        const cardImg=sc?.imageUrl?`<img src="${escH(proxyImg(sc.imageUrl))}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
         const cardName=sc?.name||q;
         const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${escH(data.searchTip)}</p>`:'';
         el.innerHTML = `<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p><p style="margin-top:8px;font-size:12px;color:var(--mu);line-height:1.6">This card may be too new or have limited market activity.<br>Try searching without the parallel variant.</p>${tip}</div>`;
@@ -765,6 +772,7 @@ async function search(q, elId) {
 function normalizeApiResponse(data, q, sc) {
   function cardType(q, g) {
   const ql = q.toLowerCase();
+  console.log('[cardType] q=', JSON.stringify(q), 'ql=', JSON.stringify(ql.slice(0,80)));
   if (['dragon ball','dragonball','dbs','dbscg','fusion world',
        'd-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8',
        'bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16',
@@ -774,7 +782,9 @@ function normalizeApiResponse(data, q, sc) {
        'kamehameha','final flash','galick gun','spirit bomb','instant transmission',
        'hakai','ultra instinct','god kamehameha','destructo disc',
        'special beam cannon','makankosappo'].some(k => ql.includes(k))) return 'dbs';
-  if (['pokemon','charizard','pikachu','mtg','magic ','yugioh','yu-gi-oh',
+  if (['pokemon','pokémon','charizard','pikachu','mewtwo','eevee','bulbasaur','squirtle','gengar',
+       'deoxys','rayquaza','jirachi','gardevoir','blaziken','sceptile','swampert','flygon',
+       'mtg','magic ','yugioh','yu-gi-oh',
        'blue-eyes','blue eyes','dark magician','exodia','red-eyes','kuriboh',
        'lorcana','disney lorcana','one piece','onepiece','optcg',
        'luffy','zoro','nami','sanji','usopp','chopper','robin','franky','brook','jinbe',
@@ -788,7 +798,17 @@ function normalizeApiResponse(data, q, sc) {
        'st10','st11','st12','st13','st14','st15','st16','st17','st18',
        'eb01','eb02',
        'ash','misty','brock','team rocket','jessie','james','giovanni',
-       'gary','professor oak','nurse joy','gym leader','elite four','trainer'].some(k => ql.includes(k))) return 'tcg';
+       'gary','professor oak','nurse joy','gym leader','elite four','trainer',
+       'holon phantoms','holon','delta species','legend maker',
+       'unseen forces','hidden legends','team rocket returns',
+       'firered leafgreen','team magma','team aqua','sandstorm',
+       'expedition','aquapolis','skyridge','neo genesis',
+       'neo discovery','neo revelation','neo destiny',
+       'gym heroes','gym challenge','jungle','fossil','base set',
+       'rare holo ex','rare holo','rare ultra','v max','vmax',
+       'v star','vstar','ex card','gx card'].some(k => ql.includes(k))) return 'tcg';
+  // Collector number format (5/110) + Pokemon-associated word → Pokemon, not sports
+  if (/\b\d{1,3}\/\d{2,3}\b/.test(ql) && /\b(deoxys|holon|delta|phantoms|emerald|legend|rayquaza|jirachi|gardevoir|blaziken|sceptile|swampert|flygon|pokemon|pokémon|charizard|pikachu|mewtwo|eevee|bulbasaur|squirtle|gengar|jungle|fossil|expedition|aquapolis|skyridge)\b/i.test(ql)) return 'tcg';
   return g !== 'Raw' ? 'sg' : 'sr';
 }
   const ct = cardType(q, G);
@@ -836,7 +856,7 @@ function normalizeApiResponse(data, q, sc) {
     jx,
     showFX:  false,
     l:       L,
-    img:     sc?.imageUrl || data.imageUrl || getImg(q),
+    img:     proxyImg(sc?.imageUrl || data.imageUrl) || getImg(q),
     comps,
     searchTip: data.searchTip || null,
     multipleProducts: data.multipleProducts || false,
@@ -862,7 +882,8 @@ const FX={JPY:149.5,KRW:1320,CNY:7.24,USD:1};
 function cardType(q,g){
   const ql=q.toLowerCase();
   if(['dragon ball','dragonball','dbs','dbscg','fusion world','d-bt','bt1','bt2','bt3','bt4','bt5','bt6','bt7','bt8','bt9','bt10','bt11','bt12','bt13','bt14','bt15','bt16','bt17','bt18','bt19','bt20','fb0','fb1','fb2','fb3','sd0','sd1','sd2','gogeta','goku','vegeta','frieza',': da','wish for shenron','kamehameha','final flash','galick gun','spirit bomb','instant transmission','hakai','ultra instinct','god kamehameha','destructo disc','special beam cannon','makankosappo','gohan','piccolo','trunks','broly','beerus','whis','cell','android'].some(k=>ql.includes(k)))return'dbs';
-  if(['pokemon','charizard','pikachu','mtg','magic ','yugioh','yu-gi-oh','blue-eyes','blue eyes','dark magician','exodia','red-eyes','kuriboh','lorcana','disney lorcana','one piece','onepiece','optcg','luffy','zoro','nami','sanji','usopp','chopper','robin','franky','brook','jinbe','shanks','ace','whitebeard','blackbeard','hancock','mihawk','crocodile','doflamingo','katakuri','kaido','big mom','yamato','uta','op-01','op-02','op-03','op-04','op-05','op-06','op-07','op-08','op-09','op-10','op-11','op-12','op-13','op-14','op01','op02','op03','op04','op05','op06','op07','op08','op09','op10','op11','op12','op13','op14','st01','st02','st03','st04','st05','st06','st07','st08','st09','st10','st11','st12','st13','st14','st15','st16','st17','st18','eb01','eb02','ash','misty','brock','team rocket','jessie','james','giovanni','gary','professor oak','nurse joy','gym leader','elite four','trainer'].some(k=>ql.includes(k)))return'tcg';
+  if(['pokemon','pokémon','charizard','pikachu','mewtwo','eevee','bulbasaur','squirtle','gengar','deoxys','rayquaza','jirachi','gardevoir','blaziken','sceptile','swampert','flygon','mtg','magic ','yugioh','yu-gi-oh','blue-eyes','blue eyes','dark magician','exodia','red-eyes','kuriboh','lorcana','disney lorcana','one piece','onepiece','optcg','luffy','zoro','nami','sanji','usopp','chopper','robin','franky','brook','jinbe','shanks','ace','whitebeard','blackbeard','hancock','mihawk','crocodile','doflamingo','katakuri','kaido','big mom','yamato','uta','op-01','op-02','op-03','op-04','op-05','op-06','op-07','op-08','op-09','op-10','op-11','op-12','op-13','op-14','op01','op02','op03','op04','op05','op06','op07','op08','op09','op10','op11','op12','op13','op14','st01','st02','st03','st04','st05','st06','st07','st08','st09','st10','st11','st12','st13','st14','st15','st16','st17','st18','eb01','eb02','ash','misty','brock','team rocket','jessie','james','giovanni','gary','professor oak','nurse joy','gym leader','elite four','trainer','holon phantoms','holon','delta species','legend maker','unseen forces','hidden legends','team rocket returns','firered leafgreen','team magma','team aqua','sandstorm','expedition','aquapolis','skyridge','neo genesis','neo discovery','neo revelation','neo destiny','gym heroes','gym challenge','jungle','fossil','base set','rare holo ex','rare holo','rare ultra','v max','vmax','v star','vstar','ex card','gx card'].some(k=>ql.includes(k)))return'tcg';
+  if(/\b\d{1,3}\/\d{2,3}\b/.test(ql)&&/\b(deoxys|holon|delta|phantoms|emerald|legend|rayquaza|jirachi|gardevoir|blaziken|sceptile|swampert|flygon|pokemon|pokémon|charizard|pikachu|mewtwo|eevee|bulbasaur|squirtle|gengar|jungle|fossil|expedition|aquapolis|skyridge)\b/i.test(ql))return'tcg';
   return g!=='Raw'?'sg':'sr';
 }
 function jpEx(q){return['heroes','hero ','dbh','divers','xros','cross spirits'].some(k=>q.toLowerCase().includes(k));}
@@ -923,7 +944,7 @@ function renderDisambiguation(el, data) {
     return '#888';
   };
   const rows = data.variants.map((v) => {
-    const img = v.imageUrl ? `<img class="ac-img" src="${escH(v.imageUrl)}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
+    const img = v.imageUrl ? `<img class="ac-img" src="${escH(proxyImg(v.imageUrl))}" onerror="this.style.display='none'">` : `<div class="ac-img"></div>`;
     const badge = v.rarity ? rarityPill(v.rarity) : '';
     const price = v.estimatedPrice > 0 ? `<span style="color:var(--ac);font-family:var(--font-d);font-weight:400;font-size:20px;white-space:nowrap;letter-spacing:.5px">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
     const comps = v.compCount ? `<span style="font-size:11px;color:#666">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
@@ -995,6 +1016,7 @@ function disambigPick(cardNum, origQuery) {
 
 function dot(cls){return'<span class="dot '+cls+'"></span>';}
 function escH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function proxyImg(url){if(!url)return null;if(url.includes('pokemontcg.io'))return'/api/image-proxy?url='+encodeURIComponent(url);return url;}
 
 function renderResult(el,q,r){
   hideAc(); // ensure dropdown is closed when results render
