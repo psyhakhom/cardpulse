@@ -504,9 +504,7 @@ async function doSearch(){
     const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}&limit=50`);
     if(r.ok){
       const d=await r.json();
-      const cards=(d.cards||[]).filter(c=>!c.isDirect&&(c.name||'').toLowerCase().includes(
-        (q.toLowerCase().split(/\s+/).find(w=>w.length>=3&&!/^(psa|bgs|cgc|raw|rookie|rc|card|the|and|for)$/i.test(w))||'')
-      ));
+      const cards=(d.cards||[]).filter(c=>!c.isDirect);
       if(cards.length>0){renderBrowse(el,q,cards,d);return;}
     }
   }catch(e){console.log('[browse] catalog fetch failed:',e.message);}
