@@ -65,10 +65,14 @@ function sbFetch(table, method, body, options = {}) {
  *
  * Four-query eBay blending strategy:
  *
- *  Query A  "all sold"       — broadest, last 90 days, no filters   Weight: 0.20 (0.25 w/o D)
- *  Query B  "recent sold"    — last 30 days (sort=newlyListed)      Weight: 0.35 (0.45 w/o D)
- *  Query C  "grade-exact"    — adds grade string to query            Weight: 0.25 (0.30 w/o D)
- *  Query D  "ending soon"    — live auctions ending <24h, 3+ bids   Weight: 0.20 (0 w/o D)
+ *  Query A  "all sold"       — broadest, last 90 days, no filters
+ *  Query B  "recent sold"    — last 30 days (sort=newlyListed)
+ *  Query C  "grade-exact"    — adds grade string to query
+ *  Query D  "ending soon"    — live auctions ending <24h, 3+ bids  (sports only)
+ *
+ *  Weights split by card type:
+ *    TCG (dbs/pokemon/mtg/lorcana/yugioh/onepiece): A=0.30, B=0.50, C=0.20, D=skip
+ *    Sports (sr/sg):                                 A=0.20, B=0.30, C=0.25, D=0.25
  *
  * Every result is logged to Supabase (fire-and-forget, never blocks response).
  * This builds a proprietary price history DB — the same compounding asset
@@ -220,7 +224,7 @@ function gradeMatch(title, grade) {
 function isGradedSlab(title) {
   const t = (title || '').toLowerCase()
   // 1. Grading company + number: psa 10, bgs 9.5, cgc9, etc
-  if (/\b(psa|bgs|cgc|sgc|scg|hga|ace|gma|beckett|mnt|tag|ags|era|rcg|csg|ccg)\s*\d/.test(t)) return true
+  if (/\b(psa|bgs|cgc|sgc|scg|hga|ace|gma|beckett|mnt|tag|ags|era|rcg|ars|ksa|pgs|cga|csg|ccg)\s*\d/.test(t)) return true
   // 1a. Arena Club grading — "ARENA 10", "ARENA 9" (requires number to avoid false positives)
   if (/\barena\s+\d/i.test(t)) return true
   // 1b. Standalone grading company name (no number) — catches "SCG graded" etc
@@ -320,7 +324,7 @@ function filterItems(items, grade, searchQuery, lang) {
 
   // Detect sports card queries — skip TCG-specific filters (set codes, holo, foil etc)
   const SPORTS_RE = /\b(rookie|rc\b|refractor|prizm|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|score|nfl|nba|mlb|nhl|quarterback|qb|mvp|draft\s*pick)\b/i
-  const TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|deoxys|rayquaza|jirachi|gardevoir|blaziken|sceptile|swampert|flygon|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|holon\s*phantoms|holon|delta\s*species|legend\s*maker|unseen\s*forces|hidden\s*legends|team\s*rocket\s*returns|firered\s*leafgreen|team\s*magma|team\s*aqua|sandstorm|expedition|aquapolis|skyridge|neo\s*genesis|neo\s*discovery|neo\s*revelation|neo\s*destiny|gym\s*heroes|gym\s*challenge|jungle|fossil|base\s*set|rare\s*holo|rare\s*ultra|vmax|vstar|gx\s*card)\b/i
+  const TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|deoxys|rayquaza|jirachi|gardevoir|blaziken|sceptile|swampert|flygon|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|holon\s*phantoms|holon|delta\s*species|legend\s*maker|unseen\s*forces|hidden\s*legends|team\s*rocket\s*returns|firered\s*leafgreen|team\s*magma|team\s*aqua|sandstorm|expedition|aquapolis|skyridge|neo\s*genesis|neo\s*discovery|neo\s*revelation|neo\s*destiny|gym\s*heroes|gym\s*challenge|jungle|fossil|base\s*set|rare\s*holo|rare\s*ultra|vmax|vstar|gx\s*card|fortuneteller\s*baba|master\s*roshi|oolong|puar|ox.king|chichi|chi.chi|launch|turtle\s*hermit|kame|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo)\b/i
   const isSportsQuery = SPORTS_RE.test(ql) && !TCG_RE.test(ql)
   if (isSportsQuery) console.log(`[filter] sports card query detected`)
 
@@ -1051,16 +1055,22 @@ function buildQueries(name, grade, lang) {
   }
 }
 
-// Weights when Query D has data — rebalanced to sum to 1.0
-const WEIGHTS_WITH_LIVE = { a: 0.20, b: 0.35, c: 0.25, d: 0.20 }
-// Fallback weights when Query D has no data — original three-query weights
-const WEIGHTS_WITHOUT_LIVE = { a: 0.25, b: 0.45, c: 0.30 }
+// TCG weights — no Query D (BIN-dominated, auctions are noise)
+const WEIGHTS_TCG = { a: 0.30, b: 0.50, c: 0.20 }
+// Sports weights with Query D (auction-dominated market)
+const WEIGHTS_SPORTS_WITH_LIVE = { a: 0.20, b: 0.30, c: 0.25, d: 0.25 }
+// Sports fallback when Query D has no data
+const WEIGHTS_SPORTS_WITHOUT_LIVE = { a: 0.25, b: 0.40, c: 0.35 }
 
 // ─── WEIGHTED BLEND ──────────────────────────────────────────────────────────
-function blend(results) {
-  // Check if Query D (live auctions) has data to decide weight set
-  const hasLive = results.some((r) => r.label === 'Live auctions' && r.stats !== null)
-  const weightMap = { ...(hasLive ? WEIGHTS_WITH_LIVE : WEIGHTS_WITHOUT_LIVE) }
+function blend(results, isSports) {
+  let weightMap
+  if (isSports) {
+    const hasLive = results.some((r) => r.label === 'Live auctions' && r.stats !== null)
+    weightMap = { ...(hasLive ? WEIGHTS_SPORTS_WITH_LIVE : WEIGHTS_SPORTS_WITHOUT_LIVE) }
+  } else {
+    weightMap = { ...WEIGHTS_TCG }
+  }
   const keys = ['a', 'b', 'c', 'd']
 
   // Query C outlier detection: if C avg is >35% below A+B median, zero out C
@@ -1392,14 +1402,26 @@ export default async function handler(req, res) {
       return kept
     }
 
+    // Sports detection — computed once, shared by runQueries + blend
+    const _SPORTS_RE = /\b(rookie|rc\b|refractor|prizm|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|score|nfl|nba|mlb|nhl|quarterback|qb|mvp|draft\s*pick)\b/i
+    const _TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|fortuneteller\s*baba|master\s*roshi|oolong|puar|ox.king|chichi|chi.chi|launch|turtle\s*hermit|kame|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo)\b/i
+    const isSportsQuery = _SPORTS_RE.test(processed) && !_TCG_RE.test(processed)
+    console.log(`[blend] card type: ${isSportsQuery ? 'sports' : 'tcg'} (query: "${processed}")`)
+
     async function runQueries(name) {
       const qs = buildQueries(name, grade, lang)
-      const [dA, dB, dC, dD] = await Promise.allSettled([
+      // TCG: skip Query D (live auctions) — BIN-dominated, saves one eBay API call
+      const promises = [
         ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
         ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
         ebaySearch(qs.c.q, token, { limit: qs.c.limit, sort: qs.c.sort }),
-        ebaySearch(qs.d.q, token, { limit: qs.d.limit, sort: qs.d.sort, live: true }),
-      ])
+      ]
+      if (isSportsQuery) {
+        promises.push(ebaySearch(qs.d.q, token, { limit: qs.d.limit, sort: qs.d.sort, live: true }))
+      }
+      const settled = await Promise.allSettled(promises)
+      const [dA, dB, dC] = settled
+      const dD = isSportsQuery ? settled[3] : { status: 'fulfilled', value: { itemSummaries: [] } }
       let rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
       let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
       let rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
@@ -1601,9 +1623,11 @@ export default async function handler(req, res) {
         { ...qs.a, stats: calcStats(cleanA, 'A') },
         { ...qs.b, stats: calcStats(cleanB, 'B') },
         { ...qs.c, stats: calcStats(cleanC, 'C') },
-        { ...qs.d, stats: calcStats(cleanD, 'D') },
       ]
-      return { results: res, blended: blend(res), allItems: [...cleanA, ...cleanB, ...cleanC, ...cleanD], hadJapaneseResults }
+      if (isSportsQuery) {
+        res.push({ ...qs.d, stats: calcStats(cleanD, 'D') })
+      }
+      return { results: res, blended: blend(res, isSportsQuery), allItems: [...cleanA, ...cleanB, ...cleanC, ...cleanD], hadJapaneseResults }
     }
 
     // Launch card image lookup in parallel with the first eBay query batch
@@ -1646,8 +1670,7 @@ export default async function handler(req, res) {
     // Never retry if the result would be fewer than 2 meaningful words.
     // Maximum 1 retry to avoid catastrophic broadening (e.g. "sv3" alone).
     // For sports queries: only word-strip when 0 comps (not < 3) to keep specific results
-    const _isSports = /\b(rookie|rc\b|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|prizm|nfl|nba|mlb|nhl)\b/i.test(processed)
-    const stripThreshold = _isSports ? 0 : 3
+    const stripThreshold = isSportsQuery ? 0 : 3
     if (!blended || blended.totalComps < stripThreshold) {
       const base = correctedQuery || processed
       const words = base.split(/\s+/)
@@ -1856,7 +1879,7 @@ export default async function handler(req, res) {
     // Build self-growing card catalog — saves every searched card for future autocomplete
     const detectedGame = (() => {
       const ql = q.trim().toLowerCase()
-      if (/dragon ball|dbs|goku|vegeta|gogeta|broly|frieza|fusion world|energy marker/i.test(ql) || /\b(BT|FB|FS|SD|ST)\d+/i.test(ql)) return 'dbs'
+      if (/dragon ball|dbs|goku|vegeta|gogeta|broly|frieza|fusion world|energy marker|fortuneteller baba|master roshi|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo/i.test(ql) || /\b(BT|FB|FS|SD|ST|SB)\d+/i.test(ql)) return 'dbs'
       if (/pokemon|charizard|pikachu/i.test(ql)) return 'pokemon'
       if (/mtg|magic/i.test(ql)) return 'mtg'
       if (/yugioh|yu-gi-oh/i.test(ql)) return 'yugioh'

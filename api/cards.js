@@ -495,6 +495,10 @@ const DBS_KW = [
   'hakai', 'ultra instinct', 'god kamehameha', 'destructo disc',
   'special beam cannon', 'makankosappo',
   'energy marker',
+  'fortuneteller baba', 'baba', 'master roshi', 'oolong', 'puar',
+  'ox-king', 'chichi', 'launch', 'turtle hermit', 'kame',
+  'yamcha', 'tien', 'chiaotzu', 'raditz', 'nappa',
+  'zarbon', 'dodoria', 'ginyu', 'recoome', 'burter', 'jeice', 'guldo',
 ]
 const DBS_CODE_RE = /\b(?:BT|FB|FS|SD|SB|TB|D-BT|PUMS|SDBH)\d+|\bE-\d+/i
 const OP_KW = [
