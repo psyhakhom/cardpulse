@@ -714,6 +714,7 @@ async function search(q, elId) {
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
+      console.log('[api-response] type:', data.type, 'keys:', Object.keys(data).join(','));
       // Disambiguation: multiple distinct cards found — show picker
       if (data.type === 'disambiguation') {
         if(elId==='sr'){navPush('disambiguation',document.getElementById('si').value.trim(),null);}
@@ -945,6 +946,7 @@ function renderDisambiguation(el, data) {
   el.innerHTML=renderBackBtn()+disambigContent;
 }
 function renderRaritySplit(el, data) {
+  console.log('[picker] rendering rarity split picker:', data.variants?.length, 'variants');
   const rows = data.variants.map(v => {
     const badge = rarityPill(v.rarity);
     const price = v.estimatedPrice > 0 ? `<span style="color:var(--ac);font-family:var(--font-d);font-weight:400;font-size:24px;letter-spacing:.5px">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
