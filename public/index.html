@@ -117,10 +117,13 @@ header{padding:16px 20px 12px;display:flex;align-items:center;justify-content:sp
 .ch2{font-size:11px;color:var(--mu);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;display:flex;justify-content:space-between;font-weight:600}
 .cr2{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)}
 .cr2:last-child{border-bottom:none}
+a.cr2{cursor:pointer;transition:background .15s;border-radius:8px;padding:10px 8px;margin:0 -8px}
+a.cr2:active{background:var(--s2)}
 .cl2{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
 .ctw{min-width:0;overflow:hidden;flex:1}
 .ct2{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;color:inherit;text-decoration:none}
-a.ct2:hover{text-decoration:underline}
+a.ct2{color:var(--a2);cursor:pointer}
+a.ct2:hover,a.ct2:active{text-decoration:underline}
 .cd2{font-size:11px;color:var(--mu);margin-top:2px;display:flex;align-items:center;gap:4px}
 .cp2{font-family:var(--font-d);font-size:18px;color:var(--ac);flex-shrink:0;margin-left:10px;letter-spacing:.5px}
 .cth{width:48px;height:67px;border-radius:6px;object-fit:cover;background:var(--s2);border:1px solid var(--bd);flex-shrink:0}
@@ -967,7 +970,8 @@ function renderResult(el,q,r){
     const nd=c.c!=='USD'?`<span style="font-size:8px;color:var(--mu);margin-left:3px">${fmtN(c.pN,c.c)}</span>`:'';
     const dotCls=c.k==='p130'?'d1':c.k==='yJP'?'dy':c.k==='mJP'?'dm':c.k==='sak'?'ds':c.k==='buy'?'db':c.k==='tcg'?'dt':c.k==='fan'?'df':c.k==='gld'?'dg':c.k==='pwcc'?'dp':'de';
     const titleEl=c.url?`<a class="ct2" href="${escH(c.url)}" target="_blank" rel="noopener noreferrer">${escH(c.title)}</a>`:`<div class="ct2">${escH(c.title)}</div>`;
-    return`<div class="cr2"><div class="cl2"><img class="cth" src="${c.th}" loading="lazy" onerror="this.style.display='none'"/><div class="ctw">${titleEl}<div class="cd2">${dot(dotCls)}${c.n} · ${fD(c.date)}</div></div></div><div class="cp2">${fP(c.pU)}${nd}</div></div>`;
+    const rowInner=`<div class="cl2"><img class="cth" src="${c.th}" loading="lazy" onerror="this.style.display='none'"/><div class="ctw">${titleEl}<div class="cd2">${dot(dotCls)}${c.n} · ${fD(c.date)}</div></div></div><div class="cp2">${fP(c.pU)}${nd}</div>`;
+    return c.url?`<a class="cr2" href="${escH(c.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit">${rowInner}</a>`:`<div class="cr2">${rowInner}</div>`;
   }).join('');
   const lb=(r.l!=='English'||r.jx)?`<span class="lbg">${r.jx?'JP Exclusive':r.l}</span>`:'';
   const ctl=r.ct==='dbs'?'Dragon Ball TCG':r.ct==='tcg'?'TCG':r.ct==='sg'?'Graded Sports':'Sports Raw';
