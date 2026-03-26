@@ -1221,35 +1221,24 @@ export default async function handler(req, res) {
       requiredRarity = pp.requiredRarity || null
     }
 
-    // Catalog rarity lookup — enforce high-value rarities (SPR/SCR) regardless of exact flag
+    // Catalog rarity lookup — start async, resolve before filtering
     // Prevents cheaper SR comps from bleeding into SPR/SCR pricing
     const cardNumInQ = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
-    console.log(`[rarity-lookup] cardNumInQ: ${cardNumInQ?.[1] || 'none'}, requiredRarity before: ${requiredRarity}, _sbConfigured: ${_sbConfigured}`)
+    let _rarityLookupPromise = null
     if (!requiredRarity && cardNumInQ && _sbConfigured) {
-      try {
-        const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
-        const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&rarity=not.is.null&limit=1`
-        console.log(`[rarity-lookup] fetching: ${catUrl}`)
-        const catRes = await fetch(catUrl, {
-          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
-          signal: AbortSignal.timeout(2000),
-        })
-        if (catRes.ok) {
-          const catRows = await catRes.json()
-          console.log(`[rarity-lookup] response: ${JSON.stringify(catRows)}`)
-          const catRarity = (catRows[0]?.rarity || '').toUpperCase()
-          if (['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(catRarity)) {
-            requiredRarity = catRarity
-            console.log(`[rarity-lookup] ENFORCING: ${cardNumInQ[1]} → ${catRarity}`)
-          } else {
-            console.log(`[rarity-lookup] rarity ${catRarity || 'empty'} not in enforcement list`)
-          }
-        } else {
-          console.log(`[rarity-lookup] fetch failed: ${catRes.status}`)
-        }
-      } catch (e) {
-        console.log(`[rarity-lookup] error: ${e.message}`)
-      }
+      const numEnc = encodeURIComponent(cardNumInQ[1].toUpperCase())
+      const catUrl = `${SUPABASE_URL}/rest/v1/card_catalog?select=rarity&card_number=eq.${numEnc}&rarity=not.is.null&limit=1`
+      console.log(`[rarity-lookup] starting async for ${cardNumInQ[1]}`)
+      _rarityLookupPromise = fetch(catUrl, {
+        headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+        signal: AbortSignal.timeout(8000),
+      }).then(async r => {
+        if (!r.ok) { console.log(`[rarity-lookup] fetch failed: ${r.status}`); return null }
+        const rows = await r.json()
+        const rarity = (rows[0]?.rarity || '').toUpperCase()
+        console.log(`[rarity-lookup] result: ${cardNumInQ[1]} → ${rarity || 'none'}`)
+        return ['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(rarity) ? rarity : null
+      }).catch(e => { console.log(`[rarity-lookup] error: ${e.message}`); return null })
     }
 
     console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}")`)
@@ -1402,6 +1391,16 @@ export default async function handler(req, res) {
             }
           }
         }
+      }
+
+      // Resolve catalog rarity lookup before filtering (started in parallel with eBay queries)
+      if (_rarityLookupPromise && !requiredRarity) {
+        const lookupResult = await _rarityLookupPromise
+        if (lookupResult) {
+          requiredRarity = lookupResult
+          console.log(`[rarity-lookup] resolved: enforcing ${requiredRarity}`)
+        }
+        _rarityLookupPromise = null
       }
 
       // Filter by grade + variant + rarity — filtered items are used for everything downstream
