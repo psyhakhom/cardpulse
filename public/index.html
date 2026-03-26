@@ -393,6 +393,7 @@ let coll=JSON.parse(localStorage.getItem('cpc')||'[]');
 let navStack=[];
 let _lastDisambigHTML='';
 let _lastDisambigQuery='';
+let _lastBrowseHTML='';
 let _skipNavPush=false;
 
 function navPush(view,query,card){
@@ -417,6 +418,11 @@ function goBack(){
     toggleClear();
     selectedCard=null;
     document.getElementById('si').focus();
+  }else if(prev.view==='browse'){
+    selectedCard=null;
+    document.getElementById('si').value=prev.query;
+    toggleClear();
+    el.innerHTML=renderBackBtn()+_lastBrowseHTML;
   }else if(prev.view==='disambiguation'){
     selectedCard=null;
     document.getElementById('si').value=prev.query;
@@ -488,7 +494,25 @@ function camOff(){
 // SEARCH
 function toggleClear(){document.getElementById('scl').classList.toggle('vis',document.getElementById('si').value.length>0);}
 function clearSearch(){const i=document.getElementById('si');i.value='';document.getElementById('sr').innerHTML='';document.getElementById('scl').classList.remove('vis');selectedCard=null;navStack=[];hideAc();i.focus();}
-function doSearch(){const q=document.getElementById('si').value.trim();if(q){clearTimeout(acTimer);if(acAbort){acAbort.abort();acAbort=null;}hideAc();selectedCard=null;search(q,'sr');}}
+async function doSearch(){
+  const q=document.getElementById('si').value.trim();
+  if(!q)return;
+  clearTimeout(acTimer);if(acAbort){acAbort.abort();acAbort=null;}hideAc();selectedCard=null;
+  const el=document.getElementById('sr');
+  el.innerHTML='<div class="ld"><div class="sp"></div><p>Searching catalog…</p></div>';
+  try{
+    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}&limit=50`);
+    if(r.ok){
+      const d=await r.json();
+      const cards=(d.cards||[]).filter(c=>!c.isDirect&&(c.name||'').toLowerCase().includes(
+        (q.toLowerCase().split(/\s+/).find(w=>w.length>=3&&!/^(psa|bgs|cgc|raw|rookie|rc|card|the|and|for)$/i.test(w))||'')
+      ));
+      if(cards.length>0){renderBrowse(el,q,cards,d);return;}
+    }
+  }catch(e){console.log('[browse] catalog fetch failed:',e.message);}
+  // Fallback: no catalog results → direct eBay price search
+  search(q,'sr');
+}
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
 // AUTOCOMPLETE — Card Catalog
@@ -1017,6 +1041,36 @@ function disambigPick(cardNum, origQuery) {
   selectedCard = { searchQuery: newQ, name: newQ };
   _skipNavPush=true; // don't push intermediate 'search' state — keep disambiguation in stack
   search(newQ, 'sr');
+}
+
+// ── BROWSE VIEW ─────────────────────────────────────────────────────────────
+let _browseCards=[];
+let _browseQuery='';
+function renderBrowse(el,q,cards,apiData){
+  _browseCards=cards;_browseQuery=q;
+  navPush('browse',q,null);
+  const header=`<div style="padding:12px 16px 8px;color:var(--mu);font-size:12px">${cards.length} result${cards.length!==1?'s':''} for <strong style="color:var(--tx)">${escH(q)}</strong></div>`;
+  const rows=cards.map((c,i)=>{
+    const imgUrl=c.imageUrl;
+    const img=imgUrl?`<img class="ac-img" src="${escH(imgUrl)}" loading="lazy" onerror="this.style.background='#1a1a2e';this.style.display='none'">`
+      :`<div class="ac-img" style="background:#1a1a2e;display:flex;align-items:center;justify-content:center;color:#666;font-size:10px;font-family:monospace;text-align:center;line-height:1.2">${escH(c.set||c.game||'')}</div>`;
+    const showSet=c.set&&c.number&&!c.number.toUpperCase().startsWith((c.set||'').toUpperCase())?c.set:null;
+    const subParts=[showSet,c.number].filter(Boolean).join(' \u00b7 ');
+    const rPill=c.rarity?rarityPill(c.rarity):'';
+    const subHTML=subParts||rPill?`<div class="ac-sub">${escH(subParts)}${rPill?' '+rPill:''}</div>`:'';
+    return`<div class="ac-item" style="cursor:pointer" onclick="browsePick(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name">${escH(c.name)}</div>${subHTML}</div></div>`;
+  }).join('');
+  const attr=apiData.attribution?`<div class="ac-attr">Powered by ${escH(apiData.attribution)}</div>`:'';
+  const browseContent=header+`<div style="border:1px solid var(--bd);border-radius:12px;overflow:hidden;margin:0 0 16px">${rows}${attr}</div>`;
+  _lastBrowseHTML=browseContent;
+  el.innerHTML=renderBackBtn()+browseContent;
+}
+function browsePick(i){
+  const card=_browseCards[i];if(!card)return;
+  // Reuse selectAc logic — skip intermediate 'search' nav push so back returns to browse
+  acList=[card];
+  _skipNavPush=true;
+  selectAc(0);
 }
 
 function dot(cls){return'<span class="dot '+cls+'"></span>';}

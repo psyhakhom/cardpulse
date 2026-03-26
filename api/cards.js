@@ -43,7 +43,7 @@ const PKM_SET_NAMES = {
   POP1:'POP 1',POP2:'POP 2',POP3:'POP 3',POP4:'POP 4',POP5:'POP 5',POP6:'POP 6',POP7:'POP 7',POP8:'POP 8',POP9:'POP 9',
 }
 
-async function searchCatalog(query, game) {
+async function searchCatalog(query, game, maxResults = 8) {
   if (!_sbReady) return []
   try {
     // Double apostrophes only for PostgREST URL params (SQL escaping)
@@ -370,7 +370,7 @@ async function searchCatalog(query, game) {
     const qLower = stripPunct(query)
     const nameMatch = allResults.filter(r => stripPunct(r.card_name || '').startsWith(qLower))
     const nameRest = allResults.filter(r => !stripPunct(r.card_name || '').startsWith(qLower))
-    let deduped = [...nameMatch.sort(byRarity), ...nameRest.sort(byRarity)].slice(0, 8)
+    let deduped = [...nameMatch.sort(byRarity), ...nameRest.sort(byRarity)].slice(0, maxResults)
 
     // If user searched for a base card number (no -p suffix) but we only found
     // parallel variants, the base card isn't in the catalog — return empty so
@@ -1128,7 +1128,8 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q } = req.query
+  const { q, limit: limitParam } = req.query
+  const maxResults = Math.min(parseInt(limitParam) || 8, 50)
 
   if (!q || q.trim().length < 3) {
     return res.status(400).json({ error: 'Query too short' })
@@ -1136,7 +1137,7 @@ export default async function handler(req, res) {
 
   const query = q.trim()
   const game = detectGame(query)
-  console.log(`[cards] q="${query}" game=${game}`)
+  console.log(`[cards] q="${query}" game=${game} limit=${maxResults}`)
   const ebayDirect = null
 
   let cards = []
@@ -1144,7 +1145,7 @@ export default async function handler(req, res) {
   let jpExclusive = false
 
   // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
-  const catalogResults = await searchCatalog(query, game)
+  const catalogResults = await searchCatalog(query, game, maxResults)
   console.log(`[catalog] catalogResults: ${catalogResults.length}`, catalogResults.map(r => `${r.name} (${r.number})`))
   const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)-?\d+(?:-\d+)?|\bE-?\d+/i.test(query)
 
@@ -1154,7 +1155,7 @@ export default async function handler(req, res) {
     attribution = 'CardPulse catalog'
     console.log(`[cards] catalog has ${cards.length} results, skipping external APIs`)
     incrementSearchCount(catalogResults)
-    return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
+    return res.status(200).json({ cards: cards.slice(0, maxResults), ebayDirect, game, attribution, jpExclusive })
   }
 
   if (catalogResults.length >= 1 && hasCardNum) {
@@ -1163,7 +1164,7 @@ export default async function handler(req, res) {
     attribution = 'CardPulse catalog'
     console.log(`[cards] catalog has ${cards.length} results for card number, skipping external APIs`)
     incrementSearchCount(catalogResults)
-    return res.status(200).json({ cards: cards.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
+    return res.status(200).json({ cards: cards.slice(0, maxResults), ebayDirect, game, attribution, jpExclusive })
   }
 
   // ── Step 2: 1-4 catalog results — save them, then fill remaining slots ──
@@ -1237,12 +1238,12 @@ export default async function handler(req, res) {
   }
   // Fill remaining slots with external results (dedup against catalog)
   for (const c of externalCards) {
-    if (merged.length >= 8) break
+    if (merged.length >= maxResults) break
     const key = (c.number || c.name || '').toLowerCase()
     if (key && !seenKeys.has(key)) { seenKeys.add(key); merged.push(c) }
   }
   if (catalogResults.length > 0) attribution = 'CardPulse catalog'
   console.log(`[cards] final: ${catalogResults.length} catalog + ${merged.length - catalogResults.length} external = ${merged.length} total`)
 
-  return res.status(200).json({ cards: merged.slice(0, 8), ebayDirect, game, attribution, jpExclusive })
+  return res.status(200).json({ cards: merged.slice(0, maxResults), ebayDirect, game, attribution, jpExclusive })
 }
