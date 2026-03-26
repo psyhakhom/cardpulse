@@ -220,7 +220,9 @@ function gradeMatch(title, grade) {
 function isGradedSlab(title) {
   const t = (title || '').toLowerCase()
   // 1. Grading company + number: psa 10, bgs 9.5, cgc9, etc
-  if (/\b(psa|bgs|cgc|sgc|scg|hga|ace|gma|beckett|mnt|tag|ags|era|csg|ccg)\s*\d/.test(t)) return true
+  if (/\b(psa|bgs|cgc|sgc|scg|hga|ace|gma|beckett|mnt|tag|ags|era|rcg|csg|ccg)\s*\d/.test(t)) return true
+  // 1a. Arena Club grading — "ARENA 10", "ARENA 9" (requires number to avoid false positives)
+  if (/\barena\s+\d/i.test(t)) return true
   // 1b. Standalone grading company name (no number) — catches "SCG graded" etc
   if (/\bscg\b/.test(t)) return true
   // 2. Grading keywords anywhere in title
