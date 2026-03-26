@@ -764,10 +764,11 @@ async function search(q, elId) {
         return;
       }
       if (data.type === 'no-data' || (data.error && res.status === 404)) {
+        if(elId==='sr'){navPush('result',document.getElementById('si').value.trim(),sc);}
         const cardImg=sc?.imageUrl?`<img src="${escH(sc.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
         const cardName=sc?.name||q;
         const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${escH(data.searchTip)}</p>`:'';
-        el.innerHTML = `<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p><p style="margin-top:8px;font-size:12px;color:var(--mu);line-height:1.6">This card may be too new or have limited market activity.<br>Try searching without the parallel variant.</p>${tip}</div>`;
+        el.innerHTML = renderBackBtn()+`<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p><p style="margin-top:8px;font-size:12px;color:var(--mu);line-height:1.6">This card may be too new or have limited market activity.<br>Try searching without the parallel variant.</p>${tip}</div>`;
         return;
       }
       if (data.error) {
@@ -778,7 +779,8 @@ async function search(q, elId) {
       renderResult(el, sc ? sc.name : q, r);
       saveHist(sc ? sc.name : q, r);
     } catch(err) {
-      el.innerHTML = `<div class="ld"><p style="color:var(--rd);text-align:center;font-family:monospace;font-size:11px">Could not load prices.<br>${escH(err.message)}</p></div>`;
+      if(elId==='sr'&&navStack.length>0){navPush('result',document.getElementById('si').value.trim(),sc);}
+      el.innerHTML = renderBackBtn()+`<div class="ld"><p style="color:var(--rd);text-align:center;font-family:monospace;font-size:11px">Could not load prices.<br>${escH(err.message)}</p></div>`;
     }
   } else {
     // Mock mode — remove this block once USE_REAL_API = true
