@@ -1394,11 +1394,18 @@ export default async function handler(req, res) {
       }
 
       // Resolve catalog rarity lookup before filtering (started in parallel with eBay queries)
+      // Only enforce if user explicitly typed the rarity code in their query
       if (_rarityLookupPromise && !requiredRarity) {
         const lookupResult = await _rarityLookupPromise
         if (lookupResult) {
-          requiredRarity = lookupResult
-          console.log(`[rarity-lookup] resolved: enforcing ${requiredRarity}`)
+          const origQ = q.toUpperCase()
+          const userTypedRarity = new RegExp(`\\b${lookupResult}\\b`).test(origQ)
+          if (userTypedRarity) {
+            requiredRarity = lookupResult
+            console.log(`[rarity-lookup] resolved: enforcing ${requiredRarity} (user typed it)`)
+          } else {
+            console.log(`[rarity-lookup] resolved: ${lookupResult} found but user didn't type it — skipping enforcement`)
+          }
         }
         _rarityLookupPromise = null
       }
