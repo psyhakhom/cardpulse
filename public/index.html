@@ -672,12 +672,28 @@ function selectAc(i){
     console.log('[selectAc] yugioh query:',JSON.stringify(cleanSQ));
   }else if(card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number)){
     // DBS, One Piece, etc: sellers use card numbers (FB07-079, OP05-119, BT22-049)
-    // Strip promo/parallel suffixes — catalog identifiers, not eBay search terms
-    card.number=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
+    // Detect parallel suffix BEFORE stripping — parallels need keyword-based queries
+    const isParallel=/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number);
+    const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
     const rUp=(card.rarity||'').toUpperCase();
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
-    cleanSQ=(shortName+' '+card.number+variantSuffix).trim();
-    console.log('[selectAc] card-number query:',JSON.stringify(cleanSQ),'rarity:',JSON.stringify(card.rarity));
+    if(isParallel){
+      // Parallel cards: use set-specific keyword instead of card number
+      const PARALLEL_KW={'SB01':'manga booster','SB02':'manga booster','FB01':'alt art','FB02':'alt art','FB03':'alt art','FB04':'alt art','FB05':'alt art','FB06':'alt art','FB07':'alt art','FB08':'alt art','FB09':'alt art','FS01':'alt art','FS02':'alt art','FS09':'alt art'};
+      const setPfx=(baseNumber.match(/^([A-Z]{2,4}\d{2})-/i)||[])[1]?.toUpperCase();
+      const pKw=PARALLEL_KW[setPfx];
+      if(pKw){
+        cleanSQ=(shortName+' '+pKw).trim();
+        console.log('[selectAc] parallel query (keyword):',JSON.stringify(cleanSQ),'set:',setPfx,'kw:',pKw);
+      }else{
+        cleanSQ=(shortName+' '+baseNumber+variantSuffix).trim();
+        console.log('[selectAc] parallel query (fallback):',JSON.stringify(cleanSQ));
+      }
+    }else{
+      cleanSQ=(shortName+' '+baseNumber+variantSuffix).trim();
+      console.log('[selectAc] card-number query:',JSON.stringify(cleanSQ),'rarity:',JSON.stringify(card.rarity));
+    }
+    card.number=baseNumber;
   }else{
     cleanSQ=(card.searchQuery||card.name||'').trim();
     console.log('[selectAc] fallback query:',JSON.stringify(cleanSQ));
