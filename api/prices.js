@@ -1208,11 +1208,15 @@ export default async function handler(req, res) {
       // Extract rarity from query text first
       const { query: cleaned, requiredRarity: rr } = normalizeRarity(processed)
       processed = cleaned
-      // Keep starred rarity enforcement (SCR*, SR*)
-      if (rr && /\*/.test(rr)) {
+      // Keep rarity enforcement for starred variants + high-value plain rarities when user typed them
+      const HIGH_VALUE_RARITIES = ['SPR', 'SCR', 'SEC', 'SSR', 'SAR']
+      if (rr && (/\*/.test(rr) || HIGH_VALUE_RARITIES.includes(rr))) {
         requiredRarity = rr
+        // Strip the rarity code from eBay query (enforcement handles filtering, code in query hurts matching)
+        processed = processed.replace(/\b(?:SPR|SCR|SR|SSR|SAR|SEC)\b/gi, '').replace(/\s+/g, ' ').trim()
+        console.log(`[exact] enforcing ${rr}, stripped from query → "${processed}"`)
       } else {
-        // Strip plain rarity codes from the eBay query — sellers rarely include them
+        // Strip low-value rarity codes — not worth enforcing
         processed = processed.replace(/\b(?:SPR|SCR|SR|SSR|SAR|SEC|UC|R|C|L|ST|FR|GFR|DR|DAR|DBR|IVR)\b/gi, '').replace(/\s+/g, ' ').trim()
         console.log(`[exact] stripped rarity from query → "${processed}"`)
       }
@@ -1643,9 +1647,13 @@ export default async function handler(req, res) {
         if (sprAvg > 0 && srAvg > 0 && (sprAvg / srAvg > 2 || srAvg / sprAvg > 2)) {
           console.log(`[rarity-split] detected SR ($${srAvg.toFixed(2)}, ${srComps.length} comps) vs SPR ($${sprAvg.toFixed(2)}, ${sprComps.length} comps)`)
           const cardNum = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)?.[1] || ''
+          // Extract card name from best comp title (strip card number, rarity, set name noise)
+          const bestTitle = (sprComps[0]?.title || srComps[0]?.title || '').replace(/\b[A-Z]{2,5}\d+-\d{3}\b/gi, '').replace(/\b(SPR|SR|SCR|UC|R|C|NM|LP|HP|Mint)\b/gi, '').replace(/[-–—]/g, ' ').replace(/\s+/g, ' ').trim()
+          const cardName = bestTitle.split(/\b(Dawn|Dragon Ball|DBS|TCG|Card Game|Super Card)\b/i)[0].replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim() || q.trim()
           return res.status(200).json({
             type: 'rarity-split',
             query: q.trim(),
+            cardName,
             grade,
             lang,
             cardNumber: cardNum,

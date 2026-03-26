@@ -951,7 +951,7 @@ function renderRaritySplit(el, data) {
     const badge = rarityPill(v.rarity);
     const price = v.estimatedPrice > 0 ? `<span style="color:var(--ac);font-family:var(--font-d);font-weight:400;font-size:24px;letter-spacing:.5px">~$${v.estimatedPrice.toFixed(2)}</span>` : '';
     const comps = v.compCount ? `<span style="font-size:12px;color:var(--mu)">${v.compCount} comp${v.compCount > 1 ? 's' : ''}</span>` : '';
-    return `<div class="ac-item" style="cursor:pointer;min-height:72px" onclick="raritySplitPick('${escH(v.rarity)}','${escH(data.query)}','${escH(data.cardNumber)}')">
+    return `<div class="ac-item" style="cursor:pointer;min-height:72px" onclick="raritySplitPick('${escH(v.rarity)}','${escH(data.query)}','${escH(data.cardNumber)}','${escH(data.cardName||'')}')">
       <div style="min-width:0;flex:1">
         <div style="font-size:16px;font-weight:600">${escH(v.label)}</div>
         <div style="display:flex;align-items:center;gap:8px;margin-top:4px">${badge}${comps}</div>
@@ -970,13 +970,15 @@ function renderRaritySplit(el, data) {
   _lastDisambigQuery = data.query || '';
   el.innerHTML = renderBackBtn() + splitContent;
 }
-function raritySplitPick(rarity, origQuery, cardNum) {
+function raritySplitPick(rarity, origQuery, cardNum, cardName) {
   const si = document.getElementById('si');
-  const newQ = (origQuery.trim() + ' ' + rarity).trim();
-  si.value = newQ;
-  selectedCard = { searchQuery: newQ, name: origQuery.trim() };
+  // Build search query: "CardName CardNumber Rarity"
+  const searchQ = [cardName || origQuery, cardNum, rarity].filter(Boolean).join(' ').trim();
+  const displayQ = [cardName || origQuery, cardNum, rarity].filter(Boolean).join(' ').trim();
+  si.value = displayQ;
+  selectedCard = { searchQuery: searchQ, name: cardName || origQuery };
   _skipNavPush = true;
-  search(newQ, 'sr');
+  search(searchQ, 'sr');
 }
 function disambigPick(cardNum, origQuery) {
   const si = document.getElementById('si');
