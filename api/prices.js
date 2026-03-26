@@ -414,6 +414,24 @@ function filterItems(items, grade, searchQuery, lang) {
     }
   }
 
+  // ── 2b2. Reverse holo exclusion (Pokemon only) ──────────────────────
+  // Reverse holos are a different product with very different prices.
+  // Exclude unless the user explicitly searched for them.
+  if (!isSportsQuery && !/\b(reverse|rev[\s.-]?holo|rholo)\b/i.test(ql)) {
+    const before = filtered.length
+    const revFiltered = filtered.filter((i) => {
+      if (/\b(reverse[\s-]?holo|rev[\s.-]?holo|rholo)\b/i.test(i.title || '')) {
+        console.log(`[filter:revholo] dropped "${(i.title || '').slice(0, 70)}"`)
+        return false
+      }
+      return true
+    })
+    if (revFiltered.length >= 2) {
+      filtered = revFiltered
+      if (filtered.length < before) console.log(`[filter:revholo] ${before} → ${filtered.length}`)
+    }
+  }
+
   // ── 2c. Wrong set code exclusion (TCG only, skip for sports) ──────────
   if (!isSportsQuery) {
     const SET_CODE_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH|SV|SM|XY|BW|DP|EX|OP|ST)\d+[A-Z]?\b/i
