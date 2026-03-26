@@ -323,6 +323,22 @@ function filterItems(items, grade, searchQuery, lang) {
     if (filtered.length < before) console.log(`[filter:lot] ${before} → ${filtered.length}`)
   }
 
+  // ── 1c. Merchandise exclusion (MTG primarily) ───────────────────────
+  // Drop sleeves, playmats, deck boxes, blankets, proxies and other non-card items
+  {
+    const MERCH_RE = /\b(sleeves?|deck\s*box|deckbox|playmat|play\s*mat|blanket|pillow|poster|art\s*print|oversized|jumbo|6\s*(?:by|x)\s*9|card\s*art|art\s*card|matte\s*art|textured\s*matte|throw|fleece|phone\s*case|keychain|sticker|shirt|hoodie|prox(?:y|ies)|custom\s*card|display\s*card|replica)\b/i
+    const before = filtered.length
+    filtered = filtered.filter(i => {
+      const t = i.title || ''
+      if (MERCH_RE.test(t)) {
+        console.log(`[filter:merch] dropped "${t.slice(0, 70)}"`)
+        return false
+      }
+      return true
+    })
+    if (filtered.length < before) console.log(`[filter:merch] ${before} → ${filtered.length}`)
+  }
+
   // ── 2. Variant exclusion ─────────────────────────────────────────────
   // For sports cards: only apply "always excluded" variants (sealed, fan art, memorabilia)
   // For TCG cards: apply all variant terms
