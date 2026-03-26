@@ -16,6 +16,33 @@ const SB_URL = process.env.SUPABASE_URL
 const SB_KEY = process.env.SUPABASE_SERVICE_KEY
 const _sbReady = !!(SB_URL && SB_KEY)
 
+// Pokemon set code → eBay-friendly set name (sellers use these names, not internal codes)
+const PKM_SET_NAMES = {
+  BASE1:'Base Set',BASE2:'Jungle',BASE3:'Fossil',BASE4:'Base Set 2',BASE5:'Team Rocket',BASE6:'Legendary Collection',BASEP:'Wizards Promo',
+  GYM1:'Gym Heroes',GYM2:'Gym Challenge',NEO1:'Neo Genesis',NEO2:'Neo Discovery',NEO3:'Neo Revelation',NEO4:'Neo Destiny',SI1:'Southern Islands',
+  ECARD1:'Expedition',ECARD2:'Aquapolis',ECARD3:'Skyridge',
+  EX1:'Ruby & Sapphire',EX2:'Sandstorm',EX3:'Dragon',EX4:'Team Magma vs Team Aqua',EX5:'Hidden Legends',EX6:'FireRed & LeafGreen',
+  EX7:'Team Rocket Returns',EX8:'Deoxys',EX9:'Emerald',EX10:'Unseen Forces',EX11:'Delta Species',EX12:'Legend Maker',
+  EX13:'Holon Phantoms',EX14:'Crystal Guardians',EX16:'Power Keepers',
+  DP1:'Diamond & Pearl',DP2:'Mysterious Treasures',DP3:'Secret Wonders',DP4:'Great Encounters',DP5:'Majestic Dawn',DP6:'Legends Awakened',DP7:'Stormfront',DPP:'DP Promo',
+  PL1:'Platinum',PL2:'Rising Rivals',PL3:'Supreme Victors',PL4:'Arceus',
+  HGSS1:'HeartGold SoulSilver',HGSS2:'Unleashed',HGSS3:'Undaunted',HGSS4:'Triumphant',HSP:'HGSS Promo',COL1:'Call of Legends',
+  BW1:'Black & White',BW2:'Emerging Powers',BW3:'Noble Victories',BW4:'Next Destinies',BW5:'Dark Explorers',BW6:'Dragons Exalted',
+  BW7:'Boundaries Crossed',BW8:'Plasma Storm',BW9:'Plasma Freeze',BW10:'Plasma Blast',BW11:'Legendary Treasures',BWP:'BW Promo',DV1:'Dragon Vault',
+  XY0:'Kalos Starter Set',XY1:'XY',XY2:'Flashfire',XY3:'Furious Fists',XY4:'Phantom Forces',XY5:'Primal Clash',XY6:'Roaring Skies',
+  XY7:'Ancient Origins',XY8:'BREAKthrough',XY9:'BREAKpoint',XY10:'Fates Collide',XY11:'Steam Siege',XY12:'Evolutions',XYP:'XY Promo',DC1:'Double Crisis',
+  SM1:'Sun & Moon',SM2:'Guardians Rising',SM3:'Burning Shadows',SM35:'Shining Legends',SM4:'Crimson Invasion',SM5:'Ultra Prism',
+  SM6:'Forbidden Light',SM7:'Celestial Storm',SM75:'Dragon Majesty',SM8:'Lost Thunder',SM9:'Team Up',SM10:'Unbroken Bonds',
+  SM11:'Unified Minds',SM115:'Hidden Fates',SM12:'Cosmic Eclipse',SMP:'SM Promo',SMA:'Sinnoh Stars',DET1:'Detective Pikachu',
+  SWSH1:'Sword & Shield',SWSH2:'Rebel Clash',SWSH3:'Darkness Ablaze',SWSH35:'Champions Path',SWSH4:'Vivid Voltage',
+  SWSH5:'Battle Styles',SWSH6:'Chilling Reign',SWSH7:'Evolving Skies',SWSH8:'Fusion Strike',SWSH9:'Brilliant Stars',
+  SWSH10:'Astral Radiance',SWSH11:'Lost Origin',SWSH12:'Silver Tempest',
+  SV1:'Scarlet & Violet',SV2:'Paldea Evolved',SV3:'Obsidian Flames',SV3PT5:'151',SV4:'Paradox Rift',SV5:'Temporal Forces',
+  SV6:'Twilight Masquerade',SV7:'Stellar Crown',SV8:'Surging Sparks',SV9:'Journey Together',SV10:'Destined Rivals',
+  G1:'Generations',ME1:'Mega Evolution',RU1:'Rumble',
+  POP1:'POP 1',POP2:'POP 2',POP3:'POP 3',POP4:'POP 4',POP5:'POP 5',POP6:'POP 6',POP7:'POP 7',POP8:'POP 8',POP9:'POP 9',
+}
+
 async function searchCatalog(query, game) {
   if (!_sbReady) return []
   try {
@@ -270,10 +297,12 @@ async function searchCatalog(query, game) {
       if (r.game === 'onepiece' && imageUrl) {
         imageUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
       }
+      // Resolve Pokemon set codes to human-readable names for eBay queries
+      const setDisplay = r.game === 'pokemon' && r.set_code ? (PKM_SET_NAMES[r.set_code.toUpperCase()] || r.set_code) : (r.set_code || '')
       return {
         id: `db-${r.card_number || r.card_name}-${r.game}`,
         name: r.card_name,
-        set: r.set_code || '',
+        set: setDisplay,
         number: r.card_number || '',
         rarity: r.rarity || '',
         game: r.game,
