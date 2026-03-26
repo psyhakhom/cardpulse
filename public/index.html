@@ -493,10 +493,13 @@ function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q
 
 // AUTOCOMPLETE — Card Catalog
 let acTimer=null,acSel=-1,acList=[],selectedCard=null,acAbort=null;
-// Client-side cache: last 20 query results, keyed by query string
+// Client-side cache: last 20 query results, keyed by versioned query string
 const acCache=new Map();
 const AC_CACHE_MAX=20;
-function acCacheSet(k,v){if(acCache.size>=AC_CACHE_MAX){const oldest=acCache.keys().next().value;acCache.delete(oldest);}acCache.set(k,v);}
+const AC_CACHE_V='v2';
+function acCacheKey(q){return AC_CACHE_V+':'+q;}
+function acCacheSet(k,v){const ck=acCacheKey(k);if(acCache.size>=AC_CACHE_MAX){const oldest=acCache.keys().next().value;acCache.delete(oldest);}acCache.set(ck,v);}
+function acCacheGet(k){return acCache.get(acCacheKey(k));}
 const GAME_ICONS={
   direct:'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>',
 };
@@ -512,8 +515,8 @@ function acOnInput(v){
   const q=v.trim();
   if(q.length<3){hideAc();return;}
   // Check client cache first — instant render, no network
-  const cached=acCache.get(q);
-  if(cached){renderAc(cached,q);return;}
+  const cached=acCacheGet(q);
+  if(cached){console.log('[ac-cache] HIT:', q);renderAc(cached,q);return;}
   acTimer=setTimeout(()=>fetchAc(q),350);
 }
 function acKeydown(e){
