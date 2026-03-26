@@ -504,7 +504,12 @@ async function doSearch(){
     const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}&limit=50`);
     if(r.ok){
       const d=await r.json();
-      const cards=(d.cards||[]).filter(c=>!c.isDirect);
+      let cards=(d.cards||[]).filter(c=>!c.isDirect);
+      // Filter to detected game if API detected one — prevents cross-game noise
+      if(d.game&&cards.length>0){
+        const gameFiltered=cards.filter(c=>c.game===d.game);
+        if(gameFiltered.length>0)cards=gameFiltered;
+      }
       if(cards.length>0){renderBrowse(el,q,cards,d);return;}
     }
   }catch(e){console.log('[browse] catalog fetch failed:',e.message);}

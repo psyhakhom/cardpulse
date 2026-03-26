@@ -489,7 +489,8 @@ const YGO_KW = [
 const DBS_KW = [
   'dragon ball', 'dragonball', 'dbs', 'fusion world', 'goku', 'vegeta',
   'vegito', 'gogeta', 'frieza', 'gohan', 'piccolo', 'broly', 'beerus', 'trunks',
-  'bardock', 'cell', 'android', 'majin', 'saiyan',
+  'bardock', 'cell', 'android', 'majin', 'saiyan', 'shenron', 'krillin',
+  'videl', 'whis', 'hit', 'jiren', 'zamasu', 'goten', 'bulma', 'chi-chi',
   'kamehameha', 'final flash', 'galick gun', 'spirit bomb', 'instant transmission',
   'hakai', 'ultra instinct', 'god kamehameha', 'destructo disc',
   'special beam cannon', 'makankosappo',
