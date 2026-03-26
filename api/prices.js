@@ -1258,7 +1258,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, lang = 'English', history, exact, cardImageUrl } = req.query
+  const { q, lang = 'English', history, exact, parallel, cardImageUrl } = req.query
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
   const rawGrade = req.query.grade || 'Raw'
@@ -1419,6 +1419,14 @@ export default async function handler(req, res) {
       if (isSportsQuery) {
         promises.push(ebaySearch(qs.d.q, token, { limit: qs.d.limit, sort: qs.d.sort, live: true }))
       }
+      // Parallel cards: fire two extra queries with "alt art" and "parallel" keywords
+      // Sellers use inconsistent terminology — this catches both
+      const parallelIdx = parallel === '1' ? promises.length : -1
+      if (parallel === '1') {
+        console.log(`[parallel] firing extra queries: "${qs.a.q} alt art" and "${qs.a.q} parallel"`)
+        promises.push(ebaySearch(qs.a.q + ' alt art', token, { limit: 20, sort: 'newlyListed' }))
+        promises.push(ebaySearch(qs.a.q + ' parallel', token, { limit: 20, sort: 'newlyListed' }))
+      }
       const settled = await Promise.allSettled(promises)
       const [dA, dB, dC] = settled
       const dD = isSportsQuery ? settled[3] : { status: 'fulfilled', value: { itemSummaries: [] } }
@@ -1426,6 +1434,16 @@ export default async function handler(req, res) {
       let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
       let rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
       let rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
+
+      // Merge parallel-specific results into A and B (dedup by itemId later)
+      if (parallelIdx >= 0) {
+        const pAlt = settled[parallelIdx]?.status === 'fulfilled' ? settled[parallelIdx].value.itemSummaries || [] : []
+        const pPar = settled[parallelIdx + 1]?.status === 'fulfilled' ? settled[parallelIdx + 1].value.itemSummaries || [] : []
+        console.log(`[parallel] extra results: alt_art=${pAlt.length}, parallel=${pPar.length}`)
+        // Merge into A (broadest) and B (recent) so both get weighted
+        rawA = [...rawA, ...pAlt]
+        rawB = [...rawB, ...pPar]
+      }
 
       // ── Pre-filter: strip graded slabs BEFORE filterItems (double filter for Raw) ──
       if (grade === 'Raw') {
@@ -1536,11 +1554,13 @@ export default async function handler(req, res) {
       }
 
       // Filter by grade + variant + rarity — filtered items are used for everything downstream
-      const fA = filterByRarity(filterItems(rawA, grade, processed, lang))
-      const fB = filterByRarity(filterItems(rawB, grade, processed, lang))
-      const fC = filterByRarity(filterItems(rawC, grade, processed, lang))
+      // For parallel searches, include "alt art" in filter context so variant exclusion doesn't strip parallel comps
+      const filterQ = parallel === '1' ? processed + ' alt art' : processed
+      const fA = filterByRarity(filterItems(rawA, grade, filterQ, lang))
+      const fB = filterByRarity(filterItems(rawB, grade, filterQ, lang))
+      const fC = filterByRarity(filterItems(rawC, grade, filterQ, lang))
       // Query D: only include live auctions with 1+ bids (price validated by a buyer)
-      const fDgraded = filterByRarity(filterItems(rawD, grade, processed, lang))
+      const fDgraded = filterByRarity(filterItems(rawD, grade, filterQ, lang))
       console.log(`[query:D] ${rawD.length} raw auctions → ${fDgraded.length} after grade+rarity filter`)
       const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)

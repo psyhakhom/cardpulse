@@ -654,6 +654,7 @@ function selectAc(i){
   // 3. Convert "-p1"/"-p2"/"-p3" suffixes to "parallel"
   // Build eBay query per game — use the identifier sellers actually put in titles
   let cleanSQ;
+  let _isParallel=false;
   const g=card.game||'';
   const shortName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').split(',')[0].split(' // ')[0].trim();
   if(g==='mtg'||g==='pokemon'||g==='lorcana'){
@@ -674,6 +675,7 @@ function selectAc(i){
     // DBS, One Piece, etc: sellers use card numbers (FB07-079, OP05-119, BT22-049)
     // Detect parallel suffix BEFORE stripping — parallels need keyword-based queries
     const isParallel=/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number);
+    _isParallel=isParallel;
     const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
     const rUp=(card.rarity||'').toUpperCase();
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
@@ -701,6 +703,7 @@ function selectAc(i){
     game:card.game,
     imageUrl:card.largeImageUrl||card.imageUrl||null,
     searchQuery:cleanSQ,
+    parallel:_isParallel,
   };
   console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery));
   // Show clean display name in input
@@ -761,6 +764,7 @@ async function search(q, elId) {
       console.log('[search] grade=', JSON.stringify(G), 'lang=', JSON.stringify(L), 'q=', searchQ, sc ? '(catalog)' : '(free text)');
       const params = new URLSearchParams({ q: searchQ, grade: G, lang: L });
       if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
+      if (sc?.parallel) params.set('parallel', '1'); // tell backend to fire parallel-specific queries
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
