@@ -232,13 +232,14 @@ async function searchCatalog(query, game) {
       }
     }
 
-    // Sort by rarity priority as tiebreaker — SCR first, then SR, SPR, R, UC, C
+    // Sort: exact name prefix matches first, then rarity priority as tiebreaker
     const RARITY_PRIORITY = { 'SCR': 0, 'SCR*': 1, 'SCR**': 2, 'SR': 3, 'SR*': 4, 'SPR': 5, 'SEC': 6, 'SSR': 7, 'SAR': 8, 'R': 9, 'UC': 10, 'C': 11, 'L': 12, 'ST': 13 }
-    let deduped = [...byNumber.values()].sort((a, b) => {
-      const ra = RARITY_PRIORITY[(a.rarity || '').toUpperCase()] ?? 99
-      const rb = RARITY_PRIORITY[(b.rarity || '').toUpperCase()] ?? 99
-      return ra - rb
-    }).slice(0, 8)
+    const byRarity = (a, b) => (RARITY_PRIORITY[(a.rarity || '').toUpperCase()] ?? 99) - (RARITY_PRIORITY[(b.rarity || '').toUpperCase()] ?? 99)
+    const allResults = [...byNumber.values()]
+    const qLower = query.toLowerCase().replace(/[,:']/g, '').replace(/\s+/g, ' ').trim()
+    const nameMatch = allResults.filter(r => (r.card_name || '').toLowerCase().replace(/[,:']/g, '').replace(/\s+/g, ' ').startsWith(qLower))
+    const nameRest = allResults.filter(r => !(r.card_name || '').toLowerCase().replace(/[,:']/g, '').replace(/\s+/g, ' ').startsWith(qLower))
+    let deduped = [...nameMatch.sort(byRarity), ...nameRest.sort(byRarity)].slice(0, 8)
 
     // If user searched for a base card number (no -p suffix) but we only found
     // parallel variants, the base card isn't in the catalog — return empty so
