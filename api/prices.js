@@ -326,7 +326,7 @@ function filterItems(items, grade, searchQuery, lang) {
   // ── 1c. Merchandise exclusion (MTG primarily) ───────────────────────
   // Drop sleeves, playmats, deck boxes, blankets, proxies and other non-card items
   {
-    const MERCH_RE = /\b(sleeves?|deck\s*box|deckbox|playmat|play\s*mat|blanket|pillow|poster|art\s*print|oversized|jumbo|6\s*(?:by|x)\s*9|card\s*art|art\s*card|matte\s*art|textured\s*matte|throw|fleece|phone\s*case|keychain|sticker|shirt|hoodie|prox(?:y|ies)|custom\s*card|display\s*card|replica)\b/i
+    const MERCH_RE = /\b(sleeves?|deck\s*box|deckbox|playmat|play\s*mat|gaming\s*mat|selling\s*mat|vendor\s*mat|blanket|pillow|poster|art\s*print|oversized|jumbo|6\s*(?:by|x)\s*9|card\s*art|art\s*card|matte\s*art|textured\s*matte|throw|fleece|phone\s*case|keychain|sticker|shirt|hoodie|prox(?:y|ies)|custom\s*card|display\s*card|replica|enamel\s*pin|pin\s*set|pin\s*badge|lapel\s*pin|vendor\s*booth|booth\s*organizer|accessor(?:y|ies)|card?\s*binder|card?\s*album|storage\s*box|card\s*storage|display\s*case|acrylic\s*case|3d\s*print(?:ed)?|wristband|bracelet|lanyard|mouse\s*pad|mousepad|tapestry|flag|banner|figur(?:e|ine)|statue|rulebook|guide\s*book)\b/i
     const before = filtered.length
     filtered = filtered.filter(i => {
       const t = i.title || ''
