@@ -803,6 +803,7 @@ function normalizeApiResponse(data, q, sc) {
     date:  c.date ? new Date(c.date).getTime() : Date.now(),
     th:    c.image || null,
     url:   c.url   || null,
+    outlier: c.outlier || false,
   }));
 
   return {
@@ -974,7 +975,8 @@ function renderResult(el,q,r){
     const nd=c.c!=='USD'?`<span style="font-size:8px;color:var(--mu);margin-left:3px">${fmtN(c.pN,c.c)}</span>`:'';
     const dotCls=c.k==='p130'?'d1':c.k==='yJP'?'dy':c.k==='mJP'?'dm':c.k==='sak'?'ds':c.k==='buy'?'db':c.k==='tcg'?'dt':c.k==='fan'?'df':c.k==='gld'?'dg':c.k==='pwcc'?'dp':'de';
     const titleEl=c.url?`<a class="ct2" href="${escH(c.url)}" target="_blank" rel="noopener noreferrer">${escH(c.title)}</a>`:`<div class="ct2">${escH(c.title)}</div>`;
-    const rowInner=`<div class="cl2"><img class="cth" src="${c.th}" loading="lazy" onerror="this.style.display='none'"/><div class="ctw">${titleEl}<div class="cd2">${dot(dotCls)}${c.n} · ${fD(c.date)}</div></div></div><div class="cp2">${fP(c.pU)}${nd}</div>`;
+    const outlierIcon=c.outlier?'<span title="This sale may be an outlier" style="font-size:11px;margin-left:4px;opacity:0.6">&#9888;</span>':'';
+    const rowInner=`<div class="cl2"><img class="cth" src="${c.th}" loading="lazy" onerror="this.style.display='none'"/><div class="ctw">${titleEl}<div class="cd2">${dot(dotCls)}${c.n} · ${fD(c.date)}</div></div></div><div class="cp2">${fP(c.pU)}${outlierIcon}${nd}</div>`;
     return c.url?`<a class="cr2" href="${escH(c.url)}" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit">${rowInner}</a>`:`<div class="cr2">${rowInner}</div>`;
   }).join('');
   const lb=(r.l!=='English'||r.jx)?`<span class="lbg">${r.jx?'JP Exclusive':r.l}</span>`:'';

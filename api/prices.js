@@ -1666,6 +1666,15 @@ export default async function handler(req, res) {
           console.log(`[comps:Raw] ${c.length} comps returned:`)
           c.forEach((comp, i) => console.log(`  [comp ${i}] $${comp.price} "${comp.title?.slice(0, 80)}"`))
         }
+        // Flag outliers: >2x median or <0.4x median (display-only, doesn't affect pricing)
+        if (c.length >= 3) {
+          const prices = c.map(x => x.price).sort((a, b) => a - b)
+          const mid = Math.floor(prices.length / 2)
+          const median = prices.length % 2 !== 0 ? prices[mid] : (prices[mid - 1] + prices[mid]) / 2
+          for (const comp of c) {
+            if (comp.price > median * 2 || comp.price < median * 0.4) comp.outlier = true
+          }
+        }
         return c
       })(),
       query: q,
