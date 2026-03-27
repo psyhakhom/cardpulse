@@ -140,6 +140,7 @@ async function ebaySearch(
   // Also strip (-P2) name suffixes and -P2 card number suffixes
   query = query.replace(/['''`]/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
   console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
+  if (global) console.log(`[ebay:global] query="${query}"`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
   if (live) {
@@ -1262,7 +1263,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: parallel-nameonly-v6', Date.now())
+  console.log('PRICES.JS VERSION: parallel-sold-filter-v7', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
@@ -1459,6 +1460,16 @@ export default async function handler(req, res) {
             seen.add(id)
             return true
           })
+          // Strip active (unsold) listings — eBay API sometimes returns BIN listings despite soldItems:true
+          const beforeActive = merged.length
+          merged = merged.filter(i => {
+            if (!i.itemEndDate) {
+              console.log(`[parallel] active listing dropped (no itemEndDate): $${parseFloat(i.price?.value||0).toFixed(2)} "${(i.title||'').slice(0,70)}"`)
+              return false
+            }
+            return true
+          })
+          if (merged.length < beforeActive) console.log(`[parallel] active filter: ${beforeActive} → ${merged.length}`)
           // Price floor: drop base card listings that slip through
           const beforeFloor = merged.length
           merged = merged.filter(i => parseFloat(i.price?.value || 0) >= PARALLEL_PRICE_FLOOR)
@@ -1973,7 +1984,7 @@ export default async function handler(req, res) {
       lang,
       source: 'ebay',
       timestamp: Date.now(),
-      _version: 'parallel-nameonly-v6',
+      _version: 'parallel-sold-filter-v7',
       searchTip: blended.confidence < 60 && blended.totalComps < 5
         ? 'Try adding the set name or card number for better results'
         : null,
