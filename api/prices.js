@@ -1411,6 +1411,93 @@ export default async function handler(req, res) {
 
     async function runQueries(name) {
       const qs = buildQueries(name, grade, lang)
+
+      // ── Parallel mode: fire 3 targeted queries as PRIMARY source ──────
+      // Normal A/B/C return base card comps ($1) that pollute pricing.
+      // Instead, use keyword-specific queries that only match parallel listings.
+      if (parallel === '1') {
+        const base = qs.a.q
+        console.log(`[parallel] firing 3 targeted queries for: "${base}"`)
+        const [pA, pB, pC, dA, dB] = await Promise.allSettled([
+          ebaySearch(base + ' alt art', token, { limit: 30, sort: 'newlyListed' }),
+          ebaySearch(base + ' parallel', token, { limit: 30, sort: 'newlyListed' }),
+          ebaySearch(base + ' manga', token, { limit: 30, sort: 'newlyListed' }),
+          // Also fire normal A+B as fallback if parallel queries return nothing
+          ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
+          ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
+        ])
+        const rawPAlt = pA.status === 'fulfilled' ? pA.value.itemSummaries || [] : []
+        const rawPPar = pB.status === 'fulfilled' ? pB.value.itemSummaries || [] : []
+        const rawPMng = pC.status === 'fulfilled' ? pC.value.itemSummaries || [] : []
+        const parallelTotal = rawPAlt.length + rawPPar.length + rawPMng.length
+        console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} manga=${rawPMng.length} total=${parallelTotal}`)
+
+        if (parallelTotal > 0) {
+          // Merge all parallel results into A and B, skip normal base-card queries
+          let rawA = [...rawPAlt, ...rawPPar]
+          let rawB = [...rawPMng]
+          let rawC = [] // no grade-exact for parallel
+          let rawD = []
+          // Dedup by itemId across the merged parallel results
+          const seen = new Set()
+          const dedup = (items) => items.filter(i => {
+            const id = i.itemId || i.legacyItemId
+            if (!id || seen.has(id)) return false
+            seen.add(id)
+            return true
+          })
+          rawA = dedup(rawA)
+          rawB = dedup(rawB)
+
+          if (grade === 'Raw') {
+            rawA = rawA.filter(i => !isGradedSlab(i.title))
+            rawB = rawB.filter(i => !isGradedSlab(i.title))
+          }
+          const filterQ = processed + ' alt art'
+          let fA = filterByRarity(filterItems(rawA, grade, filterQ, lang))
+          let fB = filterByRarity(filterItems(rawB, grade, filterQ, lang))
+          // Hard block: card name enforcement
+          const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|booster|special|super|secret|common|uncommon)$/i
+          const _SET_P = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
+          const _nameP = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
+          if (_nameP.length > 0) {
+            fA = fA.filter(i => _nameP.some(w => (i.title || '').toLowerCase().includes(w)))
+            fB = fB.filter(i => _nameP.some(w => (i.title || '').toLowerCase().includes(w)))
+          }
+          console.log(`[parallel] after filter+hardblock: A=${fA.length} B=${fB.length}`)
+
+          if (fA.length + fB.length > 0) {
+            const res_ = [
+              { ...qs.a, label: 'Parallel sold (alt art)', stats: calcStats(fA, 'P-AltPar') },
+              { ...qs.b, label: 'Parallel sold (manga)', stats: calcStats(fB, 'P-Manga') },
+            ]
+            return { results: res_, blended: blend(res_, isSportsQuery), allItems: [...fA, ...fB], hadJapaneseResults: false }
+          }
+          console.log(`[parallel] all parallel comps filtered out, falling back to normal queries`)
+        } else {
+          console.log(`[parallel] 0 parallel results, falling back to normal queries`)
+        }
+        // Fallback: use the normal A+B we already fetched
+        let rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
+        let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
+        // Continue into normal flow below with rawA/rawB + empty C/D
+        const rawC = []
+        const rawD = []
+        // Run through normal filtering and return
+        if (grade === 'Raw') {
+          rawA = rawA.filter(i => !isGradedSlab(i.title))
+          rawB = rawB.filter(i => !isGradedSlab(i.title))
+        }
+        const fA = filterByRarity(filterItems(rawA, grade, processed, lang))
+        const fB = filterByRarity(filterItems(rawB, grade, processed, lang))
+        const res_ = [
+          { ...qs.a, stats: calcStats(fA, 'A') },
+          { ...qs.b, stats: calcStats(fB, 'B') },
+        ]
+        return { results: res_, blended: blend(res_, isSportsQuery), allItems: [...fA, ...fB], hadJapaneseResults: false }
+      }
+
+      // ── Normal (non-parallel) flow ────────────────────────────────────
       // TCG: skip Query D (live auctions) — BIN-dominated, saves one eBay API call
       const promises = [
         ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
@@ -1420,14 +1507,6 @@ export default async function handler(req, res) {
       if (isSportsQuery) {
         promises.push(ebaySearch(qs.d.q, token, { limit: qs.d.limit, sort: qs.d.sort, live: true }))
       }
-      // Parallel cards: fire two extra queries with "alt art" and "parallel" keywords
-      // Sellers use inconsistent terminology — this catches both
-      const parallelIdx = parallel === '1' ? promises.length : -1
-      if (parallel === '1') {
-        console.log(`[parallel] firing extra queries: "${qs.a.q} alt art" and "${qs.a.q} parallel"`)
-        promises.push(ebaySearch(qs.a.q + ' alt art', token, { limit: 20, sort: 'newlyListed' }))
-        promises.push(ebaySearch(qs.a.q + ' parallel', token, { limit: 20, sort: 'newlyListed' }))
-      }
       const settled = await Promise.allSettled(promises)
       const [dA, dB, dC] = settled
       const dD = isSportsQuery ? settled[3] : { status: 'fulfilled', value: { itemSummaries: [] } }
@@ -1435,17 +1514,6 @@ export default async function handler(req, res) {
       let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
       let rawC = dC.status === 'fulfilled' ? dC.value.itemSummaries || [] : []
       let rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
-
-      // Merge parallel-specific results into A and B (dedup by itemId later)
-      console.log(`[parallel] parallelIdx=${parallelIdx} parallel=${parallel} settled.length=${settled.length}`)
-      if (parallelIdx >= 0) {
-        const pAlt = settled[parallelIdx]?.status === 'fulfilled' ? settled[parallelIdx].value.itemSummaries || [] : []
-        const pPar = settled[parallelIdx + 1]?.status === 'fulfilled' ? settled[parallelIdx + 1].value.itemSummaries || [] : []
-        console.log(`[parallel] extra results: alt_art=${pAlt.length}, parallel=${pPar.length}`)
-        // Merge into A (broadest) and B (recent) so both get weighted
-        rawA = [...rawA, ...pAlt]
-        rawB = [...rawB, ...pPar]
-      }
 
       // ── Pre-filter: strip graded slabs BEFORE filterItems (double filter for Raw) ──
       if (grade === 'Raw') {
@@ -1556,13 +1624,11 @@ export default async function handler(req, res) {
       }
 
       // Filter by grade + variant + rarity — filtered items are used for everything downstream
-      // For parallel searches, include "alt art" in filter context so variant exclusion doesn't strip parallel comps
-      const filterQ = parallel === '1' ? processed + ' alt art' : processed
-      const fA = filterByRarity(filterItems(rawA, grade, filterQ, lang))
-      const fB = filterByRarity(filterItems(rawB, grade, filterQ, lang))
-      const fC = filterByRarity(filterItems(rawC, grade, filterQ, lang))
+      const fA = filterByRarity(filterItems(rawA, grade, processed, lang))
+      const fB = filterByRarity(filterItems(rawB, grade, processed, lang))
+      const fC = filterByRarity(filterItems(rawC, grade, processed, lang))
       // Query D: only include live auctions with 1+ bids (price validated by a buyer)
-      const fDgraded = filterByRarity(filterItems(rawD, grade, filterQ, lang))
+      const fDgraded = filterByRarity(filterItems(rawD, grade, processed, lang))
       console.log(`[query:D] ${rawD.length} raw auctions → ${fDgraded.length} after grade+rarity filter`)
       const fD = fDgraded.filter((i) => (i.bidCount || 0) >= 1)
       console.log(`[query:D] ${fDgraded.length} auctions → ${fD.length} with 1+ bids`)
@@ -1766,39 +1832,6 @@ export default async function handler(req, res) {
           return false
         })
         if (deduped.length < before) console.log(`[HARD BLOCK] ${before} → ${deduped.length} after card name enforcement`)
-      }
-    }
-
-    // ── PARALLEL SPLIT: detect base vs parallel price gap ──────────────
-    // For parallel=1 searches, comps include both base ($1) and parallel ($40+).
-    // Detect the split and show a picker instead of averaging them together.
-    if (parallel === '1' && deduped.length >= 3) {
-      const PAR_RE = /\b(alt(?:ernate)?\s*art|parallel|manga\s*booster|special\s*art)\b/i
-      const parComps = deduped.filter(i => PAR_RE.test(i.title || ''))
-      const baseComps = deduped.filter(i => !PAR_RE.test(i.title || ''))
-      console.log(`[parallel-split] par=${parComps.length} base=${baseComps.length} total=${deduped.length}`)
-      if (parComps.length >= 1 && baseComps.length >= 1) {
-        const parPrices = parComps.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0)
-        const basePrices = baseComps.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0)
-        const parAvg = parPrices.length ? parPrices.reduce((a, b) => a + b, 0) / parPrices.length : 0
-        const baseAvg = basePrices.length ? basePrices.reduce((a, b) => a + b, 0) / basePrices.length : 0
-        if (parAvg > 0 && baseAvg > 0 && (parAvg / baseAvg > 2 || baseAvg / parAvg > 2)) {
-          console.log(`[parallel-split] detected: base $${baseAvg.toFixed(2)} (${baseComps.length}) vs parallel $${parAvg.toFixed(2)} (${parComps.length})`)
-          const cardNum = processed.match(/\b([A-Z]{1,4}\d+-\d{2,3}[A-Z]?)\b/i)?.[1] || ''
-          const cardName = processed.replace(/\b[A-Z]{1,4}\d+-\d{2,3}\b/gi, '').replace(/\s+/g, ' ').trim() || q.trim()
-          return res.status(200).json({
-            type: 'rarity-split',
-            query: q.trim(),
-            cardName,
-            grade,
-            lang,
-            cardNumber: cardNum,
-            variants: [
-              { rarity: 'Parallel', label: 'Parallel / Alt Art', estimatedPrice: parAvg, compCount: parComps.length },
-              { rarity: '', label: 'Base Card', estimatedPrice: baseAvg, compCount: baseComps.length },
-            ],
-          })
-        }
       }
     }
 
