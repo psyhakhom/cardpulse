@@ -1262,9 +1262,12 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: parallel-red-manga-v4', Date.now())
+  console.log('PRICES.JS VERSION: parallel-red-manga-v5', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.setHeader('CDN-Cache-Control', 'no-store')
+  res.setHeader('Vercel-CDN-Cache-Control', 'no-store')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { q, lang = 'English', history, exact, parallel, cardImageUrl } = req.query
@@ -1956,6 +1959,7 @@ export default async function handler(req, res) {
       lang,
       source: 'ebay',
       timestamp: Date.now(),
+      _version: 'parallel-red-manga-v5',
       searchTip: blended.confidence < 60 && blended.totalComps < 5
         ? 'Try adding the set name or card number for better results'
         : null,
