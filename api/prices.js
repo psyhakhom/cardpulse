@@ -1262,7 +1262,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: parallel-grade-fix-v3', Date.now())
+  console.log('PRICES.JS VERSION: parallel-red-manga-v4', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
@@ -1427,11 +1427,14 @@ export default async function handler(req, res) {
       if (parallel === '1') {
         const PARALLEL_PRICE_FLOOR = 10
         const base = qs.a.q
-        console.log(`[parallel] firing 3 targeted queries for: "${base}"`)
-        const [pA, pB, pC, dA, dB] = await Promise.allSettled([
+        // Name without card number — sellers often omit it (e.g. "Fortuneteller Baba red manga")
+        const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
+        console.log(`[parallel] firing 4 targeted queries for: "${base}" (nameOnly: "${nameOnly}")`)
+        const [pA, pB, pC, pD, dA, dB] = await Promise.allSettled([
           ebaySearch(base + ' alt art', token, { limit: 30, sort: 'newlyListed' }),
           ebaySearch(base + ' parallel', token, { limit: 30, sort: 'endingSoonest' }),
           ebaySearch(base + ' manga', token, { limit: 30, sort: 'newlyListed' }),
+          ebaySearch(nameOnly + ' red manga', token, { limit: 30, sort: 'newlyListed' }),
           // Normal A+B as fallback if parallel queries return nothing
           ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
           ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
@@ -1439,12 +1442,13 @@ export default async function handler(req, res) {
         const rawPAlt = pA.status === 'fulfilled' ? pA.value.itemSummaries || [] : []
         const rawPPar = pB.status === 'fulfilled' ? pB.value.itemSummaries || [] : []
         const rawPMng = pC.status === 'fulfilled' ? pC.value.itemSummaries || [] : []
-        const parallelTotal = rawPAlt.length + rawPPar.length + rawPMng.length
-        console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} manga=${rawPMng.length} total=${parallelTotal}`)
+        const rawPRed = pD.status === 'fulfilled' ? pD.value.itemSummaries || [] : []
+        const parallelTotal = rawPAlt.length + rawPPar.length + rawPMng.length + rawPRed.length
+        console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} manga=${rawPMng.length} red_manga=${rawPRed.length} total=${parallelTotal}`)
 
         if (parallelTotal > 0) {
-          // Merge all three, dedup by itemId, apply price floor
-          const allRaw = [...rawPAlt, ...rawPPar, ...rawPMng]
+          // Merge all four, dedup by itemId, apply price floor
+          const allRaw = [...rawPAlt, ...rawPPar, ...rawPMng, ...rawPRed]
           const seen = new Set()
           let merged = allRaw.filter(i => {
             const id = i.itemId || i.legacyItemId
@@ -1470,7 +1474,7 @@ export default async function handler(req, res) {
           const filterQ = processed + ' alt art'
           let filtered = filterByRarity(filterItems(merged, grade, filterQ, lang, { skipVariants: true }))
           // Hard block: card name enforcement
-          const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|booster|special|super|secret|common|uncommon)$/i
+          const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|red|booster|special|super|secret|common|uncommon)$/i
           const _SET_P = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
           const _nameP = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
           if (_nameP.length > 0) {
