@@ -147,8 +147,9 @@ async function ebaySearch(
     const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
     filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]${locFilter}`
   } else {
-    // Test: itemEndDate range WITHOUT soldItems:true — does eBay return completed
-    // items when we filter by past end dates? dropStale() + sold/active split as safety net.
+    // itemEndDate:[cutoff..now] returns completed/sold items without soldItems:true.
+    // Confirmed: soldItems:true silently ignores itemEndDate, but itemEndDate alone works.
+    // dropStale() + parallel sold/active split remain as post-fetch safety nets.
     const now = new Date()
     const cutoffDate = new Date(now - days * 24 * 60 * 60 * 1000)
     const nowISO = now.toISOString().split('.')[0] + 'Z'
