@@ -472,7 +472,7 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
     const before = filtered.length
     const nameFiltered = filtered.filter((i) => {
       const t = (i.title || '').toLowerCase()
-      if (nameWords.some(w => t.includes(w))) return true
+      if (nameWords.every(w => t.includes(w))) return true
       console.log(`[filter:name] dropped "${(i.title || '').slice(0, 70)}" — no match for [${nameWords.join(', ')}]`)
       return false
     })
@@ -1479,7 +1479,7 @@ export default async function handler(req, res) {
           const _SET_P = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
           const _nameP = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
           if (_nameP.length > 0) {
-            filtered = filtered.filter(i => _nameP.some(w => (i.title || '').toLowerCase().includes(w)))
+            filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().includes(w)))
           }
           console.log(`[parallel] after all filters: ${filtered.length} comps`)
 
@@ -1722,7 +1722,7 @@ export default async function handler(req, res) {
         if (!_nameW.length) return items
         const kept = items.filter((i) => {
           const t = (i.title || '').toLowerCase()
-          if (_nameW.some(w => t.includes(w))) return true
+          if (_nameW.every(w => t.includes(w))) return true
           console.log(`[HARD BLOCK:${label}] removed: "${(i.title || '').slice(0, 70)}" — missing [${_nameW.join(', ')}]`)
           return false
         })
@@ -1860,7 +1860,7 @@ export default async function handler(req, res) {
         const before = deduped.length
         deduped = deduped.filter((i) => {
           const t = (i.title || '').toLowerCase()
-          if (_nameWords.some(w => t.includes(w))) return true
+          if (_nameWords.every(w => t.includes(w))) return true
           console.log(`[HARD BLOCK] removed wrong card: "${(i.title || '').slice(0, 80)}" — missing [${_nameWords.join(', ')}]`)
           return false
         })
