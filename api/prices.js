@@ -148,7 +148,8 @@ async function ebaySearch(
     filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]${locFilter}`
   } else {
     // NOTE: eBay Browse API does not support itemEndDate filter with soldItems:true —
-    // combining them returns 0 results. Post-fetch date filtering handles this instead.
+    // combining them returns 0 results. Active listings are excluded post-fetch in
+    // dropStale() by checking for future itemEndDate values.
     filter = `buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true${locFilter}`
   }
   // Build URL manually — URLSearchParams encodes curly braces which eBay rejects
@@ -1672,12 +1673,22 @@ export default async function handler(req, res) {
       // contribute to the weighted average (only extractComps was filtering before)
       const cutoff90d = Date.now() - 90 * 24 * 60 * 60 * 1000
       const dropStale = (items, label) => {
+        let droppedActive = 0, droppedOld = 0
+        const now = Date.now()
         const kept = items.filter((i) => {
-          const d = i.itemEndDate || i.itemCreationDate
+          const endDate = i.itemEndDate
+          // Future itemEndDate = active listing (not sold) — exclude
+          if (endDate && new Date(endDate).getTime() > now) {
+            droppedActive++
+            return false
+          }
+          const d = endDate || i.itemCreationDate
           if (!d) return true // no date = keep (can't determine age)
-          return new Date(d).getTime() >= cutoff90d
+          if (new Date(d).getTime() < cutoff90d) { droppedOld++; return false }
+          return true
         })
-        if (kept.length < items.length) console.log(`[date-filter:${label}] ${items.length} → ${kept.length} after 90-day cutoff`)
+        if (droppedActive || droppedOld)
+          console.log(`[date-filter:${label}] ${items.length} → ${kept.length} (${droppedActive} active, ${droppedOld} stale)`)
         return kept
       }
       // Don't date-filter Query D (live auctions — they're current by definition)
@@ -1758,6 +1769,10 @@ export default async function handler(req, res) {
       runQueries(processed),
       fetchCardImage(q.trim()),
     ])
+    if (queriesResult.status !== 'fulfilled') {
+      console.error(`[runQueries] failed:`, queriesResult.reason?.message || queriesResult.reason)
+      return res.status(200).json({ type: 'no-data', error: 'Search failed. Please try again.', searchTip: null })
+    }
     const qResult = queriesResult.value
     // Check for early disambiguation from runQueries
     if (qResult.disambiguation) {
