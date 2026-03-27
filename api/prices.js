@@ -147,15 +147,15 @@ async function ebaySearch(
     const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
     filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]${locFilter}`
   } else {
-    // itemEndDate range filter: only return items that ended (sold) within the date window.
-    // Active listings have no past itemEndDate so they get excluded at the API level.
+    // soldItems:true is required — without it eBay only searches active listings.
+    // itemEndDate range added to exclude active listings that leak through soldItems:true.
     // dropStale() remains as a safety net for any that slip through.
     const now = new Date()
     const cutoffDate = new Date(now - days * 24 * 60 * 60 * 1000)
     const nowISO = now.toISOString().split('.')[0] + 'Z'
     const cutoffISO = cutoffDate.toISOString().split('.')[0] + 'Z'
     console.log(`[ebay] itemEndDate filter: ${cutoffISO} .. ${nowISO}`)
-    filter = `buyingOptions:{FIXED_PRICE|AUCTION},itemEndDate:[${cutoffISO}..${nowISO}]${locFilter}`
+    filter = `buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true,itemEndDate:[${cutoffISO}..${nowISO}]${locFilter}`
   }
   // Build URL manually — URLSearchParams encodes curly braces which eBay rejects
   const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filter)}&sort=${sort}&limit=${limit}`
@@ -1858,7 +1858,7 @@ export default async function handler(req, res) {
       })
     }
 
-    const trend30 = calcTrend(results[1].stats?.avg, results[0].stats?.avg)
+    const trend30 = calcTrend(results[1]?.stats?.avg, results[0]?.stats?.avg)
 
     // Deduplicate comps across all queries, strip slabs for Raw
     const seen = new Set()
