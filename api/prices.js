@@ -140,7 +140,6 @@ async function ebaySearch(
   // Also strip (-P2) name suffixes and -P2 card number suffixes
   query = query.replace(/['''`]/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
   console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
-  if (global) console.log(`[ebay:global] query="${query}"`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
   if (live) {
@@ -383,7 +382,6 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   // For sports cards: only apply "always excluded" variants (sealed, fan art, memorabilia)
   // For TCG cards: apply all variant terms
   // Skip for parallel queries — targeted queries already ensure correct variant
-  if (opts.skipVariants) console.log(`[filter] skipping variant+holo filters (parallel mode)`)
   const preVariantFiltered = [...filtered] // snapshot before variant filtering
   if (!opts.skipVariants) for (const vt of VARIANT_TERMS) {
     // Sports queries skip TCG-specific variants (foil, holo, chrome, refractor, silver, gold, rainbow, prismatic)
@@ -530,7 +528,6 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   if (excludeTerms && opts.skipVariants) {
     const PARALLEL_SAFE = /manga booster|booster 01|booster pack|booster box|parallel single|parallel scr|gold parallel|gold alt art|sealed/
     excludeTerms = excludeTerms.filter(kw => !PARALLEL_SAFE.test(kw))
-    console.log(`[filter:grade] parallel mode: stripped ${GRADE_EXCLUDE[grade].length - excludeTerms.length} booster/parallel terms from Raw exclusion`)
   }
   if (excludeTerms) {
     const kept = filtered.filter((i) => {
@@ -1263,7 +1260,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: parallel-active-v9', Date.now())
+  console.log('PRICES.JS loaded')
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
@@ -1272,7 +1269,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { q, lang = 'English', history, exact, parallel, cardImageUrl } = req.query
-  console.log(`[prices] q="${q}" exact=${exact} parallel=${parallel}`)
+  console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ' parallel' : ''}`)
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
   const rawGrade = req.query.grade || 'Raw'
@@ -1468,21 +1465,12 @@ export default async function handler(req, res) {
           const beforePrice = merged.length
           merged = merged.filter(i => {
             const p = parseFloat(i.price?.value || 0)
-            if (p < PARALLEL_PRICE_FLOOR) { console.log(`[parallel] floor dropped: $${p.toFixed(2)} "${(i.title||'').slice(0,70)}"`); return false }
-            if (p > 500) { console.log(`[parallel] ceiling dropped: $${p.toFixed(2)} "${(i.title||'').slice(0,70)}"`); return false }
-            return true
+            return p >= PARALLEL_PRICE_FLOOR && p <= 500
           })
           if (merged.length < beforePrice) console.log(`[parallel] price filter: ${beforePrice} → ${merged.length}`)
-          // Log all comps after price filter
-          for (const c of merged) {
-            const d = (c.itemEndDate || c.itemCreationDate || 'no-date').slice(0, 10)
-            console.log(`[parallel] comp: $${parseFloat(c.price?.value||0).toFixed(2)} ${d} "${(c.title||'').slice(0,80)}"`)
-          }
 
           if (grade === 'Raw') {
-            const beforeSlab = merged.length
             merged = merged.filter(i => !isGradedSlab(i.title))
-            if (merged.length < beforeSlab) console.log(`[parallel] slab filter: ${beforeSlab} → ${merged.length}`)
           }
           const filterQ = processed + ' alt art'
           let filtered = filterByRarity(filterItems(merged, grade, filterQ, lang, { skipVariants: true }))
@@ -1986,7 +1974,6 @@ export default async function handler(req, res) {
       source: 'ebay',
       activeListings: activeListings || false,
       timestamp: Date.now(),
-      _version: 'parallel-active-v9',
       searchTip: blended.confidence < 60 && blended.totalComps < 5
         ? 'Try adding the set name or card number for better results'
         : null,
@@ -2035,7 +2022,6 @@ export default async function handler(req, res) {
       searchQuery: processed,
     })
 
-    console.log(`[prices] sending response: avg=$${response.avg} comps=${response.totalComps} confidence=${response.confidence}`)
     return res.status(200).json(response)
   } catch (err) {
     console.error('CardPulse API error:', err)
