@@ -1463,16 +1463,30 @@ export default async function handler(req, res) {
           const beforeFloor = merged.length
           merged = merged.filter(i => parseFloat(i.price?.value || 0) >= PARALLEL_PRICE_FLOOR)
           if (merged.length < beforeFloor) console.log(`[parallel] price floor $${PARALLEL_PRICE_FLOOR}: ${beforeFloor} → ${merged.length}`)
+          // Log all comps after price floor
+          for (const c of merged) {
+            const d = (c.itemEndDate || c.itemCreationDate || 'no-date').slice(0, 10)
+            console.log(`[parallel] comp: $${parseFloat(c.price?.value||0).toFixed(2)} ${d} "${(c.title||'').slice(0,80)}"`)
+          }
           // 90-day cutoff
           const cutoff90d = Date.now() - 90 * 24 * 60 * 60 * 1000
+          const before90d = merged.length
           merged = merged.filter(i => {
             const d = i.itemEndDate || i.itemCreationDate
             if (!d) return true
-            return new Date(d).getTime() >= cutoff90d
+            const ts = new Date(d).getTime()
+            if (ts < cutoff90d) {
+              console.log(`[parallel] 90d dropped: "${(i.title||'').slice(0,70)}" date=${d.slice(0,10)} (${Math.round((Date.now()-ts)/86400000)}d old)`)
+              return false
+            }
+            return true
           })
+          if (merged.length < before90d) console.log(`[parallel] 90d cutoff: ${before90d} → ${merged.length}`)
 
           if (grade === 'Raw') {
+            const beforeSlab = merged.length
             merged = merged.filter(i => !isGradedSlab(i.title))
+            if (merged.length < beforeSlab) console.log(`[parallel] slab filter: ${beforeSlab} → ${merged.length}`)
           }
           const filterQ = processed + ' alt art'
           let filtered = filterByRarity(filterItems(merged, grade, filterQ, lang, { skipVariants: true }))
