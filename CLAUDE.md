@@ -24,7 +24,7 @@ Key functions:
 - `search()` — grade auto-detection from query (strips grade terms, updates pill UI), calls API or mock
 - `normalizeApiResponse()` — adapter between API response and `renderResult()`. **Change this (not renderResult) when API shape changes.**
 - `renderResult()` — builds result card HTML. Shows sports-specific or TCG-specific wide spread guidance.
-- `cardType()` — classifies as `sr` (sports raw), `sg` (sports graded), `tcg`, or `dbs`. **Two copies exist**: one inside `normalizeApiResponse()` (complete DBS keywords) and one global (synced). DBS keywords include character names (vegeta, goku, frieza, gogeta), set codes (FB0x, BT1-20, SD0x), subtitle markers (`: da`), and attack names. `renderResult()` uses `r.ct` from normalizeApiResponse, not a recomputed value.
+- `cardType()` — classifies as `sr` (sports raw), `sg` (sports graded), `tcg`, or `dbs`. **Two copies exist**: one inside `normalizeApiResponse()` (complete DBS keywords) and one global (synced). DBS keywords include character names (vegeta, goku, frieza, gogeta, fortuneteller baba, master roshi, yamcha, ginyu force, raditz, nappa, zarbon, dodoria, etc.), set codes (FB0x, BT1-20, SD0x, SB0x), subtitle markers (`: da`), and attack names. `renderResult()` uses `r.ct` from normalizeApiResponse, not a recomputed value.
 - `acOnInput()` / `fetchAc()` / `renderAc()` / `selectAc()` — autocomplete with 350ms debounce, AbortController, LRU cache (20 entries). First-word name matching filters false positives.
 - `pick()` — grade pill click handler. Swaps/adds/removes grade term in search input. `_manualGrade` flag prevents auto-detection from overriding manual clicks.
 
@@ -33,10 +33,13 @@ Key functions:
 - **Yu-Gi-Oh**: card name only (sellers rarely include set/number)
 - **DBS/One Piece**: card name + card number (sellers use card numbers like FB07-079, BT22-049)
 - Strips promo/parallel suffixes: `_PR`, `_p1`, `-P1`, `-P2`, `(-P2)` name suffix
+- **Parallel detection**: `-P` suffix detected before stripping. Sets `selectedCard.parallel=true`, frontend passes `parallel=1` to backend. Query uses name + base number (no -P suffix): "Fortuneteller Baba SB01-049"
 - SR\*/SCR\* selected → appends "alt art"; DBR → "dragon ball rare"; SGR → "gold rare"
 - Truncates at first comma: "Special Beam Cannon, Inherited Power" → "Special Beam Cannon"
 
-**Back navigation** (`navStack`): Stack-based navigation tracks search → disambiguation → result transitions. Back button appears on disambiguation and result views. Browser back (popstate) also triggers `goBack()`. `disambigPick()` skips intermediate nav push so back from result returns to disambiguation.
+**Back navigation** (`navStack`): Stack-based navigation tracks search → browse → disambiguation → result transitions. Back button appears on browse, disambiguation, and result views (styled as pill: border #444, bg #1a1a24, border-radius 20px). Browser back (popstate) also triggers `goBack()`. `disambigPick()` skips intermediate nav push so back from result returns to disambiguation. Browse: Enter/search → shows all catalog matches (limit=50) before pricing; tapping a card triggers pricing.
+
+**Browse view**: `renderBrowse()` shows catalog-only results (no eBay mixing) filtered by detected game. `browsePick()` delegates to `selectAc()` for pricing flow. `_browseCards` stores browse results; `AC_CACHE_V = 'v2'` for cache busting.
 
 **No-data response handling**: `prices.js` returns `200` with `{type: 'no-data', error, searchTip}` instead of HTTP 404. Frontend checks `data.type === 'no-data'` and shows card image + message + searchTip. Search tip suppressed when query already contains a card number pattern.
 
@@ -48,16 +51,26 @@ Key functions:
 
 ### Backend (`api/prices.js`)
 
-Vercel serverless function. Four parallel eBay queries with weighted blending:
+Vercel serverless function. eBay queries with weighted blending, split by card type:
+
+**TCG cards** (dbs, pokemon, mtg, lorcana, yugioh, onepiece — 3 queries, no live auctions):
+
+| Query | Label | Weight |
+|-------|-------|--------|
+| A | All sold (90d) | 0.30 |
+| B | Recent sold (30d) | 0.50 |
+| C | Grade-exact | 0.20 |
+
+**Sports cards** (sr/sg — 4 queries, auctions matter):
 
 | Query | Label | Weight (with D) | Weight (without D) |
 |-------|-------|-----------------|-------------------|
 | A | All sold (90d) | 0.20 | 0.25 |
-| B | Recent sold (30d) | 0.35 | 0.45 |
-| C | Grade-exact | 0.25 | 0.30 |
-| D | Live auctions (48h) | 0.20 | — |
+| B | Recent sold (30d) | 0.30 | 0.40 |
+| C | Grade-exact | 0.25 | 0.35 |
+| D | Live auctions (48h) | 0.25 | — |
 
-**eBay query filters**: `itemLocationCountry:US` on all queries. Global fallback (US/CA only) when < 5 US comps.
+**eBay query filters**: `itemLocationCountry:US` on all queries. Global fallback (US/CA only) when < 5 US comps. `Cache-Control: no-store` prevents Vercel edge caching.
 
 **Recency boost**: When Query B has 1-2 comps but A has more older comps, B weight → 0.60.
 
@@ -67,12 +80,13 @@ Vercel serverless function. Four parallel eBay queries with weighted blending:
 
 **filterItems()** multi-layer filtering:
 1. Minimum price ($0.50) — strips $0/invalid listings
-2. Graded slab hard block (Raw only) — `isGradedSlab()` detects PSA/BGS/CGC/SGC/SCG/CSG/CCG etc. SCG (Southern Grading) also detected standalone without trailing number.
+2. Graded slab hard block (Raw only) — `isGradedSlab()` detects PSA/BGS/CGC/SGC/SCG/CSG/CCG/ARS/KSA/PGS/CGA/RCG/ARENA etc. SCG (Southern Grading) also detected standalone without trailing number. ARENA requires trailing number (`ARENA 10`) to avoid false positives.
 3. Lot/multi-card exclusion (all grades) — lots, bundles, "pick your card", "father & son"
-4. Merchandise exclusion — sleeves, playmats, deck boxes, blankets, pins, binders, display cases, figures, proxies, mousepads, tapestries, apparel, 3d prints. All use multi-word patterns to avoid false positives.
-5. Variant exclusion — alt art, foil, parallel, token, promo, memorabilia, accessories. **Sports card queries skip TCG-specific variants** (foil/holo/chrome/refractor) but keep memorabilia/sealed/fan art (`_sports: true` tag).
-5. Holo exclusion (non-Pokemon, non-sports only)
-6. Set code enforcement (TCG only) — BT/FB/SV/SM/XY/OP/ST codes required in comp titles
+4. Merchandise exclusion — sleeves, playmats, deck boxes, blankets, pins, binders, display cases, figures, proxies, mousepads, tapestries, apparel, 3d prints, enamel pins, gaming mats, vendor booths. All use multi-word patterns to avoid false positives.
+5. Variant exclusion — alt art, foil, parallel, token, promo, memorabilia, accessories. **Sports card queries skip TCG-specific variants** (foil/holo/chrome/refractor) but keep memorabilia/sealed/fan art (`_sports: true` tag). **Parallel queries (`opts.skipVariants`) skip variant, holo, and set code filters entirely.**
+5b. Reverse holo exclusion (Pokemon-aware) — excludes reverse holo unless query contains "reverse"
+6. Holo exclusion (non-Pokemon, non-sports, non-parallel only)
+7. Set code enforcement (TCG only, skipped for sports and parallel) — BT/FB/SB/SV/SM/XY/OP/ST codes required in comp titles
 7. Card name enforcement — non-modifier, non-set-code query words must appear in comp titles
 8. Language exclusion (always enforced, no fallback) — Japanese/JP/Korean/Chinese/Cross Worlds/DBS Master
 9. Cheap junk filter ($<3 with code/bulk/lot keywords)
@@ -88,7 +102,7 @@ Vercel serverless function. Four parallel eBay queries with weighted blending:
 
 **eBay query sanitization** (in `ebaySearch()`): Strips apostrophes (`'''``), leading dashes (`-Sign-`), promo suffixes (`_PR`, `_p1`, `-P1`, `-P2`), and `(-P2)` name suffixes before sending to eBay API. Display names and catalog lookups are unaffected.
 
-**Sports card detection**: `/\b(rookie|rc|topps|bowman|panini|...)\b/i` AND no TCG keywords → lighter filter set (skips set codes, holo, variant filters).
+**Sports card detection**: `/\b(rookie|rc|topps|bowman|panini|...)\b/i` AND no TCG keywords → lighter filter set (skips set codes, holo, variant filters). TCG_RE expanded with DBS characters: fortuneteller baba, master roshi, yamcha, tien, chiaotzu, ginyu force members (ginyu, recoome, burter, jeice, guldo), raditz, nappa, zarbon, dodoria, oolong, puar, ox-king, chichi, launch, turtle hermit, kame.
 
 **Outlier removal** in `calcStats()`:
 - 2 comps with >10x spread → keep lower only
@@ -100,9 +114,25 @@ Vercel serverless function. Four parallel eBay queries with weighted blending:
 
 **Word-strip retry**: Strips one modifier word when comps insufficient. Sports queries only strip at 0 comps (not <3). Card names and set codes protected. Max 1 successful retry.
 
+**Parallel pricing** (`parallel=1` flag from frontend): Dedicated query path for parallel/alt-art cards (-P suffix). Fires 3 name-only eBay queries (no card number — sellers format numbers inconsistently):
+- P1: `"{card name} alt art"` (recent, US sold)
+- P2: `"{card name} parallel"` (broad, US sold)
+- P3: `"{card name} manga"` (recent, US sold)
+
+Results merged, deduped by itemId, then filtered:
+1. $10 price floor (removes base card listings)
+2. $500 price ceiling (removes speculative outliers)
+3. Slab filter (Raw only)
+4. `filterItems()` with `opts.skipVariants=true` — skips variant, holo, set code filters; keeps slab, lot, merch, name enforcement, language, grade (with booster/parallel terms removed from Raw exclusion)
+5. Card name hard block
+
+**Active listing fallback**: eBay Browse API returns no sold data for some newer cards (e.g., SB01 parallels). When `soldItems:true` returns only active BIN listings (no `itemEndDate`), the parallel path uses lowest 5 BIN prices as market indicator. Response includes `activeListings: true` flag; frontend shows "Active listings" header + disclaimer instead of "Recent sold comps".
+
+**Price population script** (`scripts/populate-prices.js`): Bulk-searches high-value cards through the deployed API to populate `price_history`. Prioritizes recent sets and high rarities (SCR, SPR, SR*, SEC, SAR, DBR, SGR). Throttled at 2s/request, skips cards searched in last 24h. Run: `npm run populate-prices` or `npm run populate-prices -- --limit 100 --game dbs`.
+
 ### Autocomplete (`api/cards.js`)
 
-**Priority**: Supabase card_catalog (~148,000+ cards) → external APIs → eBay fallback.
+**Priority**: Supabase card_catalog (~150,000+ cards) → external APIs → eBay fallback. Catalog-first merge: catalog results always fill slots 1-N before external. Attribution shows 'CardPulse catalog' when catalog results present. Browse mode (`limit=50`) returns up to 50 catalog-only results.
 
 **Fuzzy search** via `fuzzy_search_cards()` Supabase RPC (pg_trgm `word_similarity`, threshold 0.25):
 - Card number queries → exact PostgREST match (unchanged)
@@ -129,6 +159,8 @@ Vercel serverless function. Four parallel eBay queries with weighted blending:
 
 **One Piece images** routed through `/api/image-proxy` to avoid SAMPLE watermark.
 
+**Game detection expanded**: `DBS_KW` includes fortuneteller baba, master roshi, yamcha, tien, chiaotzu, ginyu force members, raditz, nappa, zarbon, dodoria, oolong, puar, ox-king, chichi, launch, turtle hermit, kame. `POKEMON_KW` includes EX-era set names. `detectGame()` returns correct game for EX-era Pokemon and DBS character searches.
+
 **eBay fallback** filters: Japanese/Cross Worlds listings excluded.
 
 ### Image Proxy (`api/image-proxy.js`)
@@ -153,7 +185,7 @@ Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www
 
 | Game | Cards | Source |
 |------|-------|--------|
-| DBS Fusion World | ~1,967 | apitcg.com + Bandai official (FB07+) |
+| DBS Fusion World | ~2,089 | apitcg.com + Bandai official (FB07+FB08) |
 | DBS Classic (BT) | ~4,922 | Bandai US-EN (BT01-BT27 fully named + 831 SPR variants) |
 | DBS EX/Anniversary | ~465 | Bandai US-EN (EX01-EX25) |
 | DBS TB/SD/Other | ~568 | Deckplanet GCS + Bandai |
@@ -162,7 +194,7 @@ Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www
 | Yu-Gi-Oh | ~14,298 | YGOProDeck |
 | One Piece | ~1,705 | optcgapi.com |
 | Lorcana | ~2,291 | lorcana-api.com |
-| **Total** | **~150,381** | |
+| **Total** | **~150,503** | |
 
 ### Import Scripts
 
@@ -184,6 +216,7 @@ npm run import-yugioh          # Yu-Gi-Oh from YGOProDeck
 npm run import-onepiece        # One Piece from optcgapi.com
 npm run import-lorcana         # Lorcana from lorcana-api.com
 npm run import-all             # Run all imports sequentially
+npm run populate-prices        # Bulk-search high-value cards to populate price_history
 ```
 
 **Bandai import scripts**:
@@ -211,9 +244,13 @@ Set in Vercel dashboard → Settings → Environment Variables:
 
 - **Scan tab uses mock data**: `runScanLoop()` uses hardcoded mock cards. Needs ZXing barcode scanning.
 - **Collection uses localStorage**: No user accounts, data lost if browser cleared. Supabase auth needed.
-- **DBS FB07 in catalog** (122 cards). FB08+ still missing — run `npm run import-fb08` / `import-fb09` when needed.
-- **BT01-BT18 now fully named** from Bandai US-EN (2,565 placeholders filled + 831 new SPR variants). Some Deckplanet images show wrong art — Bandai images preferred.
-- **eBay rate limiting**: Heavy usage can trigger 429 errors. Resets after 15-60 minutes.
+- **DBS FB07+FB08 in catalog** (122+122 cards). FB09+ still missing — run `npm run import-fb09` when needed.
+- **Parallel card rarity codes** updated with star suffix (C→C*, UC→UC*, R→R*, SR→SR*, L→L*) across FB01-FB08, FS01-FS10, SB01. SCR and PR parallels excluded. Energy marker parallels (E-XX-P1) set to C*.
+- **BT01-BT18 now fully named** from Bandai US-EN (2,565 placeholders filled + 831 new SPR variants). Some Deckplanet images show wrong art — Bandai images preferred. Manual corrections: BT16-035 Videl, BT16-036 Beerus, BT23-139 Super Shenron SCR.
+- **Pokemon catalog**: all `_hires.png` URLs replaced with `.png` (direct URLs work, proxy was timing out).
+- **eBay Browse API limits**: 5,000 calls/day (resets midnight UTC). Each search = 3 calls (TCG) or 4 (sports). populate-prices uses ~3 calls per card.
+- **eBay Marketplace Insights API**: Not available — scope `buy.marketplace.insights` not enabled on app. Would provide real sold data for parallel cards. Requires eBay developer approval.
+- **Parallel sold data gap**: eBay Browse API returns active listings (not sold) for SB01 parallels despite `soldItems:true`. Active BIN prices used as fallback with disclaimer.
 - **One Piece image proxy**: Images still show SAMPLE watermark from some sources despite proxy.
 - In `normalizeApiResponse()`, `ct` and `jx` are referenced before assignment — works via closure.
 
