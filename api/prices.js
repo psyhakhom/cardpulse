@@ -1262,7 +1262,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: parallel-red-manga-v5', Date.now())
+  console.log('PRICES.JS VERSION: parallel-nameonly-v6', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
@@ -1430,14 +1430,15 @@ export default async function handler(req, res) {
       if (parallel === '1') {
         const PARALLEL_PRICE_FLOOR = 10
         const base = qs.a.q
-        // Name without card number — sellers often omit it (e.g. "Fortuneteller Baba red manga")
+        // Name without card number — eBay API can't match card numbers with varied formatting
         const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
-        console.log(`[parallel] firing 4 targeted queries for: "${base}" (nameOnly: "${nameOnly}")`)
-        const [pA, pB, pC, pD, dA, dB] = await Promise.allSettled([
-          ebaySearch(base + ' alt art', token, { limit: 30, sort: 'newlyListed' }),
-          ebaySearch(base + ' parallel', token, { limit: 30, sort: 'endingSoonest' }),
-          ebaySearch(base + ' manga', token, { limit: 30, sort: 'newlyListed' }),
-          ebaySearch(nameOnly + ' red manga', token, { limit: 30, sort: 'newlyListed' }),
+        console.log(`[parallel] firing 3 name-only queries for: "${nameOnly}" (base: "${base}")`)
+        // All parallel queries: name-only (no card number), global (no US-only restriction)
+        const pOpts = { limit: 30, sort: 'newlyListed', global: true }
+        const [pA, pB, pC, dA, dB] = await Promise.allSettled([
+          ebaySearch(nameOnly + ' alt art', token, pOpts),
+          ebaySearch(nameOnly + ' parallel', token, pOpts),
+          ebaySearch(nameOnly + ' manga', token, { ...pOpts, sort: 'endingSoonest' }),
           // Normal A+B as fallback if parallel queries return nothing
           ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
           ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
@@ -1445,13 +1446,12 @@ export default async function handler(req, res) {
         const rawPAlt = pA.status === 'fulfilled' ? pA.value.itemSummaries || [] : []
         const rawPPar = pB.status === 'fulfilled' ? pB.value.itemSummaries || [] : []
         const rawPMng = pC.status === 'fulfilled' ? pC.value.itemSummaries || [] : []
-        const rawPRed = pD.status === 'fulfilled' ? pD.value.itemSummaries || [] : []
-        const parallelTotal = rawPAlt.length + rawPPar.length + rawPMng.length + rawPRed.length
-        console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} manga=${rawPMng.length} red_manga=${rawPRed.length} total=${parallelTotal}`)
+        const parallelTotal = rawPAlt.length + rawPPar.length + rawPMng.length
+        console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} manga=${rawPMng.length} total=${parallelTotal}`)
 
         if (parallelTotal > 0) {
-          // Merge all four, dedup by itemId, apply price floor
-          const allRaw = [...rawPAlt, ...rawPPar, ...rawPMng, ...rawPRed]
+          // Merge all three, dedup by itemId, apply price floor
+          const allRaw = [...rawPAlt, ...rawPPar, ...rawPMng]
           const seen = new Set()
           let merged = allRaw.filter(i => {
             const id = i.itemId || i.legacyItemId
@@ -1973,7 +1973,7 @@ export default async function handler(req, res) {
       lang,
       source: 'ebay',
       timestamp: Date.now(),
-      _version: 'parallel-red-manga-v5',
+      _version: 'parallel-nameonly-v6',
       searchTip: blended.confidence < 60 && blended.totalComps < 5
         ? 'Try adding the set name or card number for better results'
         : null,
