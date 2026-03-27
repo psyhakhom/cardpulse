@@ -47,9 +47,16 @@ async function getHighValueCards() {
 
   // Priority tiers — queried separately to control ordering
   const tiers = [
-    { rarities: ['SCR', 'SCR*', 'SCR**', 'SPR', 'DBR', 'SGR'], label: 'ultra-high' },
-    { rarities: ['SR*', 'SEC', 'SAR', 'SSR'], label: 'high' },
-    { rarities: ['SR'], label: 'mid', gameFilter: 'dbs' }, // only DBS SR, not all games
+    // DBS ultra-high
+    { rarities: ['SCR', 'SCR*', 'SCR**', 'SPR', 'DBR', 'SGR'], label: 'dbs-ultra' },
+    { rarities: ['SR*', 'SEC', 'SAR', 'SSR'], label: 'dbs-high' },
+    { rarities: ['SR'], label: 'dbs-mid', gameFilter: 'dbs' },
+    // Pokemon high-value
+    { rarities: ['Special Illustration Rare', 'Illustration Rare', 'Hyper Rare', 'Mega Hyper Rare'], label: 'pkm-ultra' },
+    { rarities: ['Ultra Rare', 'Rare Secret', 'Double Rare', 'Rare Ultra', 'Shiny Ultra Rare'], label: 'pkm-high' },
+    { rarities: ['Rare Holo EX', 'Rare Holo GX', 'Rare Holo V', 'Rare Holo VMAX', 'Rare Holo VSTAR', 'Rare Holo LV.X'], label: 'pkm-ex' },
+    // One Piece / Lorcana / MTG / YGO high-value
+    { rarities: ['SEC', 'Mythic', 'Secret Rare', 'Legendary'], label: 'other-high' },
   ]
 
   // Game priority order
@@ -112,8 +119,45 @@ async function getRecentlySearched() {
   return set
 }
 
+// Pokemon set code → human-readable name (from api/cards.js PKM_SET_NAMES)
+const PKM_SETS = {
+  BASE1:'Base Set',BASE2:'Jungle',BASE3:'Fossil',BASE5:'Team Rocket',BASE6:'Legendary Collection',
+  GYM1:'Gym Heroes',GYM2:'Gym Challenge',NEO1:'Neo Genesis',NEO2:'Neo Discovery',NEO3:'Neo Revelation',NEO4:'Neo Destiny',
+  ECARD1:'Expedition',ECARD2:'Aquapolis',ECARD3:'Skyridge',
+  EX1:'Ruby & Sapphire',EX8:'Deoxys',EX11:'Delta Species',EX12:'Legend Maker',EX13:'Holon Phantoms',
+  SM1:'Sun & Moon',SM2:'Guardians Rising',SM3:'Burning Shadows',SM35:'Shining Legends',SM5:'Ultra Prism',
+  SM6:'Forbidden Light',SM7:'Celestial Storm',SM75:'Dragon Majesty',SM8:'Lost Thunder',SM9:'Team Up',SM10:'Unbroken Bonds',
+  SM11:'Unified Minds',SM115:'Hidden Fates',SM12:'Cosmic Eclipse',
+  SWSH1:'Sword & Shield',SWSH3:'Darkness Ablaze',SWSH35:'Champions Path',SWSH4:'Vivid Voltage',
+  SWSH5:'Battle Styles',SWSH6:'Chilling Reign',SWSH7:'Evolving Skies',SWSH8:'Fusion Strike',SWSH9:'Brilliant Stars',
+  SWSH10:'Astral Radiance',SWSH11:'Lost Origin',SWSH12:'Silver Tempest',SWSH45:'Shining Fates',
+  SV1:'Scarlet & Violet',SV2:'Paldea Evolved',SV3:'Obsidian Flames',SV3PT5:'151',SV4:'Paradox Rift',SV5:'Temporal Forces',
+  SV6:'Twilight Masquerade',SV7:'Stellar Crown',SV8:'Surging Sparks',SV8PT5:'Prismatic Evolutions',SV9:'Journey Together',SV10:'Destined Rivals',
+}
+
+// Build eBay-optimized query per game (mirrors selectAc logic in index.html)
+function buildQuery(card) {
+  const name = (card.card_name || '').split(',')[0].split(' // ')[0].trim() // truncate at comma
+  const g = card.game || ''
+  if (g === 'pokemon') {
+    const setName = PKM_SETS[(card.set_code || '').toUpperCase()] || card.set_code || ''
+    return `${name} ${setName}`.trim()
+  }
+  if (g === 'mtg' || g === 'lorcana') {
+    // Set-name games: sellers use "Card Name Set Name" not collector numbers
+    return `${name} ${card.set_code || ''}`.trim()
+  }
+  if (g === 'yugioh') {
+    // YGO: sellers rarely include set/number
+    return name
+  }
+  // DBS, One Piece: card name + card number
+  const num = (card.card_number || '').replace(/_PR\d*$/i, '').replace(/_p\d+$/i, '').replace(/-P\d+$/i, '')
+  return `${name} ${num}`.trim()
+}
+
 async function searchCard(card) {
-  const q = `${card.card_name} ${card.card_number || ''}`.trim()
+  const q = buildQuery(card)
   const params = new URLSearchParams({
     q,
     grade: 'Raw',
