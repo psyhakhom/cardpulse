@@ -674,7 +674,7 @@ function selectAc(i){
   }else if(card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number)){
     // DBS, One Piece, etc: sellers use card numbers (FB07-079, OP05-119, BT22-049)
     // Detect parallel suffix BEFORE stripping — parallels need keyword-based queries
-    const isParallel=/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number);
+    const isParallel=/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number)||/\(-?P\d+\)/i.test(card.name);
     _isParallel=isParallel;
     const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
     const rUp=(card.rarity||'').toUpperCase();
