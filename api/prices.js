@@ -1496,15 +1496,31 @@ export default async function handler(req, res) {
           console.log(`[parallel] after all filters: ${filtered.length} comps`)
 
           if (filtered.length > 0) {
-            // Split into two buckets for blend
-            const mid = Math.ceil(filtered.length / 2)
-            const fRecent = filtered.slice(0, mid)
-            const fBroad = filtered.slice(mid)
+            // Active listings: use lowest 5 BIN prices as market indicator
+            // This represents what a buyer would actually pay (cheapest available)
+            filtered.sort((a, b) => parseFloat(a.price?.value || 0) - parseFloat(b.price?.value || 0))
+            const lowest = filtered.slice(0, 5)
+            const prices = lowest.map(i => parseFloat(i.price?.value || 0))
+            const avg = prices.reduce((a, b) => a + b, 0) / prices.length
+            const lo = prices[0]
+            const hi = prices[prices.length - 1]
+            console.log(`[parallel] lowest ${prices.length} listings: $${prices.join(', $')} → avg $${avg.toFixed(2)}`)
+            // Build a synthetic blend result
+            const syntheticStats = { avg, lo, hi, count: lowest.length }
             const res_ = [
-              { ...qs.b, label: 'Alt Art listings (recent)', weight: 0.55, stats: calcStats(fRecent, 'P-Recent') },
-              { ...qs.a, label: 'Alt Art listings (all)', weight: 0.45, stats: calcStats(fBroad, 'P-Broad') },
+              { ...qs.a, label: 'Lowest BIN prices', weight: 1.0, stats: syntheticStats },
             ]
-            return { results: res_, blended: blend(res_, isSportsQuery), allItems: filtered, hadJapaneseResults: false, activeListings: true }
+            const blended_ = {
+              lo: parseFloat(lo.toFixed(2)),
+              avg: parseFloat(avg.toFixed(2)),
+              hi: parseFloat(hi.toFixed(2)),
+              confidence: Math.min(80, 30 + lowest.length * 10),
+              activeQueries: 1,
+              totalQueries: 1,
+              totalComps: lowest.length,
+              reweighted: res_,
+            }
+            return { results: res_, blended: blended_, allItems: lowest, hadJapaneseResults: false, activeListings: true }
           }
           console.log(`[parallel] all parallel comps filtered out, falling back to normal queries`)
         } else {
