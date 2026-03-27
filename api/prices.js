@@ -1263,7 +1263,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: parallel-sold-filter-v7', Date.now())
+  console.log('PRICES.JS VERSION: parallel-us-sold-180d-v8', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
@@ -1433,9 +1433,9 @@ export default async function handler(req, res) {
         const base = qs.a.q
         // Name without card number — eBay API can't match card numbers with varied formatting
         const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
-        console.log(`[parallel] firing 3 name-only queries for: "${nameOnly}" (base: "${base}")`)
-        // All parallel queries: name-only (no card number), global (no US-only restriction)
-        const pOpts = { limit: 30, sort: 'newlyListed', global: true }
+        console.log(`[parallel] firing 3 name-only US-sold queries for: "${nameOnly}" (base: "${base}")`)
+        // US-only sold search — global=true doesn't return sold items reliably
+        const pOpts = { limit: 30, sort: 'newlyListed' }
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
           ebaySearch(nameOnly + ' alt art', token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
@@ -1460,16 +1460,6 @@ export default async function handler(req, res) {
             seen.add(id)
             return true
           })
-          // Strip active (unsold) listings — eBay API sometimes returns BIN listings despite soldItems:true
-          const beforeActive = merged.length
-          merged = merged.filter(i => {
-            if (!i.itemEndDate) {
-              console.log(`[parallel] active listing dropped (no itemEndDate): $${parseFloat(i.price?.value||0).toFixed(2)} "${(i.title||'').slice(0,70)}"`)
-              return false
-            }
-            return true
-          })
-          if (merged.length < beforeActive) console.log(`[parallel] active filter: ${beforeActive} → ${merged.length}`)
           // Price floor: drop base card listings that slip through
           const beforeFloor = merged.length
           merged = merged.filter(i => parseFloat(i.price?.value || 0) >= PARALLEL_PRICE_FLOOR)
@@ -1479,20 +1469,20 @@ export default async function handler(req, res) {
             const d = (c.itemEndDate || c.itemCreationDate || 'no-date').slice(0, 10)
             console.log(`[parallel] comp: $${parseFloat(c.price?.value||0).toFixed(2)} ${d} "${(c.title||'').slice(0,80)}"`)
           }
-          // 90-day cutoff
-          const cutoff90d = Date.now() - 90 * 24 * 60 * 60 * 1000
-          const before90d = merged.length
+          // 180-day cutoff (wider than normal 90d — parallel cards have fewer comps)
+          const cutoff180d = Date.now() - 180 * 24 * 60 * 60 * 1000
+          const before180d = merged.length
           merged = merged.filter(i => {
             const d = i.itemEndDate || i.itemCreationDate
             if (!d) return true
             const ts = new Date(d).getTime()
-            if (ts < cutoff90d) {
-              console.log(`[parallel] 90d dropped: "${(i.title||'').slice(0,70)}" date=${d.slice(0,10)} (${Math.round((Date.now()-ts)/86400000)}d old)`)
+            if (ts < cutoff180d) {
+              console.log(`[parallel] 180d dropped: "${(i.title||'').slice(0,70)}" date=${d.slice(0,10)} (${Math.round((Date.now()-ts)/86400000)}d old)`)
               return false
             }
             return true
           })
-          if (merged.length < before90d) console.log(`[parallel] 90d cutoff: ${before90d} → ${merged.length}`)
+          if (merged.length < before180d) console.log(`[parallel] 180d cutoff: ${before180d} → ${merged.length}`)
 
           if (grade === 'Raw') {
             const beforeSlab = merged.length
@@ -1984,7 +1974,7 @@ export default async function handler(req, res) {
       lang,
       source: 'ebay',
       timestamp: Date.now(),
-      _version: 'parallel-sold-filter-v7',
+      _version: 'parallel-us-sold-180d-v8',
       searchTip: blended.confidence < 60 && blended.totalComps < 5
         ? 'Try adding the set name or card number for better results'
         : null,
