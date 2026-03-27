@@ -315,7 +315,7 @@ const RAW_EXCLUDE_PATTERNS = [
   /\b(poor|damaged)\b/i,
 ]
 
-function filterItems(items, grade, searchQuery, lang) {
+function filterItems(items, grade, searchQuery, lang, opts = {}) {
   if (!items?.length) return items
   const ql = (searchQuery || '').toLowerCase()
 
@@ -381,8 +381,10 @@ function filterItems(items, grade, searchQuery, lang) {
   // ── 2. Variant exclusion ─────────────────────────────────────────────
   // For sports cards: only apply "always excluded" variants (sealed, fan art, memorabilia)
   // For TCG cards: apply all variant terms
+  // Skip for parallel queries — targeted queries already ensure correct variant
+  if (opts.skipVariants) console.log(`[filter] skipping variant+holo filters (parallel mode)`)
   const preVariantFiltered = [...filtered] // snapshot before variant filtering
-  for (const vt of VARIANT_TERMS) {
+  if (!opts.skipVariants) for (const vt of VARIANT_TERMS) {
     // Sports queries skip TCG-specific variants (foil, holo, chrome, refractor, silver, gold, rainbow, prismatic)
     // but keep: memorabilia (_sports), sealed product (/(?!)/), fan art (/(?!)/)
     if (isSportsQuery && !vt._sports && vt.query.toString() !== '/(?!)/') continue
@@ -407,8 +409,8 @@ function filterItems(items, grade, searchQuery, lang) {
     filtered = preVariantFiltered
   }
 
-  // ── 2b. Holo exclusion (non-Pokemon only, skip for sports) ────────────
-  if (!isSportsQuery) {
+  // ── 2b. Holo exclusion (non-Pokemon only, skip for sports and parallel) ──
+  if (!isSportsQuery && !opts.skipVariants) {
     const isPokemon = /\bpokemon\b|\bpokémon\b|\bcharizard\b|\bpikachu\b/i.test(ql)
     if (!isPokemon && !/\bholo\b/i.test(ql)) {
       const before = filtered.length
@@ -1459,7 +1461,7 @@ export default async function handler(req, res) {
             merged = merged.filter(i => !isGradedSlab(i.title))
           }
           const filterQ = processed + ' alt art'
-          let filtered = filterByRarity(filterItems(merged, grade, filterQ, lang))
+          let filtered = filterByRarity(filterItems(merged, grade, filterQ, lang, { skipVariants: true }))
           // Hard block: card name enforcement
           const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|booster|special|super|secret|common|uncommon)$/i
           const _SET_P = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
