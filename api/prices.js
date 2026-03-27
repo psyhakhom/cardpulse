@@ -1263,7 +1263,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: parallel-us-sold-180d-v8', Date.now())
+  console.log('PRICES.JS VERSION: parallel-active-v9', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
@@ -1451,7 +1451,7 @@ export default async function handler(req, res) {
         console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} manga=${rawPMng.length} total=${parallelTotal}`)
 
         if (parallelTotal > 0) {
-          // Merge all three, dedup by itemId, apply price floor
+          // Merge all three, dedup by itemId
           const allRaw = [...rawPAlt, ...rawPPar, ...rawPMng]
           const seen = new Set()
           let merged = allRaw.filter(i => {
@@ -1460,40 +1460,24 @@ export default async function handler(req, res) {
             seen.add(id)
             return true
           })
-          // Drop active (unsold) listings — sold items have itemEndDate or buyingOptions includes BEST_OFFER
-          const beforeSold = merged.length
+          // NOTE: eBay Browse API returns active listings despite soldItems:true for
+          // SB01 parallel cards. No itemEndDate = no sold data available in the API.
+          // We use active listing prices as a market indicator instead.
+
+          // Price floor ($10) + ceiling ($500): drop base cards and speculative outliers
+          const beforePrice = merged.length
           merged = merged.filter(i => {
-            // Sold items always have itemEndDate; active BIN listings don't
-            if (i.itemEndDate) return true
-            // Some best-offer sales lack itemEndDate but have past itemCreationDate
-            if (i.itemCreationDate && new Date(i.itemCreationDate).getTime() < Date.now() - 24 * 60 * 60 * 1000) return true
-            console.log(`[parallel] active listing dropped: $${parseFloat(i.price?.value||0).toFixed(2)} "${(i.title||'').slice(0,70)}" buyOpts=${JSON.stringify(i.buyingOptions)}`)
-            return false
+            const p = parseFloat(i.price?.value || 0)
+            if (p < PARALLEL_PRICE_FLOOR) { console.log(`[parallel] floor dropped: $${p.toFixed(2)} "${(i.title||'').slice(0,70)}"`); return false }
+            if (p > 500) { console.log(`[parallel] ceiling dropped: $${p.toFixed(2)} "${(i.title||'').slice(0,70)}"`); return false }
+            return true
           })
-          if (merged.length < beforeSold) console.log(`[parallel] sold filter: ${beforeSold} → ${merged.length}`)
-          // Price floor: drop base card listings that slip through
-          const beforeFloor = merged.length
-          merged = merged.filter(i => parseFloat(i.price?.value || 0) >= PARALLEL_PRICE_FLOOR)
-          if (merged.length < beforeFloor) console.log(`[parallel] price floor $${PARALLEL_PRICE_FLOOR}: ${beforeFloor} → ${merged.length}`)
-          // Log all comps after price floor
+          if (merged.length < beforePrice) console.log(`[parallel] price filter: ${beforePrice} → ${merged.length}`)
+          // Log all comps after price filter
           for (const c of merged) {
             const d = (c.itemEndDate || c.itemCreationDate || 'no-date').slice(0, 10)
             console.log(`[parallel] comp: $${parseFloat(c.price?.value||0).toFixed(2)} ${d} "${(c.title||'').slice(0,80)}"`)
           }
-          // 180-day cutoff (wider than normal 90d — parallel cards have fewer comps)
-          const cutoff180d = Date.now() - 180 * 24 * 60 * 60 * 1000
-          const before180d = merged.length
-          merged = merged.filter(i => {
-            const d = i.itemEndDate || i.itemCreationDate
-            if (!d) return true
-            const ts = new Date(d).getTime()
-            if (ts < cutoff180d) {
-              console.log(`[parallel] 180d dropped: "${(i.title||'').slice(0,70)}" date=${d.slice(0,10)} (${Math.round((Date.now()-ts)/86400000)}d old)`)
-              return false
-            }
-            return true
-          })
-          if (merged.length < before180d) console.log(`[parallel] 180d cutoff: ${before180d} → ${merged.length}`)
 
           if (grade === 'Raw') {
             const beforeSlab = merged.length
@@ -1512,15 +1496,15 @@ export default async function handler(req, res) {
           console.log(`[parallel] after all filters: ${filtered.length} comps`)
 
           if (filtered.length > 0) {
-            // Split into two buckets for blend: recent (newlyListed) and broad
+            // Split into two buckets for blend
             const mid = Math.ceil(filtered.length / 2)
             const fRecent = filtered.slice(0, mid)
             const fBroad = filtered.slice(mid)
             const res_ = [
-              { ...qs.b, label: 'Alt Art sold (recent)', weight: 0.55, stats: calcStats(fRecent, 'P-Recent') },
-              { ...qs.a, label: 'Alt Art sold (all)', weight: 0.45, stats: calcStats(fBroad, 'P-Broad') },
+              { ...qs.b, label: 'Alt Art listings (recent)', weight: 0.55, stats: calcStats(fRecent, 'P-Recent') },
+              { ...qs.a, label: 'Alt Art listings (all)', weight: 0.45, stats: calcStats(fBroad, 'P-Broad') },
             ]
-            return { results: res_, blended: blend(res_, isSportsQuery), allItems: filtered, hadJapaneseResults: false }
+            return { results: res_, blended: blend(res_, isSportsQuery), allItems: filtered, hadJapaneseResults: false, activeListings: true }
           }
           console.log(`[parallel] all parallel comps filtered out, falling back to normal queries`)
         } else {
@@ -1780,7 +1764,7 @@ export default async function handler(req, res) {
         variants: qResult.variants,
       })
     }
-    let { results, blended, allItems, hadJapaneseResults } = qResult
+    let { results, blended, allItems, hadJapaneseResults, activeListings } = qResult
     const dedicatedImageUrl = cardImageResult.status === 'fulfilled' ? cardImageResult.value : null
 
     let correctedQuery = null  // set if we used spell correction or word-strip
@@ -1984,8 +1968,9 @@ export default async function handler(req, res) {
       grade,
       lang,
       source: 'ebay',
+      activeListings: activeListings || false,
       timestamp: Date.now(),
-      _version: 'parallel-us-sold-180d-v8',
+      _version: 'parallel-active-v9',
       searchTip: blended.confidence < 60 && blended.totalComps < 5
         ? 'Try adding the set name or card number for better results'
         : null,

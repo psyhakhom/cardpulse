@@ -912,6 +912,7 @@ function normalizeApiResponse(data, q, sc) {
     img:     sc?.imageUrl || data.imageUrl || getImg(q),
     comps,
     searchTip: data.searchTip || null,
+    activeListings: data.activeListings || false,
     multipleProducts: data.multipleProducts || false,
     clusters: data.clusters || null,
     correctedQuery: data.correctedQuery || null,
@@ -1176,7 +1177,7 @@ function renderResult(el,q,r){
       <div class="tb"><span class="tl">90-day</span><span class="tv ${t9c}">${t9a} ${Math.abs(r.t90)}%</span></div>
     </div>
     <div class="div"></div>
-    <div class="ch2"><span>Recent sold comps</span><span>${r.comps.length} results</span></div>
+    <div class="ch2"><span>${r.activeListings?'Active listings':'Recent sold comps'}</span><span>${r.comps.length} results</span></div>${r.activeListings?'<div style="font-size:11px;color:var(--mu);padding:0 0 8px;font-style:italic">Prices based on current listings — no recent sold data available for this variant</div>':''}
     ${crows}
     <button class="acb" onclick='promptAdd("${cardData}")'>+ Add to collection</button>
     </div></div>`;
