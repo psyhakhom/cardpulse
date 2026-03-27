@@ -441,8 +441,8 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
     }
   }
 
-  // ── 2c. Wrong set code exclusion (TCG only, skip for sports) ──────────
-  if (!isSportsQuery) {
+  // ── 2c. Wrong set code exclusion (TCG only, skip for sports and parallel) ──
+  if (!isSportsQuery && !opts.skipVariants) {
     const SET_CODE_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH|SV|SM|XY|BW|DP|EX|OP|ST)\d+[A-Z]?\b/i
     const querySetMatch = ql.match(SET_CODE_RE)
     if (querySetMatch) {
