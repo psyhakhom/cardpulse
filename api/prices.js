@@ -1412,33 +1412,27 @@ export default async function handler(req, res) {
     async function runQueries(name) {
       const qs = buildQueries(name, grade, lang)
 
-      // ── Parallel mode: fire 3 targeted queries as PRIMARY source ──────
+      // ── Parallel mode: fire 2 targeted queries as PRIMARY source ──────
       // Normal A/B/C return base card comps ($1) that pollute pricing.
-      // Instead, use keyword-specific queries that only match parallel listings.
+      // Use "alt art" + "parallel" queries — only listings explicitly labeled
+      // with these terms. Skips "manga" which matches base cards too.
       if (parallel === '1') {
         const base = qs.a.q
-        console.log(`[parallel] firing 3 targeted queries for: "${base}"`)
-        const [pA, pB, pC, dA, dB] = await Promise.allSettled([
+        console.log(`[parallel] firing 2 targeted queries for: "${base}"`)
+        const [pA, pB, dA, dB] = await Promise.allSettled([
           ebaySearch(base + ' alt art', token, { limit: 30, sort: 'newlyListed' }),
-          ebaySearch(base + ' parallel', token, { limit: 30, sort: 'newlyListed' }),
-          ebaySearch(base + ' manga', token, { limit: 30, sort: 'newlyListed' }),
-          // Also fire normal A+B as fallback if parallel queries return nothing
+          ebaySearch(base + ' parallel', token, { limit: 30, sort: 'endingSoonest' }),
+          // Normal A+B as fallback if parallel queries return nothing
           ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
           ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
         ])
         const rawPAlt = pA.status === 'fulfilled' ? pA.value.itemSummaries || [] : []
         const rawPPar = pB.status === 'fulfilled' ? pB.value.itemSummaries || [] : []
-        const rawPMng = pC.status === 'fulfilled' ? pC.value.itemSummaries || [] : []
-        const parallelTotal = rawPAlt.length + rawPPar.length + rawPMng.length
-        console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} manga=${rawPMng.length} total=${parallelTotal}`)
+        const parallelTotal = rawPAlt.length + rawPPar.length
+        console.log(`[parallel] results: alt_art=${rawPAlt.length} parallel=${rawPPar.length} total=${parallelTotal}`)
 
         if (parallelTotal > 0) {
-          // Merge all parallel results into A and B, skip normal base-card queries
-          let rawA = [...rawPAlt, ...rawPPar]
-          let rawB = [...rawPMng]
-          let rawC = [] // no grade-exact for parallel
-          let rawD = []
-          // Dedup by itemId across the merged parallel results
+          // Dedup by itemId across both parallel queries
           const seen = new Set()
           const dedup = (items) => items.filter(i => {
             const id = i.itemId || i.legacyItemId
@@ -1446,32 +1440,32 @@ export default async function handler(req, res) {
             seen.add(id)
             return true
           })
-          rawA = dedup(rawA)
-          rawB = dedup(rawB)
+          let rawP1 = dedup(rawPAlt)
+          let rawP2 = dedup(rawPPar)
 
           if (grade === 'Raw') {
-            rawA = rawA.filter(i => !isGradedSlab(i.title))
-            rawB = rawB.filter(i => !isGradedSlab(i.title))
+            rawP1 = rawP1.filter(i => !isGradedSlab(i.title))
+            rawP2 = rawP2.filter(i => !isGradedSlab(i.title))
           }
           const filterQ = processed + ' alt art'
-          let fA = filterByRarity(filterItems(rawA, grade, filterQ, lang))
-          let fB = filterByRarity(filterItems(rawB, grade, filterQ, lang))
+          let fP1 = filterByRarity(filterItems(rawP1, grade, filterQ, lang))
+          let fP2 = filterByRarity(filterItems(rawP2, grade, filterQ, lang))
           // Hard block: card name enforcement
           const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|booster|special|super|secret|common|uncommon)$/i
           const _SET_P = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
           const _nameP = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
           if (_nameP.length > 0) {
-            fA = fA.filter(i => _nameP.some(w => (i.title || '').toLowerCase().includes(w)))
-            fB = fB.filter(i => _nameP.some(w => (i.title || '').toLowerCase().includes(w)))
+            fP1 = fP1.filter(i => _nameP.some(w => (i.title || '').toLowerCase().includes(w)))
+            fP2 = fP2.filter(i => _nameP.some(w => (i.title || '').toLowerCase().includes(w)))
           }
-          console.log(`[parallel] after filter+hardblock: A=${fA.length} B=${fB.length}`)
+          console.log(`[parallel] after filter+hardblock: P1=${fP1.length} P2=${fP2.length}`)
 
-          if (fA.length + fB.length > 0) {
+          if (fP1.length + fP2.length > 0) {
             const res_ = [
-              { ...qs.a, label: 'Parallel sold (alt art)', stats: calcStats(fA, 'P-AltPar') },
-              { ...qs.b, label: 'Parallel sold (manga)', stats: calcStats(fB, 'P-Manga') },
+              { ...qs.b, label: 'Alt Art sold', weight: 0.55, stats: calcStats(fP1, 'P-Alt') },
+              { ...qs.a, label: 'Parallel sold', weight: 0.45, stats: calcStats(fP2, 'P-Par') },
             ]
-            return { results: res_, blended: blend(res_, isSportsQuery), allItems: [...fA, ...fB], hadJapaneseResults: false }
+            return { results: res_, blended: blend(res_, isSportsQuery), allItems: [...fP1, ...fP2], hadJapaneseResults: false }
           }
           console.log(`[parallel] all parallel comps filtered out, falling back to normal queries`)
         } else {
@@ -1480,10 +1474,6 @@ export default async function handler(req, res) {
         // Fallback: use the normal A+B we already fetched
         let rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
         let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
-        // Continue into normal flow below with rawA/rawB + empty C/D
-        const rawC = []
-        const rawD = []
-        // Run through normal filtering and return
         if (grade === 'Raw') {
           rawA = rawA.filter(i => !isGradedSlab(i.title))
           rawB = rawB.filter(i => !isGradedSlab(i.title))
