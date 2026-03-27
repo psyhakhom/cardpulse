@@ -1483,47 +1483,49 @@ export default async function handler(req, res) {
           if (_nameP.length > 0) {
             filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().includes(w)))
           }
-          // Drop items older than 180 days and active listings (future itemEndDate)
+          // Separate sold items (have past itemEndDate) from active listings (no itemEndDate or future)
           const _now = Date.now()
           const _cutoff180d = _now - 180 * 24 * 60 * 60 * 1000
-          const beforeDate = filtered.length
-          filtered = filtered.filter(i => {
+          const sold = filtered.filter(i => {
             const endDate = i.itemEndDate
-            if (endDate && new Date(endDate).getTime() > _now) return false
-            const d = endDate || i.itemCreationDate
-            if (!d) return true
-            return new Date(d).getTime() >= _cutoff180d
+            if (!endDate) return false // no endDate = active listing
+            const endMs = new Date(endDate).getTime()
+            if (endMs > _now) return false // future endDate = active listing
+            return endMs >= _cutoff180d // within 180-day window
           })
-          if (filtered.length < beforeDate)
-            console.log(`[parallel:date-filter] ${beforeDate} → ${filtered.length} (dropped ${beforeDate - filtered.length} stale/active)`)
+          const active = filtered.filter(i => !i.itemEndDate || new Date(i.itemEndDate).getTime() > _now)
+          console.log(`[parallel] sold=${sold.length} active=${active.length} (of ${filtered.length} filtered)`)
 
-          console.log(`[parallel] after all filters: ${filtered.length} comps`)
+          // Prefer sold comps; fall back to active BIN prices only if 0 sold
+          const useActive = sold.length === 0 && active.length > 0
+          const comps = useActive ? active : sold
+          const compLabel = useActive ? 'Active listings' : 'Parallel sold comps'
 
-          if (filtered.length > 0) {
-            // Use all filtered comps for pricing — show the full market picture
-            filtered.sort((a, b) => parseFloat(a.price?.value || 0) - parseFloat(b.price?.value || 0))
-            const prices = filtered.map(i => parseFloat(i.price?.value || 0))
+          comps.forEach((i, idx) => console.log(`  [parallel ${idx}] $${parseFloat(i.price?.value||0)} ${i.itemEndDate || 'no-endDate'} "${(i.title||'').slice(0,80)}"`))
+
+          if (comps.length > 0) {
+            comps.sort((a, b) => parseFloat(a.price?.value || 0) - parseFloat(b.price?.value || 0))
+            const prices = comps.map(i => parseFloat(i.price?.value || 0))
             const avg = prices.reduce((a, b) => a + b, 0) / prices.length
             const lo = prices[0]
             const hi = prices[prices.length - 1]
-            console.log(`[parallel] ${prices.length} comps: $${prices.join(', $')} → avg $${avg.toFixed(2)}`)
-            filtered.forEach((i, idx) => console.log(`  [parallel ${idx}] $${parseFloat(i.price?.value||0)} ${i.itemEndDate || 'no-endDate'} "${(i.title||'').slice(0,80)}"`))
+            console.log(`[parallel] ${prices.length} ${compLabel}: $${prices.join(', $')} → avg $${avg.toFixed(2)}`)
             // Build a synthetic blend result
-            const syntheticStats = { avg, lo, hi, count: filtered.length }
+            const syntheticStats = { avg, lo, hi, count: comps.length }
             const res_ = [
-              { ...qs.a, label: 'Parallel sold comps', weight: 1.0, stats: syntheticStats },
+              { ...qs.a, label: compLabel, weight: 1.0, stats: syntheticStats },
             ]
             const blended_ = {
               lo: parseFloat(lo.toFixed(2)),
               avg: parseFloat(avg.toFixed(2)),
               hi: parseFloat(hi.toFixed(2)),
-              confidence: Math.min(80, 30 + filtered.length * 10),
+              confidence: Math.min(useActive ? 60 : 80, 30 + comps.length * 10),
               activeQueries: 1,
               totalQueries: 1,
-              totalComps: filtered.length,
+              totalComps: comps.length,
               reweighted: res_,
             }
-            return { results: res_, blended: blended_, allItems: filtered, hadJapaneseResults: false, activeListings: true }
+            return { results: res_, blended: blended_, allItems: comps, hadJapaneseResults: false, activeListings: useActive }
           }
           console.log(`[parallel] all parallel comps filtered out, falling back to normal queries`)
         } else {
