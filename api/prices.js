@@ -1507,6 +1507,7 @@ export default async function handler(req, res) {
             const lo = prices[0]
             const hi = prices[prices.length - 1]
             console.log(`[parallel] ${prices.length} comps: $${prices.join(', $')} → avg $${avg.toFixed(2)}`)
+            filtered.forEach((i, idx) => console.log(`  [parallel ${idx}] $${parseFloat(i.price?.value||0)} ${i.itemEndDate || 'no-endDate'} "${(i.title||'').slice(0,80)}"`))
             // Build a synthetic blend result
             const syntheticStats = { avg, lo, hi, count: filtered.length }
             const res_ = [
@@ -1976,7 +1977,7 @@ export default async function handler(req, res) {
         const c = extractComps(deduped, 10, grade)
         if (grade === 'Raw') {
           console.log(`[comps:Raw] ${c.length} comps returned:`)
-          c.forEach((comp, i) => console.log(`  [comp ${i}] $${comp.price} "${comp.title?.slice(0, 80)}"`))
+          c.forEach((comp, i) => console.log(`  [comp ${i}] $${comp.price} ${comp.date || 'no-date'} "${comp.title?.slice(0, 80)}"`))
         }
         // Flag outliers: >2x median or <0.4x median (display-only, doesn't affect pricing)
         // Skip when price gap is explained by rarity split (SR vs SPR in same result set)
