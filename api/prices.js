@@ -1769,6 +1769,39 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── PARALLEL SPLIT: detect base vs parallel price gap ──────────────
+    // For parallel=1 searches, comps include both base ($1) and parallel ($40+).
+    // Detect the split and show a picker instead of averaging them together.
+    if (parallel === '1' && deduped.length >= 3) {
+      const PAR_RE = /\b(alt(?:ernate)?\s*art|parallel|manga\s*booster|special\s*art)\b/i
+      const parComps = deduped.filter(i => PAR_RE.test(i.title || ''))
+      const baseComps = deduped.filter(i => !PAR_RE.test(i.title || ''))
+      console.log(`[parallel-split] par=${parComps.length} base=${baseComps.length} total=${deduped.length}`)
+      if (parComps.length >= 1 && baseComps.length >= 1) {
+        const parPrices = parComps.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0)
+        const basePrices = baseComps.map(i => parseFloat(i.price?.value || 0)).filter(p => p > 0)
+        const parAvg = parPrices.length ? parPrices.reduce((a, b) => a + b, 0) / parPrices.length : 0
+        const baseAvg = basePrices.length ? basePrices.reduce((a, b) => a + b, 0) / basePrices.length : 0
+        if (parAvg > 0 && baseAvg > 0 && (parAvg / baseAvg > 2 || baseAvg / parAvg > 2)) {
+          console.log(`[parallel-split] detected: base $${baseAvg.toFixed(2)} (${baseComps.length}) vs parallel $${parAvg.toFixed(2)} (${parComps.length})`)
+          const cardNum = processed.match(/\b([A-Z]{1,4}\d+-\d{2,3}[A-Z]?)\b/i)?.[1] || ''
+          const cardName = processed.replace(/\b[A-Z]{1,4}\d+-\d{2,3}\b/gi, '').replace(/\s+/g, ' ').trim() || q.trim()
+          return res.status(200).json({
+            type: 'rarity-split',
+            query: q.trim(),
+            cardName,
+            grade,
+            lang,
+            cardNumber: cardNum,
+            variants: [
+              { rarity: 'Parallel', label: 'Parallel / Alt Art', estimatedPrice: parAvg, compCount: parComps.length },
+              { rarity: '', label: 'Base Card', estimatedPrice: baseAvg, compCount: baseComps.length },
+            ],
+          })
+        }
+      }
+    }
+
     // Detect SR/SPR rarity split — mixed comps from different rarity tiers
     // Only trigger when user didn't specify a card number or rarity
     // For exact=1 (autocomplete), card number was auto-added — don't count it as user-specified
@@ -1922,6 +1955,7 @@ export default async function handler(req, res) {
       searchQuery: processed,
     })
 
+    console.log(`[prices] sending response: avg=$${response.avg} comps=${response.totalComps} confidence=${response.confidence}`)
     return res.status(200).json(response)
   } catch (err) {
     console.error('CardPulse API error:', err)
