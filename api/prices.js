@@ -132,14 +132,14 @@ async function getToken() {
 async function ebaySearch(
   query,
   token,
-  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false, days = 90 } = {}
+  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false } = {}
 ) {
   // Strip apostrophes (straight + smart) — they break eBay search matching
   // Strip leading dashes on words — eBay interprets "-Sign-" as exclusion operator
   // Strip promo/parallel suffixes (_PR, _PR02, _p1) — catalog identifiers, not eBay terms
   // Also strip (-P2) name suffixes and -P2 card number suffixes
   query = query.replace(/['''`]/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
-  console.log(`[ebay query] q="${query}" live=${live} global=${global} days=${days}`)
+  console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
   if (live) {
@@ -147,15 +147,11 @@ async function ebaySearch(
     const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
     filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]${locFilter}`
   } else {
-    // itemEndDate:[cutoff..now] returns completed/sold items without soldItems:true.
-    // Confirmed: soldItems:true silently ignores itemEndDate, but itemEndDate alone works.
-    // dropStale() + parallel sold/active split remain as post-fetch safety nets.
-    const now = new Date()
-    const cutoffDate = new Date(now - days * 24 * 60 * 60 * 1000)
-    const nowISO = now.toISOString().split('.')[0] + 'Z'
-    const cutoffISO = cutoffDate.toISOString().split('.')[0] + 'Z'
-    console.log(`[ebay] itemEndDate filter (no soldItems): ${cutoffISO} .. ${nowISO}`)
-    filter = `buyingOptions:{FIXED_PRICE|AUCTION},itemEndDate:[${cutoffISO}..${nowISO}]${locFilter}`
+    // soldItems:true required for actual sold item data + correct sold URLs.
+    // itemEndDate without soldItems returns relisted active items (wrong URLs).
+    // itemEndDate WITH soldItems is silently ignored by eBay.
+    // Post-fetch filters handle date/active exclusion: dropStale() + sold/active split.
+    filter = `buyingOptions:{FIXED_PRICE|AUCTION},soldItems:true${locFilter}`
   }
   // Build URL manually — URLSearchParams encodes curly braces which eBay rejects
   const url = `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&filter=${encodeURIComponent(filter)}&sort=${sort}&limit=${limit}`
@@ -1440,14 +1436,14 @@ export default async function handler(req, res) {
         const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
         console.log(`[parallel] firing 3 name-only US-sold queries for: "${nameOnly}" (base: "${base}")`)
         // US-only sold search — global=true doesn't return sold items reliably
-        const pOpts = { limit: 30, sort: 'newlyListed', days: 180 }
+        const pOpts = { limit: 30, sort: 'newlyListed' }
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
           ebaySearch(nameOnly + ' alt art', token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
-          ebaySearch(nameOnly + ' manga', token, { ...pOpts, sort: 'endingSoonest', days: 180 }),
+          ebaySearch(nameOnly + ' manga', token, { ...pOpts, sort: 'endingSoonest' }),
           // Normal A+B as fallback if parallel queries return nothing
-          ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort, days: 90 }),
-          ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort, days: 30 }),
+          ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
+          ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
         ])
         const rawPAlt = pA.status === 'fulfilled' ? pA.value.itemSummaries || [] : []
         const rawPPar = pB.status === 'fulfilled' ? pB.value.itemSummaries || [] : []
@@ -1556,9 +1552,9 @@ export default async function handler(req, res) {
       // ── Normal (non-parallel) flow ────────────────────────────────────
       // TCG: skip Query D (live auctions) — BIN-dominated, saves one eBay API call
       const promises = [
-        ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort, days: 90 }),
-        ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort, days: 30 }),
-        ebaySearch(qs.c.q, token, { limit: qs.c.limit, sort: qs.c.sort, days: 90 }),
+        ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
+        ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
+        ebaySearch(qs.c.q, token, { limit: qs.c.limit, sort: qs.c.sort }),
       ]
       if (isSportsQuery) {
         promises.push(ebaySearch(qs.d.q, token, { limit: qs.d.limit, sort: qs.d.sort, live: true }))
@@ -1722,8 +1718,8 @@ export default async function handler(req, res) {
       if (totalComps < 5) {
         console.log(`[low-volume] only ${totalComps} US comps, retrying A+B globally`)
         const [gA, gB] = await Promise.allSettled([
-          ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort, global: true, days: 90 }),
-          ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort, global: true, days: 30 }),
+          ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort, global: true }),
+          ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort, global: true }),
         ])
         let rawGA = gA.status === 'fulfilled' ? gA.value.itemSummaries || [] : []
         let rawGB = gB.status === 'fulfilled' ? gB.value.itemSummaries || [] : []
