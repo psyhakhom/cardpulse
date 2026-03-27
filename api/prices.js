@@ -523,7 +523,14 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   // never restore items dropped by these filters.
   const afterIdentityFilters = [...filtered]
 
-  const excludeTerms = GRADE_EXCLUDE[grade]
+  let excludeTerms = GRADE_EXCLUDE[grade]
+  // For parallel queries, remove booster/parallel/alt-art terms from grade exclusion
+  // — these are the exact products we're searching for
+  if (excludeTerms && opts.skipVariants) {
+    const PARALLEL_SAFE = /manga booster|booster 01|booster pack|booster box|parallel single|parallel scr|gold parallel|gold alt art|sealed/
+    excludeTerms = excludeTerms.filter(kw => !PARALLEL_SAFE.test(kw))
+    console.log(`[filter:grade] parallel mode: stripped ${GRADE_EXCLUDE[grade].length - excludeTerms.length} booster/parallel terms from Raw exclusion`)
+  }
   if (excludeTerms) {
     const kept = filtered.filter((i) => {
       const t = (i.title || '').toLowerCase()
@@ -1255,7 +1262,7 @@ async function handleHistory(res, cardName, grade) {
 
 // ─── MAIN HANDLER ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  console.log('PRICES.JS VERSION: hard-block-v1', Date.now())
+  console.log('PRICES.JS VERSION: parallel-grade-fix-v3', Date.now())
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
