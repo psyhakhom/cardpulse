@@ -1460,6 +1460,17 @@ export default async function handler(req, res) {
             seen.add(id)
             return true
           })
+          // Drop active (unsold) listings — sold items have itemEndDate or buyingOptions includes BEST_OFFER
+          const beforeSold = merged.length
+          merged = merged.filter(i => {
+            // Sold items always have itemEndDate; active BIN listings don't
+            if (i.itemEndDate) return true
+            // Some best-offer sales lack itemEndDate but have past itemCreationDate
+            if (i.itemCreationDate && new Date(i.itemCreationDate).getTime() < Date.now() - 24 * 60 * 60 * 1000) return true
+            console.log(`[parallel] active listing dropped: $${parseFloat(i.price?.value||0).toFixed(2)} "${(i.title||'').slice(0,70)}" buyOpts=${JSON.stringify(i.buyingOptions)}`)
+            return false
+          })
+          if (merged.length < beforeSold) console.log(`[parallel] sold filter: ${beforeSold} → ${merged.length}`)
           // Price floor: drop base card listings that slip through
           const beforeFloor = merged.length
           merged = merged.filter(i => parseFloat(i.price?.value || 0) >= PARALLEL_PRICE_FLOOR)
