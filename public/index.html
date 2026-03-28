@@ -638,7 +638,11 @@ function selectAc(i){
   let _isParallel=false;
   let _parallelNum=null;
   const g=card.game||'';
-  const shortName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').replace(/\s*\([A-Z]{1,2}\+{0,2}\)$/,'').split(',')[0].split(' // ')[0].trim();
+  const _cleanName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').replace(/\s*\([A-Z]{1,2}\+{0,2}\)$/,'').split(' // ')[0].trim();
+  // Keep short subtitles after comma (≤3 words) — sellers use them ("Wish-Granting Dragon", "Wish Dragon")
+  // Truncate long subtitles (>3 words) — sellers skip them ("Pan, & SS Trunks, Galactic Explorers")
+  const _commaParts=_cleanName.split(',');
+  const shortName=_commaParts.length<=1?_cleanName:(_commaParts.slice(1).join(',').trim().split(/\s+/).length<=3?_cleanName:_commaParts[0].trim());
   if(g==='mtg'||g==='pokemon'||g==='lorcana'){
     // Set-name games: sellers use "Card Name Set Name" not collector numbers
     // For Pokemon: strip internal set prefix from card number (EX13-5 → 5)
