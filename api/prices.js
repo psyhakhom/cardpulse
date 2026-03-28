@@ -1434,13 +1434,15 @@ export default async function handler(req, res) {
         const base = qs.a.q
         // Name without card number — eBay API can't match card numbers with varied formatting
         const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
-        console.log(`[parallel] firing 3 name-only US-sold queries for: "${nameOnly}" (base: "${base}")`)
+        console.log(`[parallel] queries: name="${nameOnly}" base="${base}"`)
         // US-only sold search — global=true doesn't return sold items reliably
+        // P1 uses base (with card number) to target the specific card's alt art
+        // P2/P3 use name-only for broader parallel/manga matches
         const pOpts = { limit: 30, sort: 'newlyListed' }
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
-          ebaySearch(nameOnly + ' alt art', token, pOpts),
+          ebaySearch(base + ' alt art', token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
-          ebaySearch(nameOnly + ' manga', token, { ...pOpts, sort: 'endingSoonest' }),
+          ebaySearch(base + ' manga', token, { ...pOpts, sort: 'endingSoonest' }),
           // Normal A+B as fallback if parallel queries return nothing
           ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
           ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
@@ -1485,9 +1487,19 @@ export default async function handler(req, res) {
           if (_nameP.length > 0) {
             filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().includes(w)))
           }
-          // NOTE: no set code enforcement in parallel path — eBay sellers rarely
-          // include set codes (FB03, SB01) in alt art/parallel listings.
-          // Name enforcement + parallel query terms ("alt art", "manga") are sufficient.
+          // Soft set code filter: prefer results with the set code, but keep all if
+          // filtering would empty the list (sellers sometimes omit set codes)
+          const _setMatch = processed.match(/\b([A-Z]{1,4}\d+)-\d+/i)
+          if (_setMatch && filtered.length > 0) {
+            const setCode = _setMatch[1].toUpperCase()
+            const withSet = filtered.filter(i => (i.title || '').toUpperCase().includes(setCode))
+            if (withSet.length > 0) {
+              console.log(`[parallel:set-filter] ${filtered.length} → ${withSet.length} (soft, set ${setCode})`)
+              filtered = withSet
+            } else {
+              console.log(`[parallel:set-filter] 0 matches for ${setCode}, keeping all ${filtered.length}`)
+            }
+          }
           // Separate sold items (have past itemEndDate) from active listings (no itemEndDate or future)
           const _now = Date.now()
           const _cutoff180d = _now - 180 * 24 * 60 * 60 * 1000
