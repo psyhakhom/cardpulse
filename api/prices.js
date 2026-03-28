@@ -1485,16 +1485,9 @@ export default async function handler(req, res) {
           if (_nameP.length > 0) {
             filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().includes(w)))
           }
-          // Set code enforcement: if query has a card number like FB03-139, require
-          // the set prefix (FB03) in comp titles to prevent cross-set pollution
-          const _setMatch = processed.match(/\b([A-Z]{1,4}\d+)-\d+/i)
-          if (_setMatch) {
-            const setCode = _setMatch[1].toUpperCase()
-            const beforeSet = filtered.length
-            filtered = filtered.filter(i => (i.title || '').toUpperCase().includes(setCode))
-            if (filtered.length < beforeSet)
-              console.log(`[parallel:set-filter] ${beforeSet} → ${filtered.length} enforcing set ${setCode}`)
-          }
+          // NOTE: no set code enforcement in parallel path — eBay sellers rarely
+          // include set codes (FB03, SB01) in alt art/parallel listings.
+          // Name enforcement + parallel query terms ("alt art", "manga") are sufficient.
           // Separate sold items (have past itemEndDate) from active listings (no itemEndDate or future)
           const _now = Date.now()
           const _cutoff180d = _now - 180 * 24 * 60 * 60 * 1000
