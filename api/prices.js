@@ -1341,7 +1341,11 @@ export default async function handler(req, res) {
         const rows = await r.json()
         const rarity = (rows[0]?.rarity || '').toUpperCase()
         console.log(`[rarity-lookup] result: ${cardNumInQ[1]} → ${rarity || 'none'}`)
-        return ['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(rarity) ? rarity : null
+        // High-value rarities: enforce to filter wrong tier comps
+        if (['SPR', 'SCR', 'SEC', 'SSR', 'SAR'].includes(rarity)) return rarity
+        // Base rarities (SR, R, UC, C without star): enforce to exclude starred/alt art variants
+        if (['SR', 'R', 'UC', 'C'].includes(rarity)) return rarity
+        return null
       }).catch(e => { console.log(`[rarity-lookup] error: ${e.message}`); return null })
     }
 
@@ -1397,7 +1401,11 @@ export default async function handler(req, res) {
           case 'SCR**':
             pass = /\bSCR\s*\*\*/i.test(t) || /\b(?:two|2|double)\s*star\b/i.test(t); break
           case 'SR':
-            pass = /\bSR\b/i.test(t) && !/\bSR\s*\*/i.test(t) && !/\bSR\s*alt\b/i.test(t) && !/\balt(?:ernate)?\s*art\b/i.test(t); break
+            pass = !/\bSR\s*\*/i.test(t) && !/\balt(?:ernate|ernative)?\s*art\b/i.test(t) && !/\banniversary\b/i.test(t); break
+          case 'R':
+          case 'UC':
+          case 'C':
+            pass = !/\balt(?:ernate|ernative)?\s*art\b/i.test(t) && !/\banniversary\b/i.test(t); break
           case 'SCR':
             pass = /\bSCR\b/i.test(t) && !/\bSCR\s*\*/i.test(t) && !/\bSCR\s*alt\b/i.test(t) && !/\balt(?:ernate)?\s*art\b/i.test(t) && !/\b(?:two|2|double)\s*star\b/i.test(t); break
           case 'SPR':
@@ -1701,9 +1709,12 @@ export default async function handler(req, res) {
         if (lookupResult) {
           const origQ = q.toUpperCase()
           const userTypedRarity = new RegExp(`\\b${lookupResult}\\b`).test(origQ)
-          if (userTypedRarity) {
+          // Base rarities (SR, R, UC, C): always enforce to exclude alt art/starred variants
+          // High-value rarities (SPR, SCR, etc.): only enforce if user typed it
+          const isBaseRarity = ['SR', 'R', 'UC', 'C'].includes(lookupResult)
+          if (userTypedRarity || isBaseRarity) {
             requiredRarity = lookupResult
-            console.log(`[rarity-lookup] resolved: enforcing ${requiredRarity} (user typed it)`)
+            console.log(`[rarity-lookup] resolved: enforcing ${requiredRarity}${isBaseRarity ? ' (base rarity — excluding alt art/starred)' : ' (user typed it)'}`)
           } else {
             console.log(`[rarity-lookup] resolved: ${lookupResult} found but user didn't type it — skipping enforcement`)
           }
