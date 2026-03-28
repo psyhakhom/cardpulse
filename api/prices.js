@@ -1601,6 +1601,23 @@ export default async function handler(req, res) {
               console.log(`[parallel:set-filter] 0 matches for ${setCode}, keeping all ${filtered.length}`)
             }
           }
+          // Gundam parallel rarity filter: require "LR+" / "LR++" in titles to exclude base LR
+          if (isGundamParallel && gundamRarity && filtered.length > 0) {
+            const rarityFiltered = filtered.filter(i => {
+              const t = (i.title || '').toUpperCase()
+              // Match "LR+" but not "LR++" when searching for LR+
+              if (gundamRarity === 'LR+') return /\bLR\s*\+(?!\+)/i.test(t)
+              if (gundamRarity === 'LR++') return /\bLR\s*\+\+/i.test(t)
+              return t.includes(gundamRarity)
+            })
+            if (rarityFiltered.length > 0) {
+              console.log(`[parallel:gundam-rarity] ${filtered.length} → ${rarityFiltered.length} (enforcing ${gundamRarity})`)
+              filtered = rarityFiltered
+            } else {
+              console.log(`[parallel:gundam-rarity] 0 matches for ${gundamRarity}, keeping all ${filtered.length}`)
+            }
+          }
+
           // Separate sold items (have past itemEndDate) from active listings (no itemEndDate or future)
           const _now = Date.now()
           const _cutoff180d = _now - 180 * 24 * 60 * 60 * 1000
