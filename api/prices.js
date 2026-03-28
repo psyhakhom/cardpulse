@@ -328,7 +328,7 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
 
   // Detect sports card queries — skip TCG-specific filters (set codes, holo, foil etc)
   const SPORTS_RE = /\b(rookie|rc\b|refractor|prizm|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|score|nfl|nba|mlb|nhl|quarterback|qb|mvp|draft\s*pick)\b/i
-  const TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|deoxys|rayquaza|jirachi|gardevoir|blaziken|sceptile|swampert|flygon|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|holon\s*phantoms|holon|delta\s*species|legend\s*maker|unseen\s*forces|hidden\s*legends|team\s*rocket\s*returns|firered\s*leafgreen|team\s*magma|team\s*aqua|sandstorm|expedition|aquapolis|skyridge|neo\s*genesis|neo\s*discovery|neo\s*revelation|neo\s*destiny|gym\s*heroes|gym\s*challenge|jungle|fossil|base\s*set|rare\s*holo|rare\s*ultra|vmax|vstar|gx\s*card|fortuneteller\s*baba|master\s*roshi|oolong|puar|ox.king|chichi|chi.chi|launch|turtle\s*hermit|kame|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo)\b/i
+  const TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|deoxys|rayquaza|jirachi|gardevoir|blaziken|sceptile|swampert|flygon|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|gundam|mobile\s*suit|gundanium|zaku|rx-78|newtype|holon\s*phantoms|holon|delta\s*species|legend\s*maker|unseen\s*forces|hidden\s*legends|team\s*rocket\s*returns|firered\s*leafgreen|team\s*magma|team\s*aqua|sandstorm|expedition|aquapolis|skyridge|neo\s*genesis|neo\s*discovery|neo\s*revelation|neo\s*destiny|gym\s*heroes|gym\s*challenge|jungle|fossil|base\s*set|rare\s*holo|rare\s*ultra|vmax|vstar|gx\s*card|fortuneteller\s*baba|master\s*roshi|oolong|puar|ox.king|chichi|chi.chi|launch|turtle\s*hermit|kame|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo)\b/i
   const isSportsQuery = SPORTS_RE.test(ql) && !TCG_RE.test(ql)
   if (isSportsQuery) console.log(`[filter] sports card query detected`)
 
@@ -445,7 +445,7 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
 
   // ── 2c. Wrong set code exclusion (TCG only, skip for sports and parallel) ──
   if (!isSportsQuery && !opts.skipVariants) {
-    const SET_CODE_RE = /\b(BT|FB|FS|SD|SB|EB|TB|PUMS|SDBH|SV|SM|XY|BW|DP|EX|OP|ST)\d+[A-Z]?\b/i
+    const SET_CODE_RE = /\b(BT|FB|FS|SD|SB|EB|TB|GD|PUMS|SDBH|SV|SM|XY|BW|DP|EX|OP|ST)\d+[A-Z]?\b/i
     const querySetMatch = ql.match(SET_CODE_RE)
     if (querySetMatch) {
       const querySet = querySetMatch[0].toUpperCase()
@@ -469,7 +469,7 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   // Extract the card name from the query (non-modifier, non-set-code words).
   // If we have a card name, require comps to contain at least one name word.
   // Prevents "Vespiquen ex SV3" from appearing in "charizard ex sv3" results.
-  const MODIFIER_RE = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
+  const MODIFIER_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
   const SET_CODE_WORD_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
   const nameWords = ql.split(/\s+/).filter(w => w.length >= 3 && !MODIFIER_RE.test(w) && !SET_CODE_WORD_RE.test(w))
   if (nameWords.length > 0) {
@@ -926,7 +926,7 @@ function normalizeRarity(raw) {
 const RARITY_CODES = ['IMIR', 'SIR', 'SCR', 'SPR', 'SAR', 'SSR', 'SEC', 'ACE', 'UR', 'SR', 'RRR', 'RR', 'UC', 'CHR', 'AR', 'ALT', 'FA', 'IR', 'TG', 'EA']
 
 // Set code pattern: BT27-019, FB09, OP01-112, D-BT01, SD23-01, 121/088
-const SET_CODE_RE = /\b(?:[A-Z]{1,4}-)?(?:BT|FB|OP|SD|P|D-BT|ST)\d+(?:-\d+)?\b|\b[A-Z]{1,4}\d{2,3}(?:-\d+)?\b|\b\d{3}\/\d{3}\b/gi
+const SET_CODE_RE = /\b(?:[A-Z]{1,4}-)?(?:BT|FB|GD|OP|SD|P|D-BT|ST)\d+(?:-\d+)?\b|\b[A-Z]{1,4}\d{2,3}(?:-\d+)?\b|\b\d{3}\/\d{3}\b/gi
 
 // Card number standalone: 121/088
 const CARD_NUM_RE = /\b\d{1,3}\/\d{1,3}\b/g
@@ -1441,7 +1441,7 @@ export default async function handler(req, res) {
 
     // Sports detection — computed once, shared by runQueries + blend
     const _SPORTS_RE = /\b(rookie|rc\b|refractor|prizm|topps|bowman|panini|donruss|select|optic|mosaic|fleer|upper\s*deck|score|nfl|nba|mlb|nhl|quarterback|qb|mvp|draft\s*pick)\b/i
-    const _TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|fortuneteller\s*baba|master\s*roshi|oolong|puar|ox.king|chichi|chi.chi|launch|turtle\s*hermit|kame|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo)\b/i
+    const _TCG_RE = /\b(pokemon|pokémon|pikachu|charizard|mewtwo|eevee|bulbasaur|squirtle|gengar|mtg|magic|yugioh|yu-gi-oh|lorcana|dragon\s*ball|dbs|one\s*piece|digimon|gundam|mobile\s*suit|gundanium|zaku|rx-78|newtype|fortuneteller\s*baba|master\s*roshi|oolong|puar|ox.king|chichi|chi.chi|launch|turtle\s*hermit|kame|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo)\b/i
     const isSportsQuery = _SPORTS_RE.test(processed) && !_TCG_RE.test(processed)
     console.log(`[blend] card type: ${isSportsQuery ? 'sports' : 'tcg'} (query: "${processed}")`)
 
@@ -1814,7 +1814,7 @@ export default async function handler(req, res) {
 
       // ── HARD BLOCK: card-name enforcement before calcStats ─────────────
       // Ensures wrong-card items never contribute to weighted average OR display.
-      const _MOD = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
+      const _MOD = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
       const _SET = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
       const _nameW = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD.test(w) && !_SET.test(w))
       const hardBlock = (items, label) => {
@@ -1980,7 +1980,7 @@ export default async function handler(req, res) {
     // Absolute last safety net — no wrong-card comp can survive past this point.
     // Extract card name words (non-modifier, non-set-code) from original query.
     {
-      const _MOD_RE = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
+      const _MOD_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
       const _SET_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
       const _nameWords = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_RE.test(w) && !_SET_RE.test(w))
       if (_nameWords.length > 0) {

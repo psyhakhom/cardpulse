@@ -20,6 +20,8 @@
     "import-bt30": "node --env-file=.env.local scripts/import-bt24-bt27-cards.js BT30",
     "import-bt01-bt18-names": "node --env-file=.env.local scripts/import-dbs-bt01-bt18-names.js",
     "import-dbs-ex": "node --env-file=.env.local scripts/import-dbs-ex-cards.js",
+    "import-gundam": "node --env-file=.env.local scripts/import-gundam-cards.js",
+    "import-gd03": "node --env-file=.env.local scripts/import-gd03-cards.js",
     "import-all": "node --env-file=.env.local scripts/import-all.js",
     "populate-prices": "node --env-file=.env.local scripts/populate-prices.js"
   },

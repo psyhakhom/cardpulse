@@ -69,9 +69,9 @@ async function searchCatalog(query, game, maxResults = 8) {
       rows = await res.json()
 
       // Re-rank: if query has name terms beyond the card number, boost rows that match them
-      const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?\b|\bE\d+-\d+\b|\bE-\d+\b/gi
+      const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?\b|\bE\d+-\d+\b|\bE-\d+\b/gi
       const RARITY_RE = /\b(spr|scr|sr|ssr|ur|sec|sar|r|c|uc|sp|pr|sdr)\b/gi
-      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','raw','english']
+      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','gundam','raw','english']
       const nameTerms = query.toLowerCase().replace(CARD_NUM_RE, '').replace(RARITY_RE, '').split(/\s+/)
         .filter(w => w.length >= 2 && !GAME_WORDS.includes(w))
       if (nameTerms.length > 0 && rows.length > 1) {
@@ -86,7 +86,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       }
     } else {
       // Fuzzy name search via pg_trgm similarity + ILIKE fallback
-      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world']
+      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','gundam']
 
       // Classic DBS card name → card number aliases (stopgap until full BT import)
       const CLASSIC_ALIASES = {
@@ -368,7 +368,7 @@ async function searchCatalog(query, game, maxResults = 8) {
     }
 
     // Sort: exact name prefix matches first, then rarity priority as tiebreaker
-    const RARITY_PRIORITY = { 'SCR': 0, 'SCR*': 1, 'SCR**': 2, 'SR': 3, 'SR*': 4, 'SPR': 5, 'SEC': 6, 'SSR': 7, 'SAR': 8, 'R': 9, 'UC': 10, 'C': 11, 'L': 12, 'ST': 13, 'CR': 7, 'EX': 8, 'GFR': 2, 'IVR': 4, 'DAR': 4, 'DBR': 1, 'SGR': 1, 'GDR': 2, 'SLR': 3, 'RLR': 5, 'FR': 6, 'PR': 14 }
+    const RARITY_PRIORITY = { 'SCR': 0, 'SCR*': 1, 'SCR**': 2, 'SR': 3, 'SR*': 4, 'SPR': 5, 'SEC': 6, 'SSR': 7, 'SAR': 8, 'R': 9, 'UC': 10, 'C': 11, 'L': 12, 'ST': 13, 'CR': 7, 'EX': 8, 'GFR': 2, 'IVR': 4, 'DAR': 4, 'DBR': 1, 'SGR': 1, 'GDR': 2, 'SLR': 3, 'RLR': 5, 'FR': 6, 'PR': 14, 'LR': 0, 'LR+': 1, 'LR++': 2, 'R+': 4, 'U+': 6, 'C+': 8, 'C++': 10 }
     const byRarity = (a, b) => (RARITY_PRIORITY[(a.rarity || '').toUpperCase()] ?? 99) - (RARITY_PRIORITY[(b.rarity || '').toUpperCase()] ?? 99)
     const allResults = [...byNumber.values()]
     const stripPunct = s => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
@@ -548,6 +548,8 @@ const OP_KW = [
 ]
 const OP_CODE_RE = /\b(?:OP|ST|EB)-?\d{2}/i
 const LORCANA_KW = ['lorcana', 'disney lorcana']
+const GUNDAM_KW = ['gundam', 'mobile suit', 'gundanium', 'zaku', 'rx-78', 'newtype', 'char aznable', 'amuro']
+const GUNDAM_CODE_RE = /\bGD\d{2}/i
 
 function detectGame(query) {
   const ql = query.toLowerCase()
@@ -557,6 +559,7 @@ function detectGame(query) {
   if (OP_KW.some((k) => ql.includes(k)) || OP_CODE_RE.test(query)) return 'onepiece'
   if (DBS_KW.some((k) => ql.includes(k)) || DBS_CODE_RE.test(query)) return 'dbs'
   if (LORCANA_KW.some((k) => ql.includes(k))) return 'lorcana'
+  if (GUNDAM_KW.some((k) => ql.includes(k)) || GUNDAM_CODE_RE.test(query)) return 'gundam'
   return null
 }
 
