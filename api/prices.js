@@ -138,7 +138,8 @@ async function ebaySearch(
   // Strip leading dashes on words — eBay interprets "-Sign-" as exclusion operator
   // Strip promo/parallel suffixes (_PR, _PR02, _p1) — catalog identifiers, not eBay terms
   // Also strip (-P2) name suffixes and -P2 card number suffixes
-  query = query.replace(/['''`]s\b/g, '').replace(/['''`]/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/\s*\([A-Z]{1,2}\+{0,2}\)/g, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
+  // Strip rarity suffixes without + (catalog artifacts like "(LR)", "(R)") but keep "(LR+)" — sellers use it
+  query = query.replace(/['''`]s\b/g, '').replace(/['''`]/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/\s*\([A-Z]{1,2}\)(?!\+)/g, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
   console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
@@ -1534,8 +1535,8 @@ export default async function handler(req, res) {
         // Otherwise fall back to generic alt art / parallel / manga.
         // Gundam: use rarity code (LR+, R+) since sellers consistently include it.
         const pOpts = { limit: 30, sort: 'newlyListed' }
-        const q1 = isGundamParallel ? base + ' ' + gundamRarity : (vsrcTerm ? base + ' ' + vsrcTerm : base + ' alt art')
-        const q3 = isGundamParallel ? nameOnly + ' ' + gundamRarity : (vsrcTerm ? nameOnly + ' ' + vsrcTerm : base + ' manga')
+        const q1 = isGundamParallel ? base + ' (' + gundamRarity + ')' : (vsrcTerm ? base + ' ' + vsrcTerm : base + ' alt art')
+        const q3 = isGundamParallel ? nameOnly + ' (' + gundamRarity + ')' : (vsrcTerm ? nameOnly + ' ' + vsrcTerm : base + ' manga')
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
           ebaySearch(q1, token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
