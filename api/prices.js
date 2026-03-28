@@ -391,6 +391,8 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
     // Sports queries skip TCG-specific variants (foil, holo, chrome, refractor, silver, gold, rainbow, prismatic)
     // but keep: memorabilia (_sports), sealed product (/(?!)/), fan art (/(?!)/)
     if (isSportsQuery && !vt._sports && vt.query.toString() !== '/(?!)/') continue
+    // Gundam LR/LR+ cards are foil/holo/textured by default — skip finish-related variant filters
+    if (isGundam && /foil|full.art|holo/i.test(vt.query.toString())) continue
     if (vt._skipWhenQueryContains && vt._skipWhenQueryContains.test(ql)) continue
     if (!vt.query.test(ql)) {
       const before = filtered.length
@@ -412,10 +414,12 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
     filtered = preVariantFiltered
   }
 
-  // ── 2b. Holo exclusion (non-Pokemon only, skip for sports and parallel) ──
+  // ── 2b. Holo exclusion (non-Pokemon, non-Gundam only, skip for sports and parallel) ──
+  // Gundam LR/LR+ cards are foil/holo by default — sellers describe the finish
+  const isGundam = /\bgundam\b|\bGD\d{2}\b/i.test(ql)
   if (!isSportsQuery && !opts.skipVariants) {
     const isPokemon = /\bpokemon\b|\bpokémon\b|\bcharizard\b|\bpikachu\b/i.test(ql)
-    if (!isPokemon && !/\bholo\b/i.test(ql)) {
+    if (!isPokemon && !isGundam && !/\bholo\b/i.test(ql)) {
       const before = filtered.length
       const holoFiltered = filtered.filter((i) => !/\bholo\b/i.test(i.title || ''))
       if (holoFiltered.length >= 2) {
