@@ -444,22 +444,20 @@ async function searchCatalog(query, game, maxResults = 8) {
   }
 }
 
-// Fire-and-forget: update last_searched timestamp for served catalog results
-// (times_searched increment requires an RPC — for now just update timestamp)
+// Fire-and-forget: atomically increment times_searched + update last_searched
 function incrementSearchCount(results) {
   if (!_sbReady || !results.length) return
   for (const r of results.slice(0, 8)) {
-    const name = encodeURIComponent(r.name || '')
+    const name = r.name || ''
     if (!name) continue
-    fetch(`${SB_URL}/rest/v1/card_catalog?card_name=eq.${name}`, {
-      method: 'PATCH',
+    fetch(`${SB_URL}/rest/v1/rpc/increment_search_count`, {
+      method: 'POST',
       headers: {
         apikey: SB_KEY,
         Authorization: `Bearer ${SB_KEY}`,
         'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
       },
-      body: JSON.stringify({ last_searched: new Date().toISOString() }),
+      body: JSON.stringify({ target_name: name }),
     }).catch(() => {})
   }
 }
