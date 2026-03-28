@@ -370,7 +370,31 @@ async function searchCatalog(query, game, maxResults = 8) {
     const qLower = stripPunct(query)
     const nameMatch = allResults.filter(r => stripPunct(r.card_name || '').startsWith(qLower))
     const nameRest = allResults.filter(r => !stripPunct(r.card_name || '').startsWith(qLower))
-    let deduped = [...nameMatch.sort(byRarity), ...nameRest.sort(byRarity)].slice(0, maxResults)
+    let deduped = [...nameMatch.sort(byRarity), ...nameRest.sort(byRarity)]
+
+    // Relevance filter: when query has 4+ words, drop results that match <60% of
+    // query terms compared to the best match. Prevents "Son Gohan : Youth" from
+    // cluttering results for "SS Son Gohan Youth Defying Terror".
+    const STOP_WORDS = new Set(['the','a','an','of','and','in','on','at','to','for','is','it','by','or','no'])
+    const queryWords = qLower.split(/\s+/).filter(w => w.length >= 2 && !STOP_WORDS.has(w))
+    if (queryWords.length >= 4 && deduped.length > 1) {
+      const countHits = r => {
+        const name = stripPunct(r.card_name || '')
+        return queryWords.filter(w => name.includes(w)).length
+      }
+      const maxHits = Math.max(...deduped.map(countHits))
+      if (maxHits >= 3) {
+        const threshold = Math.ceil(maxHits * 0.6)
+        const before = deduped.length
+        const relevant = deduped.filter(r => countHits(r) >= threshold)
+        if (relevant.length > 0) {
+          deduped = relevant
+          if (deduped.length < before) console.log(`[cards:db] relevance filter: ${before} → ${deduped.length} (threshold ${threshold}/${maxHits} words)`)
+        }
+      }
+    }
+
+    deduped = deduped.slice(0, maxResults)
 
     // If user searched for a base card number (no -p suffix) but we only found
     // parallel variants, the base card isn't in the catalog — return empty so
