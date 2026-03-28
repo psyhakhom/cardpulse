@@ -2,6 +2,7 @@ const ALLOWED_HOSTS = [
   'optcgapi.com',
   'en.onepiece-cardgame.com',
   'www.dbs-cardgame.com',
+  'www.gundam-gcg.com',
 ]
 
 export default async function handler(request) {

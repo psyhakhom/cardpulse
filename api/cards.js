@@ -429,6 +429,10 @@ async function searchCatalog(query, game, maxResults = 8) {
       if (r.game === 'onepiece' && imageUrl) {
         imageUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
       }
+      // Proxy Gundam images — gundam-gcg.com sets cross-origin-resource-policy: same-site
+      if (r.game === 'gundam' && imageUrl) {
+        imageUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrl)}`
+      }
       // Resolve Pokemon set codes to human-readable names for eBay queries
       const setDisplay = r.game === 'pokemon' && r.set_code ? (PKM_SET_NAMES[r.set_code.toUpperCase()] || r.set_code) : (r.set_code || '')
       return {
