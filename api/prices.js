@@ -771,6 +771,36 @@ async function fetchMtgImage(query) {
  * Returns null (not throws) on any failure so it never blocks the response.
  */
 async function fetchCardImage(query) {
+  // 1. Try catalog image first (covers all games with imported cards)
+  if (_sbConfigured) {
+    const numMatch = query.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
+    if (numMatch) {
+      try {
+        const numEnc = encodeURIComponent(numMatch[1].toUpperCase())
+        const url = `${SUPABASE_URL}/rest/v1/card_catalog?select=image_url,game&card_number=eq.${numEnc}&image_url=not.is.null&limit=1`
+        const r = await fetch(url, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+          signal: AbortSignal.timeout(3000),
+        })
+        if (r.ok) {
+          const rows = await r.json()
+          if (rows[0]?.image_url) {
+            let imgUrl = rows[0].image_url
+            // Proxy images that need it (Gundam, One Piece — CORS blocks direct loading)
+            if (rows[0].game === 'gundam' || rows[0].game === 'onepiece') {
+              imgUrl = `/api/image-proxy?url=${encodeURIComponent(imgUrl)}`
+            }
+            console.log(`[cardImage:catalog] ${numMatch[1]} → ${imgUrl.slice(0, 80)}`)
+            return imgUrl
+          }
+        }
+      } catch (e) {
+        console.log(`[cardImage:catalog] failed: ${e.message}`)
+      }
+    }
+  }
+
+  // 2. Fall back to external APIs (Pokemon, MTG)
   const source = detectCardSource(query)
   try {
     if (source === 'pokemon') return await fetchPokemonImage(query)
