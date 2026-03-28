@@ -1556,14 +1556,24 @@ export default async function handler(req, res) {
           comps.forEach((i, idx) => console.log(`  [parallel ${idx}] $${parseFloat(i.price?.value||0)} ${i.itemEndDate || 'no-endDate'} "${(i.title||'').slice(0,80)}"`))
 
           if (comps.length > 0) {
-            comps.sort((a, b) => parseFloat(a.price?.value || 0) - parseFloat(b.price?.value || 0))
-            const prices = comps.map(i => parseFloat(i.price?.value || 0))
+            // Tiered date filter: prefer recent comps (30d → 60d → 90d)
+            const _filterAge = (days) => comps.filter(i => {
+              const d = i.itemEndDate
+              if (!d) return true // active listings always included
+              return (_now - new Date(d).getTime()) <= days * 24 * 60 * 60 * 1000
+            })
+            let datedComps = _filterAge(30)
+            if (datedComps.length < 2) datedComps = _filterAge(60)
+            if (datedComps.length < 2) datedComps = _filterAge(90)
+            if (datedComps.length < 2) datedComps = comps
+            datedComps.sort((a, b) => parseFloat(a.price?.value || 0) - parseFloat(b.price?.value || 0))
+            const prices = datedComps.map(i => parseFloat(i.price?.value || 0))
             const avg = prices.reduce((a, b) => a + b, 0) / prices.length
             const lo = prices[0]
             const hi = prices[prices.length - 1]
             console.log(`[parallel] ${prices.length} ${compLabel}: $${prices.join(', $')} → avg $${avg.toFixed(2)}`)
             // Build a synthetic blend result
-            const syntheticStats = { avg, lo, hi, count: comps.length }
+            const syntheticStats = { avg, lo, hi, count: datedComps.length }
             const res_ = [
               { ...qs.a, label: compLabel, weight: 1.0, stats: syntheticStats },
             ]
@@ -1571,13 +1581,13 @@ export default async function handler(req, res) {
               lo: parseFloat(lo.toFixed(2)),
               avg: parseFloat(avg.toFixed(2)),
               hi: parseFloat(hi.toFixed(2)),
-              confidence: Math.min(useActive ? 60 : 80, 30 + comps.length * 10),
+              confidence: Math.min(useActive ? 60 : 80, 30 + datedComps.length * 10),
               activeQueries: 1,
               totalQueries: 1,
-              totalComps: comps.length,
+              totalComps: datedComps.length,
               reweighted: res_,
             }
-            return { results: res_, blended: blended_, allItems: comps, hadJapaneseResults: false, activeListings: useActive }
+            return { results: res_, blended: blended_, allItems: datedComps, hadJapaneseResults: false, activeListings: useActive }
           }
           console.log(`[parallel] all parallel comps filtered out, falling back to normal queries`)
         } else {
