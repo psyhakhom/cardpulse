@@ -30,6 +30,7 @@ const SETS = {
   BT25: { id: 428025, name: 'Legend of the Dragon Balls' },
   BT26: { id: 428026, name: 'BT26' },
   BT27: { id: 428027, name: 'BT27' },
+  BT28: { id: 428028, name: 'BT28' },
 }
 
 // ─── Fetch card list via POST ─────────────────────────────────────────────────
