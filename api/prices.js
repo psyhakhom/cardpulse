@@ -1471,7 +1471,11 @@ export default async function handler(req, res) {
           const beforePrice = merged.length
           merged = merged.filter(i => {
             const p = parseFloat(i.price?.value || 0)
-            return p >= PARALLEL_PRICE_FLOOR && p <= 500
+            if (p < PARALLEL_PRICE_FLOOR || p > 500) {
+              console.log(`[parallel:price] dropped $${p} "${(i.title||'').slice(0,70)}"`)
+              return false
+            }
+            return true
           })
           if (merged.length < beforePrice) console.log(`[parallel] price filter: ${beforePrice} → ${merged.length}`)
 
@@ -1555,8 +1559,10 @@ export default async function handler(req, res) {
           rawA = rawA.filter(i => !isGradedSlab(i.title))
           rawB = rawB.filter(i => !isGradedSlab(i.title))
         }
-        const fA = filterByRarity(filterItems(rawA, grade, processed, lang))
-        const fB = filterByRarity(filterItems(rawB, grade, processed, lang))
+        // skipVariants for parallel fallback — don't strip alt art comps when
+        // we're looking for a parallel/alt art card
+        const fA = filterByRarity(filterItems(rawA, grade, processed, lang, { skipVariants: true }))
+        const fB = filterByRarity(filterItems(rawB, grade, processed, lang, { skipVariants: true }))
         const res_ = [
           { ...qs.a, stats: calcStats(fA, 'A') },
           { ...qs.b, stats: calcStats(fB, 'B') },
