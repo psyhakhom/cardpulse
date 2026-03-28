@@ -1557,9 +1557,10 @@ export default async function handler(req, res) {
 
           if (comps.length > 0) {
             // Tiered date filter: prefer recent comps (30d → 60d → 90d)
+            // For active listings (no itemEndDate), use itemCreationDate for age
             const _filterAge = (days) => comps.filter(i => {
-              const d = i.itemEndDate
-              if (!d) return true // active listings always included
+              const d = i.itemEndDate || i.itemCreationDate
+              if (!d) return true // no date at all → keep
               return (_now - new Date(d).getTime()) <= days * 24 * 60 * 60 * 1000
             })
             let datedComps = _filterAge(30)
