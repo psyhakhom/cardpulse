@@ -413,11 +413,12 @@ function goBack(){
   const el=document.getElementById('sr');
   if(!prev||prev.view==='search'){
     navStack=[];
-    el.innerHTML='';
-    document.getElementById('si').value=prev?prev.query:'';
-    toggleClear();
     selectedCard=null;
-    document.getElementById('si').focus();
+    const q=prev?prev.query:'';
+    document.getElementById('si').value=q;
+    toggleClear();
+    // Re-trigger browse search instead of clearing to empty
+    if(q){doSearch();}else{el.innerHTML='';document.getElementById('si').focus();}
   }else if(prev.view==='browse'){
     selectedCard=null;
     document.getElementById('si').value=prev.query;
