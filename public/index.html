@@ -771,7 +771,7 @@ async function search(q, elId) {
         const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${data.searchTip}</p>`:'';
         // When only graded slabs exist, show grade pills so user can tap to see graded prices
         const gradePills=data.slabsOnly?`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">${['PSA 10','PSA 9','BGS 10','BGS 9.5','CGC 10'].map(g=>`<button onclick="pick(this,'g')" style="padding:6px 14px;border-radius:16px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:13px;cursor:pointer">${g}</button>`).join('')}</div>`:'';
-        const noDataMsg=data.slabsOnly?'There are only graded comps for this card.<br>Select a grade to view prices.':'No sold comps found for<br><strong style="color:var(--tx)">'+escH(cardName)+'</strong><br><span style="font-size:12px;color:var(--mu)">This card may be too new or have limited market activity.</span>';
+        const noDataMsg=data.slabsOnly?'<span style="font-size:1rem;color:#e0e0e0">There are only graded comps for this card.<br>Select a grade to view prices.</span>':'No sold comps found for<br><strong style="color:var(--tx)">'+escH(cardName)+'</strong><br><span style="font-size:12px;color:var(--mu)">This card may be too new or have limited market activity.</span>';
         el.innerHTML = renderBackBtn()+`<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">${noDataMsg}</p>${gradePills}</div>`;
         return;
       }
