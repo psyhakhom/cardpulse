@@ -473,7 +473,7 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   // Extract the card name from the query (non-modifier, non-set-code words).
   // If we have a card name, require comps to contain at least one name word.
   // Prevents "Vespiquen ex SV3" from appearing in "charizard ex sv3" results.
-  const MODIFIER_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
+  const MODIFIER_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
   const SET_CODE_WORD_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
   const nameWords = ql.split(/\s+/).filter(w => w.length >= 3 && !MODIFIER_RE.test(w) && !SET_CODE_WORD_RE.test(w))
   if (nameWords.length > 0) {
@@ -1876,7 +1876,7 @@ export default async function handler(req, res) {
 
       // ── HARD BLOCK: card-name enforcement before calcStats ─────────────
       // Ensures wrong-card items never contribute to weighted average OR display.
-      const _MOD = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
+      const _MOD = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
       const _SET = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
       const _nameW = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD.test(w) && !_SET.test(w))
       const hardBlock = (items, label) => {
@@ -2042,7 +2042,7 @@ export default async function handler(req, res) {
     // Absolute last safety net — no wrong-card comp can survive past this point.
     // Extract card name words (non-modifier, non-set-code) from original query.
     {
-      const _MOD_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon)$/i
+      const _MOD_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
       const _SET_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
       const _nameWords = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_RE.test(w) && !_SET_RE.test(w))
       if (_nameWords.length > 0) {
