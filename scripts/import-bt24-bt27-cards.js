@@ -57,41 +57,37 @@ async function fetchSetCards(setCode, setId) {
   // Card name: <dd class="cardName">Son Goku & Vegeta & Trunks</dd>
   // Rarity: Uncommon[UC] or Super Rare[SR] etc.
 
-  // Extract card numbers
-  const cardNumRe = /class="cardNumber"[^>]*>(BT\d+-\d{3}[A-Z]?)<\/dt>/gi
-  const cardNameRe = /class="cardName"[^>]*>([^<]+)<\/dd>/gi
-  const rarityRe = /(?:Common|Uncommon|Rare|Super Rare|Special Rare|Secret Rare|Campaign Rare|Son Gohan Rare|Expansion Rare|God Rare)\[([A-Z]{1,4})\]/gi
+  // Parse card blocks: each card has cardNumber followed by cardName in the same block.
+  // Use alt text as primary source (most reliable: alt="BT30-084 Support Broadcast")
+  // then fall back to cardNumber+cardName dt/dd pairs.
+  const altRe = /alt="(BT\d+-\d{3}[A-Z]?(?:_(?:PR|SPR|SCR))?)\s+([^"]+)"/gi
+  let m
+  while ((m = altRe.exec(html)) !== null) {
+    const cardNumber = m[1].toUpperCase()
+    if (!cardNumber.startsWith(setCode)) continue
+    const cardName = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim()
+    cards.push({ cardNumber, cardName, rarity: null })
+  }
+  console.log(`  Parsed ${cards.length} cards from alt text`)
 
-  const numbers = [...html.matchAll(cardNumRe)].map(m => m[1].toUpperCase())
-  const names = [...html.matchAll(cardNameRe)].map(m => {
-    return m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim()
-  })
-  const rarities = [...html.matchAll(rarityRe)].map(m => m[1])
-
-  console.log(`  Parsed: ${numbers.length} numbers, ${names.length} names, ${rarities.length} rarities`)
-
-  // If structured parsing didn't work, try broader patterns
-  if (numbers.length === 0) {
-    // Try alt text pattern: alt="BT19-001 Son Goku"
-    const altRe = /alt="(BT\d+-\d{3}[A-Z]?)\s+([^"]+)"/gi
-    let m
-    while ((m = altRe.exec(html)) !== null) {
-      const cardNumber = m[1].toUpperCase()
+  // If alt text didn't work, fall back to per-card-block parsing
+  // Each card block: <dl class="cardListCol ..."> ... cardNumber ... cardName ... Rarity[XX] ... </dl>
+  if (cards.length === 0) {
+    // Split HTML into card blocks by <li> boundaries
+    const blockRe = /<dl class="cardListCol[^>]*>[\s\S]*?<\/dl>\s*<\/dd>\s*<\/dl>/gi
+    const blocks = html.match(blockRe) || []
+    for (const block of blocks) {
+      const numM = block.match(/class="cardNumber"[^>]*>\s*(BT\d+-\d{3}[A-Z]?(?:_\w+)?)\s*<\/dt>/i)
+      const nameM = block.match(/class="cardName"[^>]*>\s*([^<]+)/i)
+      const rarM = block.match(/(?:Common|Uncommon|Rare|Super Rare|Special Rare|Secret Rare|Campaign Rare|Son Gohan Rare|Expansion Rare|God Rare)\[([A-Z]{1,4})\]/i)
+      if (!numM) continue
+      const cardNumber = numM[1].toUpperCase()
       if (!cardNumber.startsWith(setCode)) continue
-      const cardName = m[2].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim()
-      cards.push({ cardNumber, cardName, rarity: null })
+      const cardName = (nameM ? nameM[1] : cardNumber).replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim()
+      const rarity = rarM ? rarM[1] : null
+      cards.push({ cardNumber, cardName, rarity })
     }
-    console.log(`  Alt-text fallback: found ${cards.length} cards`)
-  } else {
-    // Zip numbers with names and rarities
-    for (let i = 0; i < numbers.length; i++) {
-      if (!numbers[i].startsWith(setCode)) continue
-      cards.push({
-        cardNumber: numbers[i],
-        cardName: names[i] || numbers[i],
-        rarity: rarities[i] || null,
-      })
-    }
+    console.log(`  Block parsing: found ${cards.length} cards (${cards.filter(c => c.rarity).length} with rarity)`)
   }
 
   // Deduplicate by card number
