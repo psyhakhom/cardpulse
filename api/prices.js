@@ -132,7 +132,7 @@ async function getToken() {
 async function ebaySearch(
   query,
   token,
-  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false } = {}
+  { limit = 40, sort = 'endingSoonest', marketplaceId = 'EBAY_US', live = false, global = false, activeOnly = false } = {}
 ) {
   // Strip apostrophes (straight + smart) — they break eBay search matching
   // Strip leading dashes on words — eBay interprets "-Sign-" as exclusion operator
@@ -140,10 +140,13 @@ async function ebaySearch(
   // Also strip (-P2) name suffixes and -P2 card number suffixes
   // Strip rarity suffixes without + (catalog artifacts like "(LR)", "(R)") but keep "(LR+)" — sellers use it
   query = query.replace(/['''`]s\b/g, '').replace(/['''`]/g, '').replace(/,/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/\s*\([A-Z]{1,2}\)(?!\+)/g, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
-  console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
+  console.log(`[ebay query] q="${query}" live=${live} global=${global}${activeOnly ? ' activeOnly' : ''}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
-  if (live) {
+  if (activeOnly) {
+    // Active BIN listings only — no soldItems, no auctions
+    filter = `buyingOptions:{FIXED_PRICE}${locFilter}`
+  } else if (live) {
     const now = new Date().toISOString()
     const in48h = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
     filter = `buyingOptions:{AUCTION},itemEndDate:[${now}..${in48h}]${locFilter}`
@@ -2022,6 +2025,42 @@ export default async function handler(req, res) {
           correctedQuery = numMatch[1]
           console.log(`[num-retry] accepted "${numMatch[1]}" with ${blended.totalComps} comps`)
         }
+      }
+    }
+
+    // ── Active BIN fallback: when 0 sold comps, try active listings as price indicator ──
+    if ((!blended || blended.totalComps === 0) && grade === 'Raw') {
+      console.log(`[active-fallback] 0 sold comps, trying active BIN listings`)
+      try {
+        const activeQ = processed
+        const activeRes = await ebaySearch(activeQ, token, { limit: 20, sort: 'newlyListed', activeOnly: true })
+        let activeItems = activeRes.itemSummaries || []
+        // Filter: remove slabs, lots, wrong language, enforce card name
+        activeItems = activeItems.filter(i => !isGradedSlab(i.title))
+        const _nameW = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !/^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|alt|art)$/i.test(w) && !/^[A-Z]{1,4}-?\d+/i.test(w))
+        if (_nameW.length > 0) activeItems = activeItems.filter(i => _nameW.some(w => (i.title || '').toLowerCase().includes(w)))
+        activeItems = activeItems.filter(i => !/\bjapanese\b|\bjp\b|\bkorean\b|\bchinese\b/i.test(i.title || ''))
+        const prices = activeItems.map(i => parseFloat(i.price?.value)).filter(p => p > 0.5)
+        console.log(`[active-fallback] ${activeItems.length} listings, ${prices.length} valid prices`)
+        if (prices.length >= 2) {
+          prices.sort((a, b) => a - b)
+          const lo = prices[0]
+          const hi = prices[prices.length - 1]
+          const avg = prices.reduce((a, b) => a + b, 0) / prices.length
+          const comps = activeItems.slice(0, 5).map(i => ({
+            title: i.title, price: parseFloat(i.price?.value), date: i.itemCreationDate || new Date().toISOString(),
+            url: i.itemWebUrl, image: i.image,
+          }))
+          console.log(`[active-fallback] avg=$${avg.toFixed(2)} lo=$${lo.toFixed(2)} hi=$${hi.toFixed(2)} (${prices.length} listings)`)
+          return res.status(200).json({
+            lo, avg, hi, comps, confidence: 'low', totalComps: prices.length,
+            activeListings: true, trend30: null, trend90: null,
+            imageUrl: dedicatedImageUrl || null,
+            searchTip: 'Based on active listings — no recent sold data available.',
+          })
+        }
+      } catch (e) {
+        console.log(`[active-fallback] failed: ${e.message}`)
       }
     }
 
