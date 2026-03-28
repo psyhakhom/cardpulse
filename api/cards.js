@@ -52,7 +52,7 @@ async function searchCatalog(query, game, maxResults = 8) {
     const sanitized = query
 
     // If query has a specific card number (FB02-099, BT1-031), require exact match on it
-    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+)\b/i)
+    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+)\b/i)
 
     let rows
     if (cardNumMatch) {
@@ -71,7 +71,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       // Re-rank: if query has name terms beyond the card number, boost rows that match them
       const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?\b|\bE\d+-\d+\b|\bE-\d+\b/gi
       const RARITY_RE = /\b(spr|scr|sr|ssr|ur|sec|sar|r|c|uc|sp|pr|sdr)\b/gi
-      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','gundam','raw','english']
+      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','raw','english']
       const nameTerms = query.toLowerCase().replace(CARD_NUM_RE, '').replace(RARITY_RE, '').split(/\s+/)
         .filter(w => w.length >= 2 && !GAME_WORDS.includes(w))
       if (nameTerms.length > 0 && rows.length > 1) {
@@ -86,7 +86,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       }
     } else {
       // Fuzzy name search via pg_trgm similarity + ILIKE fallback
-      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','gundam']
+      const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world']
 
       // Classic DBS card name → card number aliases (stopgap until full BT import)
       const CLASSIC_ALIASES = {
@@ -109,7 +109,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         'delta': 'δ',
       }
       // Extract set code from query (FB07, BT01, OP01, ST01, SV3, etc.) for post-filtering
-      const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|OP|SV|SM|XY|SS|SW|BS|EX|D-BT|SWSH)\d{1,3}\b/i
+      const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|GD|OP|SV|SM|XY|SS|SW|BS|EX|D-BT|SWSH)\d{1,3}\b/i
       const setCodeMatch = sanitized.match(SET_CODE_RE)
       let detectedSetCode = setCodeMatch ? setCodeMatch[0].toUpperCase() : null
 
