@@ -339,15 +339,20 @@ async function searchCatalog(query, game, maxResults = 8) {
       }
     }
 
-    // Dedup import rows by card_number + rarity, prefer rows with images
+    // Dedup import rows by card_number + rarity, prefer rows with images and variant_source
     // Different rarities (SR vs SR*) are kept as separate entries
+    // Exception: parallel cards (-P suffix) dedup by card_number only since
+    // SR and SR* are the same physical card from different import sources
     const byNumber = new Map()
     for (const r of importRows) {
       const num = r.card_number?.toUpperCase() || (r.search_query || '').match(cardNumRe)?.[1]?.toUpperCase()
       const rarity = (r.rarity || '').toUpperCase()
-      const key = (num || r.card_name.toLowerCase()) + (rarity ? `|${rarity}` : '')
+      const isParallel = /-P\d+$/i.test(num || '')
+      const key = isParallel
+        ? (num || r.card_name.toLowerCase())
+        : (num || r.card_name.toLowerCase()) + (rarity ? `|${rarity}` : '')
       const existing = byNumber.get(key)
-      if (!existing || (!existing.image_url && r.image_url)) {
+      if (!existing || (!existing.variant_source && r.variant_source) || (!existing.image_url && r.image_url)) {
         byNumber.set(key, r)
       }
     }
