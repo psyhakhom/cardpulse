@@ -476,7 +476,7 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   // Prevents "Vespiquen ex SV3" from appearing in "charizard ex sv3" results.
   const MODIFIER_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
   const SET_CODE_WORD_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
-  const nameWords = ql.split(/\s+/).filter(w => w.length >= 3 && !MODIFIER_RE.test(w) && !SET_CODE_WORD_RE.test(w))
+  const nameWords = ql.split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !MODIFIER_RE.test(w) && !SET_CODE_WORD_RE.test(w))
   if (nameWords.length > 0) {
     const before = filtered.length
     const nameFiltered = filtered.filter((i) => {
@@ -1585,7 +1585,7 @@ export default async function handler(req, res) {
           // Hard block: card name enforcement
           const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|red|booster|special|super|secret|common|uncommon)$/i
           const _SET_P = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
-          const _nameP = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
+          const _nameP = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
           if (_nameP.length > 0) {
             filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().includes(w)))
           }
@@ -2066,7 +2066,7 @@ export default async function handler(req, res) {
     {
       const _MOD_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
       const _SET_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
-      const _nameWords = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD_RE.test(w) && !_SET_RE.test(w))
+      const _nameWords = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !_MOD_RE.test(w) && !_SET_RE.test(w))
       if (_nameWords.length > 0) {
         const before = deduped.length
         deduped = deduped.filter((i) => {
