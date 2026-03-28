@@ -1557,7 +1557,14 @@ export default async function handler(req, res) {
         } else {
           console.log(`[parallel] 0 parallel results, falling back to normal queries`)
         }
-        // Fallback: use the normal A+B we already fetched
+        // For P2+ variants, don't fall back to normal queries — they return the
+        // wrong variant (base/alt art). Return no-data instead.
+        const pNum = parseInt(pnum) || 0
+        if (pNum >= 2) {
+          console.log(`[parallel] P${pNum} variant: no comps found, returning no-data (not falling back to base card)`)
+          return res.status(200).json({ type: 'no-data', error: `No sold comps found for P${pNum} variant`, searchTip: `P${pNum} parallel variants have limited eBay sold data. Try searching manually on eBay for the specific variant.` })
+        }
+        // P1 fallback: use the normal A+B we already fetched
         let rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
         let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
         if (grade === 'Raw') {
