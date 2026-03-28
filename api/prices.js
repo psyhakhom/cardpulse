@@ -1450,8 +1450,8 @@ export default async function handler(req, res) {
         // P1: "alt art" targets SR* / alt art listings
         // P2+: use P-number suffix + "parallel" — avoids pulling P1 alt art comps
         const pOpts = { limit: 30, sort: 'newlyListed' }
-        const q1 = pNum >= 2 ? base + ' -P' + pNum : base + ' alt art'
-        const q3 = pNum >= 2 ? base + ' P' + pNum : base + ' manga'
+        const q1 = base + ' alt art'
+        const q3 = base + ' manga'
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
           ebaySearch(q1, token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
@@ -1565,13 +1565,7 @@ export default async function handler(req, res) {
         } else {
           console.log(`[parallel] 0 parallel results, falling back to normal queries`)
         }
-        // For P2+ variants, don't fall back to normal queries — they return the
-        // wrong variant (base/alt art). Return no-data instead.
-        if (pNum >= 2) {
-          console.log(`[parallel] P${pNum} variant: no comps found, returning no-data (not falling back to base card)`)
-          return res.status(200).json({ type: 'no-data', error: `No sold comps found for P${pNum} variant`, searchTip: `P${pNum} parallel variants have limited eBay sold data. Try searching manually on eBay for the specific variant.` })
-        }
-        // P1 fallback: use the normal A+B we already fetched
+        // Fallback: use the normal A+B we already fetched
         let rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
         let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
         if (grade === 'Raw') {
