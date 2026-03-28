@@ -937,7 +937,8 @@ const FULL_TITLE_FILLER = [
 function normalize(raw) {
   return raw
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents
-    .replace(/[^\w\s\-\/]/g, ' ')                     // remove special chars
+    .replace(/['''`]/g, '')                            // strip apostrophes (Buu's → Buus)
+    .replace(/[^\w\s\-\/]/g, ' ')                      // remove remaining special chars
     .replace(/\s+/g, ' ').trim()
 }
 
