@@ -1274,8 +1274,8 @@ export default async function handler(req, res) {
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, lang = 'English', history, exact, parallel, cardImageUrl } = req.query
-  console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ' parallel' : ''}`)
+  const { q, lang = 'English', history, exact, parallel, cardImageUrl, pnum } = req.query
+  console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ` parallel${pnum ? ' P'+pnum : ''}` : ''}`)
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
   const rawGrade = req.query.grade || 'Raw'
@@ -1436,15 +1436,18 @@ export default async function handler(req, res) {
         const base = qs.a.q
         // Name without card number — eBay API can't match card numbers with varied formatting
         const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
-        console.log(`[parallel] queries: name="${nameOnly}" base="${base}"`)
+        const pNum = parseInt(pnum) || 0
+        console.log(`[parallel] queries: name="${nameOnly}" base="${base}" pnum=${pNum}`)
         // US-only sold search — global=true doesn't return sold items reliably
-        // P1 uses base (with card number) to target the specific card's alt art
-        // P2/P3 use name-only for broader parallel/manga matches
+        // P1: "alt art" targets SR* / alt art listings
+        // P2+: use P-number suffix + "parallel" — avoids pulling P1 alt art comps
         const pOpts = { limit: 30, sort: 'newlyListed' }
+        const q1 = pNum >= 2 ? base + ' -P' + pNum : base + ' alt art'
+        const q3 = pNum >= 2 ? base + ' P' + pNum : base + ' manga'
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
-          ebaySearch(base + ' alt art', token, pOpts),
+          ebaySearch(q1, token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
-          ebaySearch(base + ' manga', token, { ...pOpts, sort: 'endingSoonest' }),
+          ebaySearch(q3, token, { ...pOpts, sort: 'endingSoonest' }),
           // Normal A+B as fallback if parallel queries return nothing
           ebaySearch(qs.a.q, token, { limit: qs.a.limit, sort: qs.a.sort }),
           ebaySearch(qs.b.q, token, { limit: qs.b.limit, sort: qs.b.sort }),
@@ -1484,7 +1487,7 @@ export default async function handler(req, res) {
           if (grade === 'Raw') {
             merged = merged.filter(i => !isGradedSlab(i.title))
           }
-          const filterQ = processed + ' alt art'
+          const filterQ = processed + (pNum >= 2 ? ' parallel' : ' alt art')
           let filtered = filterByRarity(filterItems(merged, grade, filterQ, lang, { skipVariants: true }))
           // Hard block: card name enforcement
           const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|red|booster|special|super|secret|common|uncommon)$/i
