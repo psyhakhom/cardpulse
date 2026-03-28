@@ -451,6 +451,48 @@ function pick(el,g){
   const q=document.getElementById('si').value.trim();
   if(q)search(q,'sr');
 }
+async function pickSlab(el){
+  // Grade pill handler for slabs-only screen — fetches price inline without wiping the page
+  const pills=el.parentElement;
+  pills.querySelectorAll('button').forEach(b=>{b.style.background='var(--s2)';b.style.borderColor='var(--bd)';b.style.color='var(--tx)';});
+  el.style.background='var(--ac)';el.style.borderColor='var(--ac)';el.style.color='#000';
+  G=el.textContent.trim();_manualGrade=true;
+  // Update search input so subsequent searches retain the grade
+  const si=document.getElementById('si');
+  let q=si.value.trim();
+  const hasGrade=_GRADE_RE.test(q);_GRADE_RE.lastIndex=0;
+  const stripped=q.replace(_GRADE_RE,'').replace(/\s{2,}/g,' ').trim();
+  q=(stripped+' '+(_GRADE_MAP[G]||'')).trim();si.value=q;
+  // Show/replace inline loading area below pills
+  let zone=document.getElementById('slab-result');
+  if(!zone){zone=document.createElement('div');zone.id='slab-result';pills.parentElement.appendChild(zone);}
+  zone.innerHTML='<div style="text-align:center;padding:20px 0"><div class="sp"></div><p style="margin-top:10px;font-size:13px;color:var(--mu)">Checking '+escH(G)+' prices…</p></div>';
+  const sc=selectedCard;
+  try{
+    const searchQ=sc?sc.searchQuery:stripped;
+    const params=new URLSearchParams({q:searchQ,grade:G,lang:L});
+    if(sc)params.set('exact','1');
+    if(sc?.parallel){params.set('parallel','1');if(sc.parallelNum)params.set('pnum',sc.parallelNum);if(sc.variantSource)params.set('vsrc',sc.variantSource);}
+    if(sc?.imageUrl)params.set('cardImageUrl',sc.imageUrl);
+    const res=await fetch(`/api/prices?${params}`);
+    const data=await res.json();
+    if(data.type==='no-data'){
+      zone.innerHTML='<p style="text-align:center;padding:16px 0;font-size:14px;color:var(--mu)">No '+escH(G)+' comps found for this card.</p>';
+      return;
+    }
+    if(data.error&&!data.avg){
+      zone.innerHTML='<p style="text-align:center;padding:16px 0;font-size:12px;color:var(--rd)">'+escH(data.error)+'</p>';
+      return;
+    }
+    // Success — render full result page via search() flow for proper nav
+    const mainEl=document.getElementById('sr');
+    const r=normalizeApiResponse(data,q,sc);
+    renderResult(mainEl,sc?sc.name:q,r);
+    saveHist(sc?sc.name:q,r);
+  }catch(err){
+    zone.innerHTML='<p style="text-align:center;padding:16px 0;font-size:12px;color:var(--rd);font-family:monospace">'+escH(err.message)+'</p>';
+  }
+}
 function pickL(el){
   document.getElementById('lc').querySelectorAll('.ch').forEach(c=>c.classList.remove('lon'));
   el.classList.add('lon'); L=el.textContent;
@@ -771,7 +813,7 @@ async function search(q, elId) {
         const cardName=sc?.name||q;
         const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${data.searchTip}</p>`:'';
         // When only graded slabs exist, show grade pills so user can tap to see graded prices
-        const gradePills=data.slabsOnly?`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">${['PSA 10','PSA 9','BGS 10','BGS 9.5','CGC 10'].map(g=>`<button onclick="pick(this,'g')" style="padding:6px 14px;border-radius:16px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:13px;cursor:pointer">${g}</button>`).join('')}</div>`:'';
+        const gradePills=data.slabsOnly?`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">${['PSA 10','PSA 9','BGS 10','BGS 9.5','CGC 10'].map(g=>`<button onclick="pickSlab(this)" style="padding:6px 14px;border-radius:16px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:13px;cursor:pointer">${g}</button>`).join('')}</div>`:'';
         const noDataMsg=data.slabsOnly?'<span style="font-size:1rem;color:#e0e0e0">There are only graded comps for this card.<br>Select a grade to view prices.</span>':'No sold comps found for<br><strong style="color:var(--tx)">'+escH(cardName)+'</strong><br><span style="font-size:12px;color:var(--mu)">This card may be too new or have limited market activity.</span>';
         el.innerHTML = renderBackBtn()+`<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">${noDataMsg}</p>${gradePills}</div>`;
         return;
