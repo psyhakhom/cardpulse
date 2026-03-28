@@ -322,8 +322,8 @@ async function searchCatalog(query, game, maxResults = 8) {
     //   are dropped if a properly-named import row exists
     const cardNumRe = /\b((?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP|P-)\d+-\d+[A-Z]?(?:-p\d+)?)\b/i
 
-    // Separate import rows (proper names) from search-log rows (user queries as names)
-    // A search-log row has: no card_number column set, all-lowercase card_name, or card_name contains a card number
+    // Separate import rows (proper names with card_number) from search-log rows (user queries saved as names)
+    // A search-log row has: no card_number, OR all-lowercase card_name, OR card_name contains a card number pattern
     const importRows = []
     const searchLogRows = []
 
@@ -332,7 +332,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       const nameIsLowercase = r.card_name === r.card_name?.toLowerCase()
       const nameContainsNum = cardNumRe.test(r.card_name || '')
 
-      if (hasCardNumber || (!nameIsLowercase && !nameContainsNum)) {
+      if (hasCardNumber && !nameIsLowercase && !nameContainsNum) {
         importRows.push(r)
       } else {
         searchLogRows.push(r)
