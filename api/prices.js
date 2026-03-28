@@ -631,7 +631,19 @@ function extractComps(items, limit = 10, grade = null) {
       })
     : priced
 
-  return slabFree
+  // Tiered date filter: show 30d comps first, expand to 60d then 90d if needed
+  const now = Date.now()
+  const filterByAge = (days) => slabFree.filter(i => {
+    const d = i.itemEndDate || i.itemCreationDate
+    if (!d) return true // active listings (no end date) always included
+    return (now - new Date(d).getTime()) <= days * 24 * 60 * 60 * 1000
+  })
+  let dated = filterByAge(30)
+  if (dated.length < 2) dated = filterByAge(60)
+  if (dated.length < 2) dated = filterByAge(90)
+  if (dated.length < 2) dated = slabFree // fallback to all if <2 even at 90d
+
+  return dated
     .slice(0, limit)
     .map((i) => ({
       title: i.title,
