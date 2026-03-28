@@ -1526,12 +1526,16 @@ export default async function handler(req, res) {
           if (dashMatch) vsrcTerm = dashMatch[1].trim()
           else vsrcTerm = vsrc.replace(/\[.*?\]/g, '').trim()
         }
-        console.log(`[parallel] queries: name="${nameOnly}" base="${base}" pnum=${pNum} vsrcTerm="${vsrcTerm}"`)
+        // Gundam parallels: sellers use "LR+" / "R+" in titles (not "alt art")
+        const isGundamParallel = /\bgundam\b|\bGD\d{2}\b/i.test(processed) && pNum >= 1
+        const gundamRarity = isGundamParallel ? (pNum >= 2 ? 'LR++' : 'LR+') : null
+        console.log(`[parallel] queries: name="${nameOnly}" base="${base}" pnum=${pNum} vsrcTerm="${vsrcTerm}"${gundamRarity ? ` gundamRarity="${gundamRarity}"` : ''}`)
         // When we have a variant source, use it for targeted queries.
         // Otherwise fall back to generic alt art / parallel / manga.
+        // Gundam: use rarity code (LR+, R+) since sellers consistently include it.
         const pOpts = { limit: 30, sort: 'newlyListed' }
-        const q1 = vsrcTerm ? base + ' ' + vsrcTerm : base + ' alt art'
-        const q3 = vsrcTerm ? nameOnly + ' ' + vsrcTerm : base + ' manga'
+        const q1 = isGundamParallel ? base + ' ' + gundamRarity : (vsrcTerm ? base + ' ' + vsrcTerm : base + ' alt art')
+        const q3 = isGundamParallel ? nameOnly + ' ' + gundamRarity : (vsrcTerm ? nameOnly + ' ' + vsrcTerm : base + ' manga')
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
           ebaySearch(q1, token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
