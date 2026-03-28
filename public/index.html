@@ -272,29 +272,6 @@ video{width:100%;height:100%;object-fit:cover;display:block}
     <button class="sb" onclick="doSearch()"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
     <div class="ac-drop" id="ac-drop"></div>
   </div>
-  <div class="fr"><span class="fl">Grade</span><div class="fg" id="gc">
-    <button class="ch on" onclick="pick(this,'g')">Raw</button>
-    <button class="ch" onclick="pick(this,'g')">PSA 10</button>
-    <button class="ch" onclick="pick(this,'g')">PSA 9</button>
-    <button class="ch" onclick="pick(this,'g')">BGS 10</button>
-    <button class="ch" onclick="pick(this,'g')">CGC 10</button>
-  </div></div>
-  <button class="filter-toggle" onclick="this.nextElementSibling.classList.toggle('filters-open');this.querySelector('.ft-arrow').textContent=this.nextElementSibling.classList.contains('filters-open')?'▴':'▾'">Filters <span class="ft-arrow">▾</span></button>
-  <div class="filter-collapse">
-  <div class="fr"><span class="fl">Cond</span><div class="fg" id="cc">
-    <button class="ch on" onclick="pick(this,'c')">Any</button>
-    <button class="ch" onclick="pick(this,'c')">NM</button>
-    <button class="ch" onclick="pick(this,'c')">EX</button>
-    <button class="ch" onclick="pick(this,'c')">VG</button>
-  </div></div>
-  <div class="fr"><span class="fl">Lang</span><div class="fg" id="lc">
-    <button class="ch lon" onclick="pickL(this)">English</button>
-    <button class="ch" onclick="pickL(this)">Japanese</button>
-    <button class="ch" onclick="pickL(this)">Korean</button>
-    <button class="ch" onclick="pickL(this)">Chinese</button>
-    <button class="ch" onclick="pickL(this)">Other</button>
-  </div></div>
-  </div>
   <div id="sr"></div>
 </div>
 
@@ -741,9 +718,6 @@ async function search(q, elId) {
     for (const [re, grd] of GRADE_DETECT) {
       if (re.test(q)) {
         G = grd; detected = true;
-        document.getElementById('gc').querySelectorAll('.ch').forEach(c => {
-          c.classList.toggle('on', c.textContent.trim() === grd);
-        });
         console.log('[grade-detect] auto-set grade to', grd);
         break;
       }
@@ -751,9 +725,6 @@ async function search(q, elId) {
     // No grade term in query → reset to Raw
     if (!detected && G !== 'Raw') {
       G = 'Raw';
-      document.getElementById('gc').querySelectorAll('.ch').forEach(c => {
-        c.classList.toggle('on', c.textContent.trim() === 'Raw');
-      });
       console.log('[grade-detect] no grade term, reset to Raw');
     }
   }
@@ -1157,6 +1128,12 @@ function renderResult(el,q,r){
     <div class="rb">${jb}${fx}${tm}${cqb}
     <div class="rt">${escH(q)}${lb}</div>
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}</div>
+    <div class="fr" style="margin-top:12px"><span class="fl">Grade</span><div class="fg" id="gc">${['Raw','PSA 10','PSA 9','BGS 10','CGC 10'].map(g=>`<button class="ch${G===g?' on':''}" onclick="pick(this,'g')">${g}</button>`).join('')}</div></div>
+    <button class="filter-toggle" onclick="this.nextElementSibling.classList.toggle('filters-open');this.querySelector('.ft-arrow').textContent=this.nextElementSibling.classList.contains('filters-open')?'▴':'▾'">Filters <span class="ft-arrow">▾</span></button>
+    <div class="filter-collapse">
+    <div class="fr"><span class="fl">Cond</span><div class="fg" id="cc">${['Any','NM','EX','VG'].map(c=>`<button class="ch${C===c?' on':''}" onclick="pick(this,'c')">${c}</button>`).join('')}</div></div>
+    <div class="fr"><span class="fl">Lang</span><div class="fg" id="lc">${['English','Japanese','Korean','Chinese','Other'].map(l=>`<button class="ch${L===l?' lon':''}" onclick="pickL(this)">${l}</button>`).join('')}</div></div>
+    </div>
     <div class="pg">
       <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
     </div>
@@ -1202,9 +1179,6 @@ function renderHist(){
 function loadH(q,g,c,l){
   go('search');
   document.getElementById('si').value=q;
-  document.getElementById('gc').querySelectorAll('.ch').forEach(x=>x.classList.toggle('on',x.textContent===g));
-  document.getElementById('cc').querySelectorAll('.ch').forEach(x=>x.classList.toggle('on',x.textContent===c));
-  document.getElementById('lc').querySelectorAll('.ch').forEach(x=>x.classList.toggle('lon',x.textContent===l));
   G=g;C=c;L=l||'English';
   search(q,'sr');
 }
