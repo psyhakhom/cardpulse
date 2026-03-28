@@ -18,26 +18,26 @@ No build step. Deploys directly to Vercel:
 
 ### Frontend (`public/index.html`)
 
-**Four tabs**: Search, Scan, Collection, History. State in globals; persistence via `localStorage` (`cph` = history, `cpc` = collection).
+**Three tabs**: Search, Collection, History (Scan tab removed — mock data only). State in globals; persistence via `localStorage` (`cph` = history, `cpc` = collection).
 
 Key functions:
-- `search()` — grade auto-detection from query (strips grade terms, updates pill UI), calls API or mock
-- `normalizeApiResponse()` — adapter between API response and `renderResult()`. **Change this (not renderResult) when API shape changes.**
-- `renderResult()` — builds result card HTML. Shows sports-specific or TCG-specific wide spread guidance.
+- `search()` — grade auto-detection from query (strips grade terms, sets `G` variable), calls API or mock
+- `normalizeApiResponse()` — adapter between API response and `renderResult()`. **Change this (not renderResult) when API shape changes.** Now includes `cardSet` and `cardNum` from `selectedCard` for display.
+- `renderResult()` — builds result card HTML. Shows set name + card number subtitle below title. Grade/condition/language filters rendered dynamically inside the result (not in search pane). P-suffix stripped from display names (`(-P2)` → hidden, shown in card number subtitle instead).
 - `cardType()` — classifies as `sr` (sports raw), `sg` (sports graded), `tcg`, or `dbs`. **Two copies exist**: one inside `normalizeApiResponse()` (complete DBS keywords) and one global (synced). DBS keywords include character names (vegeta, goku, frieza, gogeta, fortuneteller baba, master roshi, yamcha, ginyu force, raditz, nappa, zarbon, dodoria, etc.), set codes (FB0x, BT1-20, SD0x, SB0x), subtitle markers (`: da`), and attack names. `renderResult()` uses `r.ct` from normalizeApiResponse, not a recomputed value.
 - `acOnInput()` / `fetchAc()` / `renderAc()` / `selectAc()` — autocomplete with 350ms debounce, AbortController, LRU cache (20 entries). First-word name matching filters false positives.
-- `pick()` — grade pill click handler. Swaps/adds/removes grade term in search input. `_manualGrade` flag prevents auto-detection from overriding manual clicks.
+- `pick()` — grade pill click handler (now rendered inside result card). Swaps/adds/removes grade term in search input, re-triggers search. `_manualGrade` flag prevents auto-detection from overriding manual clicks.
 
 `selectedCard` — set when user clicks autocomplete result. Passes `exact=1` to bypass preprocessor. `selectAc()` builds per-game eBay-optimized queries:
 - **MTG/Pokemon/Lorcana**: card name + set name (sellers use set names, not collector numbers)
 - **Yu-Gi-Oh**: card name only (sellers rarely include set/number)
 - **DBS/One Piece**: card name + card number (sellers use card numbers like FB07-079, BT22-049)
 - Strips promo/parallel suffixes: `_PR`, `_p1`, `-P1`, `-P2`, `(-P2)` name suffix
-- **Parallel detection**: `-P` suffix detected before stripping. Sets `selectedCard.parallel=true`, frontend passes `parallel=1` to backend. Query uses name + base number (no -P suffix): "Fortuneteller Baba SB01-049"
+- **Parallel detection**: `-P` suffix detected before stripping. Extracts P-number (`parallelNum`) and `variantSource` from catalog. Sets `selectedCard.parallel=true`, frontend passes `parallel=1`, `pnum=N`, and `vsrc=...` to backend. Query uses name + base number (no -P suffix): "Fortuneteller Baba SB01-049"
 - SR\*/SCR\* selected → appends "alt art"; DBR → "dragon ball rare"; SGR → "gold rare"
 - Truncates at first comma: "Special Beam Cannon, Inherited Power" → "Special Beam Cannon"
 
-**Back navigation** (`navStack`): Stack-based navigation tracks search → browse → disambiguation → result transitions. Back button appears on browse, disambiguation, and result views (styled as pill: border #444, bg #1a1a24, border-radius 20px). Browser back (popstate) also triggers `goBack()`. `disambigPick()` skips intermediate nav push so back from result returns to disambiguation. Browse: Enter/search → shows all catalog matches (limit=50) before pricing; tapping a card triggers pricing.
+**Back navigation** (`navStack`): Stack-based navigation tracks search → browse → disambiguation → result transitions. Back button appears on browse, disambiguation, and result views (styled as pill: border #444, bg #1a1a24, border-radius 20px). Browser back (popstate) also triggers `goBack()`. `disambigPick()` skips intermediate nav push so back from result returns to disambiguation. Back from result to 'search' state uses cached `_lastBrowseHTML` for instant render (no re-fetch). Browse: Enter/search → shows all catalog matches (limit=50) before pricing; tapping a card triggers pricing.
 
 **Browse view**: `renderBrowse()` shows catalog-only results (no eBay mixing) filtered by detected game. `browsePick()` delegates to `selectAc()` for pricing flow. `_browseCards` stores browse results; `AC_CACHE_V = 'v2'` for cache busting.
 
@@ -96,9 +96,9 @@ Vercel serverless function. eBay queries with weighted blending, split by card t
 
 **Hard block** on final `deduped` array — card name enforcement as absolute last safety net before response.
 
-**Rarity enforcement** (`filterByRarity`): SCR vs SCR*/SCR Alt vs SCR**/Two Star correctly separated. Case-insensitive detection. For `exact=1` queries, high-value rarities (SPR, SCR, SEC, SSR, SAR) AND starred variants (SR\*, SCR\*) are enforced when explicitly in the query. Plain low-value codes (SR, R, UC, C) are stripped. "alt art" in query infers `requiredRarity = 'SR*'`.
+**Rarity enforcement** (`filterByRarity`): SCR vs SCR*/SCR Alt vs SCR**/Two Star correctly separated. Case-insensitive detection. For `exact=1` queries, high-value rarities (SPR, SCR, SEC, SSR, SAR) AND starred variants (SR\*, SCR\*) are enforced when explicitly in the query. "alt art" in query infers `requiredRarity = 'SR*'`. Base rarities (SR, R, UC, C) auto-enforce to exclude alt art/starred/anniversary comps — prevents mixing $4 base SR with $50 anniversary versions.
 
-**Catalog rarity lookup**: Async Supabase promise (8s timeout) runs in parallel with eBay queries, resolved before `filterByRarity`. Looks up card's rarity from `card_catalog` by card number. Only enforces when user explicitly typed the rarity code in the original query (not auto-inferred). Filters null-rarity rows from results.
+**Catalog rarity lookup**: Async Supabase promise (8s timeout) runs in parallel with eBay queries, resolved before `filterByRarity`. Looks up card's rarity from `card_catalog` by card number. High-value rarities enforce only when user typed the rarity code. Base rarities (SR, R, UC, C) auto-enforce to filter out starred variants and anniversary reprints. Filters null-rarity rows from results.
 
 **eBay query sanitization** (in `ebaySearch()`): Strips apostrophes (`'''``), leading dashes (`-Sign-`), promo suffixes (`_PR`, `_p1`, `-P1`, `-P2`), and `(-P2)` name suffixes before sending to eBay API. Display names and catalog lookups are unaffected.
 
@@ -114,19 +114,23 @@ Vercel serverless function. eBay queries with weighted blending, split by card t
 
 **Word-strip retry**: Strips one modifier word when comps insufficient. Sports queries only strip at 0 comps (not <3). Card names and set codes protected. Max 1 successful retry.
 
-**Parallel pricing** (`parallel=1` flag from frontend): Dedicated query path for parallel/alt-art cards (-P suffix). Fires 3 name-only eBay queries (no card number — sellers format numbers inconsistently):
-- P1: `"{card name} alt art"` (recent, US sold)
-- P2: `"{card name} parallel"` (broad, US sold)
-- P3: `"{card name} manga"` (recent, US sold)
+**Parallel pricing** (`parallel=1` flag from frontend): Dedicated query path for parallel/alt-art cards (-P suffix). Frontend passes `pnum` (P-number) and `vsrc` (variant source from catalog). Fires 3 eBay queries using variant-specific terms when `vsrc` is available:
+- Q1: `"{card name} {card number} {vsrc term}"` or `"{card name} {card number} alt art"` (if no vsrc)
+- Q2: `"{card name} parallel"` (broad, US sold)
+- Q3: `"{card name} {vsrc term}"` or `"{card name} {card number} manga"` (if no vsrc)
+
+The `vsrc` value comes from apitcg.com's `getIt` field stored in `variant_source` column. Examples: "1st Anniversary Set", "BOOSTER PACK -NEW ADVENTURE- [FB05]". The dash-enclosed name is extracted as the eBay search term (e.g., "NEW ADVENTURE" from `"BOOSTER PACK -NEW ADVENTURE- [FB05]"`).
 
 Results merged, deduped by itemId, then filtered:
 1. $10 price floor (removes base card listings)
 2. $500 price ceiling (removes speculative outliers)
 3. Slab filter (Raw only)
-4. `filterItems()` with `opts.skipVariants=true` — skips variant, holo, set code filters; keeps slab, lot, merch, name enforcement, language, grade (with booster/parallel terms removed from Raw exclusion)
+4. `filterItems()` with `opts.skipVariants=true` — skips variant, holo, set code filters; keeps slab, lot, merch, name enforcement, language, grade
 5. Card name hard block
+6. Soft set code filter (prefer comps matching set code, keep all if 0 match)
+7. **Tiered date filter**: 30d → 60d → 90d (uses `itemCreationDate` for active listings)
 
-**Active listing fallback**: eBay Browse API returns no sold data for some newer cards (e.g., SB01 parallels). When `soldItems:true` returns only active BIN listings (no `itemEndDate`), the parallel path uses lowest 5 BIN prices as market indicator. Response includes `activeListings: true` flag; frontend shows "Active listings" header + disclaimer instead of "Recent sold comps".
+**Active listing fallback**: eBay Browse API returns no sold data for some newer cards (e.g., SB01 parallels). When `soldItems:true` returns only active BIN listings (no `itemEndDate`), the parallel path uses BIN prices as market indicator. Response includes `activeListings: true` flag; frontend shows "Active listings" header + disclaimer instead of "Recent sold comps".
 
 **Price population script** (`scripts/populate-prices.js`): Bulk-searches high-value cards through the deployed API to populate `price_history`. Prioritizes recent sets and high rarities (SCR, SPR, SR*, SEC, SAR, DBR, SGR). Throttled at 2s/request, skips cards searched in last 24h. Run: `npm run populate-prices` or `npm run populate-prices -- --limit 100 --game dbs`.
 
@@ -153,7 +157,11 @@ Results merged, deduped by itemId, then filtered:
 
 **ILIKE prefix fallback**: When fuzzy search returns 0 results and query is 5+ chars, tries `card_name ILIKE '%query%'`. Catches truncated words ("powe" → "power").
 
+**Relevance filter**: When query has 4+ words, drops results matching <60% of query terms vs the best match. Prevents "Son Gohan : Youth" from cluttering results for "SS Son Gohan Youth Defying Terror".
+
 **Result sorting**: Prefix boost (cards whose name starts with full query rank first) → rarity priority tiebreaker (SCR=0, SCR\*=1, SR=3, SPR=5, R=9, UC=10, C=11). Full query used for prefix match, punctuation stripped.
+
+**Search-log dedup**: Rows without `card_number` (from eBay search logs, e.g., "Fortuneteller Baba alt art") are classified as search-log rows and excluded when proper import rows exist. Prevents duplicate entries in browse results.
 
 **Set code duplicate display**: Set label hidden in autocomplete subtitle when already a prefix of the card number (no "FB07 · FB07-079").
 
@@ -175,18 +183,20 @@ Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www
 
 **`price_history`** — price snapshots from every successful search. Indexed on (card_name, queried_at desc).
 
-**`card_catalog`** — ~150,000+ cards across 7 games. Unique index: `(game, card_number_key, rarity_key)`. GIN trigram index: `card_catalog_name_trgm_idx` on `card_name`. Dedup in autocomplete uses `card_number|rarity` key so SR and SR* variants both appear. Some cards have duplicate rows from old Deckplanet import (rarity=null) and new Bandai import (rarity set) — catalog rarity lookup filters null rows with `rarity=not.is.null`.
+**`card_catalog`** — ~150,000+ cards across 7 games. Columns: `card_name`, `card_number`, `game`, `set_code`, `rarity`, `image_url`, `search_query`, `variant_source`, `times_searched`, `last_searched`. Generated columns: `card_number_key`, `rarity_key`. Unique index: `(game, card_number_key, rarity_key)`. GIN trigram index: `card_catalog_name_trgm_idx` on `card_name`. Additional indexes: `idx_card_catalog_card_number` on `card_number`, `idx_card_catalog_game_set` on `(game, set_code)`. Dedup in autocomplete uses `card_number|rarity` key (parallel cards dedup by `card_number` only, ignoring SR vs SR*). `variant_source` stores product origin from apitcg.com `getIt` field (e.g., "1st Anniversary Set", "BOOSTER PACK -RAGING ROAR- [FB03]").
 
 ### RPC Functions
 
-**`fuzzy_search_cards(q, game_filter, result_limit)`** — pg_trgm word_similarity search with ILIKE fallback. Threshold 0.25. Parameter named `q` (not `search_query` — column name conflict).
+**`fuzzy_search_cards(q, game_filter, result_limit)`** — pg_trgm word_similarity search with ILIKE fallback. Threshold 0.25. Parameter named `q` (not `search_query` — column name conflict). Returns all columns including `variant_source`.
+
+**`increment_search_count(target_name)`** — atomically increments `times_searched` and updates `last_searched` for a card by name.
 
 ### Card Catalog Stats
 
 | Game | Cards | Source |
 |------|-------|--------|
 | DBS Fusion World | ~2,089 | apitcg.com + Bandai official (FB07+FB08) |
-| DBS Classic (BT) | ~4,922 | Bandai US-EN (BT01-BT27 fully named + 831 SPR variants) |
+| DBS Classic (BT) | ~5,224 | Bandai US-EN (BT01-BT30 fully named + 831 SPR variants) |
 | DBS EX/Anniversary | ~465 | Bandai US-EN (EX01-EX25) |
 | DBS TB/SD/Other | ~568 | Deckplanet GCS + Bandai |
 | Pokemon | ~20,150 | pokemontcg.io |
@@ -201,13 +211,15 @@ Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www
 All in `scripts/`, run locally with `.env.local` (SUPABASE_URL + SUPABASE_SERVICE_KEY required):
 
 ```bash
-npm run import-dbs             # DBS Fusion World (needs APITCG_KEY)
+npm run import-dbs             # DBS Fusion World (needs APITCG_KEY) — populates variant_source
 npm run import-dbs-classic     # DBS Classic BT sets (Deckplanet GCS, numbers only)
 npm run import-fb07            # FB07 Wish for Shenron from Bandai official (names+rarities)
 npm run import-fb08            # FB08 from Bandai official (reuses fb07 script)
 npm run import-fb09            # FB09 from Bandai official (reuses fb07 script)
 npm run import-bt19-bt23       # BT19-BT23 from Bandai US-EN POST API (names+rarities)
-npm run import-bt24-bt27       # BT24-BT27 from Bandai US-EN POST API
+npm run import-bt24-bt27       # BT24-BT28 from Bandai US-EN POST API
+npm run import-bt29            # BT29 (UB02) from Bandai US-EN
+npm run import-bt30            # BT30 (UB03 Three Glorious Fighters) from Bandai US-EN
 npm run import-bt01-bt18-names # Fill BT01-BT18+TB01-TB03 placeholder names from Bandai US-EN
 npm run import-dbs-ex          # EX01-EX25 expansion/anniversary sets from Bandai
 npm run import-pokemon         # Pokemon (~20k cards, retry logic, 1.5s delay for free tier)
@@ -222,7 +234,7 @@ npm run populate-prices        # Bulk-search high-value cards to populate price_
 **Bandai import scripts**:
 - `import-fb07-cards.js`: GET `dbs-cardgame.com/fw/en/cardlist/?search=true&q=FB07`, parses alt text. Reusable for FB08/FB09 via CLI arg.
 - `import-bt19-bt23-cards.js`: POST `dbs-cardgame.com/us-en/cardlist/index.php?search=true` with `category_exp` IDs (428019-428023).
-- `import-bt24-bt27-cards.js`: Same approach, IDs 428024-428027, uses US-EN source.
+- `import-bt24-bt27-cards.js`: Same approach, IDs 428024-428030 (BT24-BT30), uses US-EN source.
 - `import-dbs-bt01-bt18-names.js`: Updates placeholder rows (card_name=card_number) with real names from Bandai US-EN. Only updates placeholders, preserves manually named cards. Also inserts new SPR variants not in Deckplanet. IDs 428001-428018 (BT) + 428101-428103 (TB).
 - `import-dbs-ex-cards.js`: EX01-EX25, IDs 428401-428425. Full upsert with names/rarities/images.
 
@@ -242,17 +254,21 @@ Set in Vercel dashboard → Settings → Environment Variables:
 
 ## Known Issues
 
-- **Scan tab uses mock data**: `runScanLoop()` uses hardcoded mock cards. Needs ZXing barcode scanning.
+- **Scan tab hidden**: Removed from nav (mock data only). HTML/JS still in codebase for future ZXing integration.
 - **Collection uses localStorage**: No user accounts, data lost if browser cleared. Supabase auth needed.
 - **DBS FB07+FB08 in catalog** (122+122 cards). FB09+ still missing — run `npm run import-fb09` when needed.
+- **Gold accent theme**: `--ac: #F5A623` (gold), `--bg: #0D0D0D`, `--s1: #141418`, `--s2: #1C1C24`. Grade pills: unselected `#252530`, selected gold. Market price: `3rem`. Confidence dot: green (high), amber (moderate), red (low). `--gn: #22c55e` for trend up arrows (not gold).
 - **Parallel card rarity codes** updated with star suffix (C→C*, UC→UC*, R→R*, SR→SR*, L→L*) across FB01-FB08, FS01-FS10, SB01. SCR and PR parallels excluded. Energy marker parallels (E-XX-P1) set to C*.
 - **BT01-BT18 now fully named** from Bandai US-EN (2,565 placeholders filled + 831 new SPR variants). Some Deckplanet images show wrong art — Bandai images preferred. Manual corrections: BT16-035 Videl, BT16-036 Beerus, BT23-139 Super Shenron SCR.
 - **Pokemon catalog**: all `_hires.png` URLs replaced with `.png` (direct URLs work, proxy was timing out).
 - **eBay Browse API limits**: 5,000 calls/day (resets midnight UTC). Each search = 3 calls (TCG) or 4 (sports). populate-prices uses ~3 calls per card.
 - **eBay Marketplace Insights API**: Not available — scope `buy.marketplace.insights` not enabled on app. Would provide real sold data for parallel cards. Requires eBay developer approval.
 - **Parallel sold data gap**: eBay Browse API returns active listings (not sold) for SB01 parallels despite `soldItems:true`. Active BIN prices used as fallback with disclaimer.
+- **Comp date tiering**: `extractComps()` and parallel pricing path filter comps to 30d first, expanding to 60d then 90d if <2 results. Uses `itemCreationDate` for active listings (no `itemEndDate`). Prevents stale comps from skewing market price.
+- **Filters moved to result page**: Grade/condition/language pills render dynamically inside the result view (between search bar and result card), not in the search pane. State tracked in `G`, `C`, `L` globals; pills re-rendered with correct highlights on each search.
 - **One Piece image proxy**: Images still show SAMPLE watermark from some sources despite proxy.
 - In `normalizeApiResponse()`, `ct` and `jx` are referenced before assignment — works via closure.
+- **P-suffix stripped from display**: Card names like "Pan : GT (-P2)" display as "Pan : GT" everywhere (result title, browse, autocomplete). P-number visible in card number subtitle (e.g., "PROMOTION · FB03-124-P2").
 
 ## Project Info
 
