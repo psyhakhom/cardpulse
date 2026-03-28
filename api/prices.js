@@ -800,7 +800,35 @@ async function fetchCardImage(query) {
     }
   }
 
-  // 2. Fall back to external APIs (Pokemon, MTG)
+  // 2. Try catalog image by name (covers name-only searches like "Charizard", "Vegeta")
+  if (_sbConfigured) {
+    try {
+      const nameWords = query.replace(/\b(raw|nm|near\s*mint|english|holo|foil|reverse|promo|psa|bgs|cgc)\b/gi, '').trim()
+      if (nameWords.length >= 3) {
+        const nameEnc = encodeURIComponent(`%${nameWords}%`)
+        const url = `${SUPABASE_URL}/rest/v1/card_catalog?select=image_url,game&card_name=ilike.${nameEnc}&image_url=not.is.null&order=times_searched.desc&limit=1`
+        const r = await fetch(url, {
+          headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+          signal: AbortSignal.timeout(3000),
+        })
+        if (r.ok) {
+          const rows = await r.json()
+          if (rows[0]?.image_url) {
+            let imgUrl = rows[0].image_url
+            if (rows[0].game === 'gundam' || rows[0].game === 'onepiece') {
+              imgUrl = `/api/image-proxy?url=${encodeURIComponent(imgUrl)}`
+            }
+            console.log(`[cardImage:catalog-name] "${nameWords}" → ${imgUrl.slice(0, 80)}`)
+            return imgUrl
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`[cardImage:catalog-name] failed: ${e.message}`)
+    }
+  }
+
+  // 3. Fall back to external APIs (Pokemon, MTG) — only if catalog missed
   const source = detectCardSource(query)
   try {
     if (source === 'pokemon') return await fetchPokemonImage(query)
