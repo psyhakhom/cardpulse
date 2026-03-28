@@ -46,6 +46,7 @@ function mapCard(card) {
     rarity: card.rarity || null,
     image_url: card.images?.large || card.images?.small || card.image || null,
     search_query: `${card.name || ''} ${code} ${card.rarity || ''}`.trim(),
+    variant_source: card.getIt || null,
     times_searched: 0,
     last_searched: new Date().toISOString(),
   }

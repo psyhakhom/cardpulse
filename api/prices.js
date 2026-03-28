@@ -1274,8 +1274,8 @@ export default async function handler(req, res) {
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, lang = 'English', history, exact, parallel, cardImageUrl, pnum } = req.query
-  console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ` parallel${pnum ? ' P'+pnum : ''}` : ''}`)
+  const { q, lang = 'English', history, exact, parallel, cardImageUrl, pnum, vsrc } = req.query
+  console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ` parallel${pnum ? ' P'+pnum : ''}${vsrc ? ' vsrc="'+vsrc+'"' : ''}` : ''}`)
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
   const rawGrade = req.query.grade || 'Raw'
@@ -1445,13 +1445,19 @@ export default async function handler(req, res) {
         // Name without card number — eBay API can't match card numbers with varied formatting
         const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
         const pNum = parseInt(pnum) || 0
-        console.log(`[parallel] queries: name="${nameOnly}" base="${base}" pnum=${pNum}`)
-        // US-only sold search — global=true doesn't return sold items reliably
-        // P1: "alt art" targets SR* / alt art listings
-        // P2+: use P-number suffix + "parallel" — avoids pulling P1 alt art comps
+        // Extract eBay-friendly term from variant_source (e.g., "BOOSTER PACK -RAGING ROAR- [FB03]" → "Raging Roar")
+        let vsrcTerm = ''
+        if (vsrc) {
+          const dashMatch = vsrc.match(/-([^-]+)-/)
+          if (dashMatch) vsrcTerm = dashMatch[1].trim()
+          else vsrcTerm = vsrc.replace(/\[.*?\]/g, '').trim()
+        }
+        console.log(`[parallel] queries: name="${nameOnly}" base="${base}" pnum=${pNum} vsrcTerm="${vsrcTerm}"`)
+        // When we have a variant source, use it for targeted queries.
+        // Otherwise fall back to generic alt art / parallel / manga.
         const pOpts = { limit: 30, sort: 'newlyListed' }
-        const q1 = base + ' alt art'
-        const q3 = base + ' manga'
+        const q1 = vsrcTerm ? base + ' ' + vsrcTerm : base + ' alt art'
+        const q3 = vsrcTerm ? nameOnly + ' ' + vsrcTerm : base + ' manga'
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
           ebaySearch(q1, token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),

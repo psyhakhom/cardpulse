@@ -688,6 +688,7 @@ function selectAc(i){
     searchQuery:cleanSQ,
     parallel:_isParallel,
     parallelNum:_parallelNum,
+    variantSource:card.variantSource||null,
   };
   console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery));
   // Show clean display name in input
@@ -742,7 +743,7 @@ async function search(q, elId) {
       console.log('[search]', searchQ, sc ? '(catalog)' : '(free text)');
       const params = new URLSearchParams({ q: searchQ, grade: G, lang: L });
       if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
-      if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); }
+      if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); if (sc.variantSource) params.set('vsrc', sc.variantSource); }
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
