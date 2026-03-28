@@ -1121,19 +1121,14 @@ function renderResult(el,q,r){
   const lb=(r.l!=='English'||r.jx)?`<span class="lbg">${r.jx?'JP Exclusive':r.l}</span>`:'';
   const ctl=r.ct==='dbs'?'Dragon Ball TCG':r.ct==='tcg'?'TCG':r.ct==='sg'?'Graded Sports':'Sports Raw';
   const cardData=JSON.stringify({name:q,grade:G,cond:C,lang:L,avg:r.avg,lo:r.lo,hi:r.hi,imageUrl:r.img,ct:r.ct}).replace(/"/g,'&quot;');
-  el.innerHTML=renderBackBtn()+`<div class="rc">
+  const _filters=`<div class="fr"><span class="fl">Grade</span><div class="fg" id="gc">${['Raw','PSA 10','PSA 9','BGS 10','CGC 10'].map(g=>`<button class="ch${G===g?' on':''}" onclick="pick(this,'g')">${g}</button>`).join('')}</div></div><button class="filter-toggle" onclick="this.nextElementSibling.classList.toggle('filters-open');this.querySelector('.ft-arrow').textContent=this.nextElementSibling.classList.contains('filters-open')?'▴':'▾'">Filters <span class="ft-arrow">▾</span></button><div class="filter-collapse"><div class="fr"><span class="fl">Cond</span><div class="fg" id="cc">${['Any','NM','EX','VG'].map(c=>`<button class="ch${C===c?' on':''}" onclick="pick(this,'c')">${c}</button>`).join('')}</div></div><div class="fr"><span class="fl">Lang</span><div class="fg" id="lc">${['English','Japanese','Korean','Chinese','Other'].map(l=>`<button class="ch${L===l?' lon':''}" onclick="pickL(this)">${l}</button>`).join('')}</div></div></div>`;
+  el.innerHTML=renderBackBtn()+_filters+`<div class="rc">
     <div class="rh" id="rh"><div class="shim" id="shim"></div>
     <img src="${r.img}" style="opacity:0" onload="this.style.opacity='1';var s=document.getElementById('shim');if(s)s.remove()" onerror="this.style.display='none'"/>
     <div class="rhl">${ctl}</div></div>
     <div class="rb">${jb}${fx}${tm}${cqb}
     <div class="rt">${escH(q)}${lb}</div>
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}</div>
-    <div class="fr" style="margin-top:12px"><span class="fl">Grade</span><div class="fg" id="gc">${['Raw','PSA 10','PSA 9','BGS 10','CGC 10'].map(g=>`<button class="ch${G===g?' on':''}" onclick="pick(this,'g')">${g}</button>`).join('')}</div></div>
-    <button class="filter-toggle" onclick="this.nextElementSibling.classList.toggle('filters-open');this.querySelector('.ft-arrow').textContent=this.nextElementSibling.classList.contains('filters-open')?'▴':'▾'">Filters <span class="ft-arrow">▾</span></button>
-    <div class="filter-collapse">
-    <div class="fr"><span class="fl">Cond</span><div class="fg" id="cc">${['Any','NM','EX','VG'].map(c=>`<button class="ch${C===c?' on':''}" onclick="pick(this,'c')">${c}</button>`).join('')}</div></div>
-    <div class="fr"><span class="fl">Lang</span><div class="fg" id="lc">${['English','Japanese','Korean','Chinese','Other'].map(l=>`<button class="ch${L===l?' lon':''}" onclick="pickL(this)">${l}</button>`).join('')}</div></div>
-    </div>
     <div class="pg">
       <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
     </div>
