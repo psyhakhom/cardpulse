@@ -2032,9 +2032,21 @@ export default async function handler(req, res) {
     if ((!blended || blended.totalComps === 0) && grade === 'Raw') {
       console.log(`[active-fallback] 0 sold comps, trying active BIN listings`)
       try {
-        const activeQ = processed
-        const activeRes = await ebaySearch(activeQ, token, { limit: 20, sort: 'newlyListed', activeOnly: true })
-        let activeItems = activeRes.itemSummaries || []
+        // Try full query first, then card number only if needed
+        const cardNum = processed.match(/\b([A-Z]{1,4}\d+-\d+[A-Z]?)\b/i)
+        const queries = [processed]
+        if (cardNum) queries.push(cardNum[1])
+        let activeItems = []
+        for (const activeQ of queries) {
+          const activeRes = await ebaySearch(activeQ, token, { limit: 20, sort: 'newlyListed', activeOnly: true })
+          activeItems = activeRes.itemSummaries || []
+          activeItems = activeItems.filter(i => !isGradedSlab(i.title))
+          if (activeItems.length > 0) {
+            console.log(`[active-fallback] query "${activeQ}" found ${activeItems.length} raw listings`)
+            break
+          }
+          console.log(`[active-fallback] query "${activeQ}" returned 0 raw listings, trying next`)
+        }
         // Filter: remove slabs, lots, wrong language, enforce card name
         activeItems = activeItems.filter(i => !isGradedSlab(i.title))
         const _nameW = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !/^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|alt|art)$/i.test(w) && !/^[A-Z]{1,4}-?\d+/i.test(w))
