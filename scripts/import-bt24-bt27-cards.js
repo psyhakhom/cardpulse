@@ -70,24 +70,28 @@ async function fetchSetCards(setCode, setId) {
   }
   console.log(`  Parsed ${cards.length} cards from alt text`)
 
-  // If alt text didn't work, fall back to per-card-block parsing
-  // Each card block: <dl class="cardListCol ..."> ... cardNumber ... cardName ... Rarity[XX] ... </dl>
+  // If alt text didn't work, parse cardNumber→cardName→Rarity triples from HTML
+  // Each card entry has these in sequence; capture the chunk between consecutive cardNumber tags
   if (cards.length === 0) {
-    // Split HTML into card blocks by <li> boundaries
-    const blockRe = /<dl class="cardListCol[^>]*>[\s\S]*?<\/dl>\s*<\/dd>\s*<\/dl>/gi
-    const blocks = html.match(blockRe) || []
-    for (const block of blocks) {
-      const numM = block.match(/class="cardNumber"[^>]*>\s*(BT\d+-\d{3}[A-Z]?(?:_\w+)?)\s*<\/dt>/i)
-      const nameM = block.match(/class="cardName"[^>]*>\s*([^<]+)/i)
-      const rarM = block.match(/(?:Common|Uncommon|Rare|Super Rare|Special Rare|Secret Rare|Campaign Rare|Son Gohan Rare|Expansion Rare|God Rare)\[([A-Z]{1,4})\]/i)
-      if (!numM) continue
-      const cardNumber = numM[1].toUpperCase()
+    const tripleRe = /class="cardNumber"[^>]*>\s*(BT\d+-\d{3}[A-Z]?(?:_\w+)?)\s*<\/dt>\s*<dd class="cardName"[^>]*>\s*([^<]+)/gi
+    const rarityLookup = /(?:Common|Uncommon|Rare|Super Rare|Special Rare|Secret Rare|Campaign Rare|Son Gohan Rare|Expansion Rare|God Rare)\[([A-Z]{1,4})\]/gi
+    // Build array of all rarity positions in the HTML
+    const rarPositions = []
+    let rm
+    while ((rm = rarityLookup.exec(html)) !== null) {
+      rarPositions.push({ index: rm.index, rarity: rm[1] })
+    }
+    while ((m = tripleRe.exec(html)) !== null) {
+      const cardNumber = m[1].toUpperCase()
       if (!cardNumber.startsWith(setCode)) continue
-      const cardName = (nameM ? nameM[1] : cardNumber).replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim()
-      const rarity = rarM ? rarM[1] : null
+      const cardName = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim()
+      // Find the closest rarity AFTER this match position
+      const pos = m.index
+      const nextRar = rarPositions.find(r => r.index > pos)
+      const rarity = nextRar ? nextRar.rarity : null
       cards.push({ cardNumber, cardName, rarity })
     }
-    console.log(`  Block parsing: found ${cards.length} cards (${cards.filter(c => c.rarity).length} with rarity)`)
+    console.log(`  Parsed ${cards.length} cards (${cards.filter(c => c.rarity).length} with rarity)`)
   }
 
   // Deduplicate by card number
