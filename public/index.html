@@ -885,6 +885,8 @@ function normalizeApiResponse(data, q, sc) {
     jx,
     showFX:  false,
     l:       L,
+    cardSet: sc?.set || null,
+    cardNum: sc?.number || null,
     img:     sc?.imageUrl || data.imageUrl || getImg(q),
     comps,
     searchTip: data.searchTip || null,
@@ -1133,6 +1135,7 @@ function renderResult(el,q,r){
     <div class="rhl">${ctl}</div></div>
     <div class="rb">${jb}${fx}${tm}${cqb}
     <div class="rt">${escH(q)}${lb}</div>
+    ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${r.cardSet?escH(r.cardSet)+' · ':''}${escH(r.cardNum)}</div>`:''}
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}</div>
     <div class="pg">
       <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
