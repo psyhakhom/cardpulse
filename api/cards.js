@@ -1183,7 +1183,7 @@ export default async function handler(req, res) {
   // ── Step 1: Check card_catalog FIRST (instant, no external API) ─────────
   const catalogResults = await searchCatalog(query, game, maxResults)
   console.log(`[catalog] catalogResults: ${catalogResults.length}`, catalogResults.map(r => `${r.name} (${r.number})`))
-  const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|D-BT|OP)-?\d+(?:-\d+)?|\bE-?\d+/i.test(query)
+  const hasCardNum = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT|OP)-?\d+(?:-\d+)?|\bE-?\d+/i.test(query)
 
   if (catalogResults.length >= 5) {
     // 5+ results: great catalog coverage — return immediately, skip external APIs
@@ -1233,6 +1233,9 @@ export default async function handler(req, res) {
   } else if (game === 'lorcana') {
     try { externalCards = await searchLorcana(query) } catch (err) { console.error('[cards] lorcana error:', err.message) }
     if (externalCards.length) attribution = 'Lorcana'
+  } else if (game === 'gundam') {
+    // All gundam cards are in the catalog — no external API needed
+    console.log('[cards] gundam: catalog-only, skipping external APIs')
   } else {
     // No game detected — search all databases in parallel
     console.log('[cards] no game detected, searching all databases')
