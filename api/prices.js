@@ -1880,6 +1880,23 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Retry 3: card-number-only when long name returns 0 ──────────────
+    // Long card names (e.g., "Majin Buus Human Extinction Attack BT9-135")
+    // are too specific for eBay. Retry with just the card number — name
+    // enforcement in filterItems will validate results match the card.
+    if ((!blended || blended.totalComps === 0) && /\b[A-Z]{1,4}\d+-\d+/i.test(processed)) {
+      const numMatch = processed.match(/\b([A-Z]{1,4}\d+-\d+[A-Z]?)\b/i)
+      if (numMatch) {
+        console.log(`[num-retry] trying card number only: "${numMatch[1]}"`)
+        const attempt = await runQueries(numMatch[1])
+        if (attempt.blended && attempt.blended.totalComps > 0) {
+          ;({ results, blended, allItems, hadJapaneseResults, slabsOnly } = attempt)
+          correctedQuery = numMatch[1]
+          console.log(`[num-retry] accepted "${numMatch[1]}" with ${blended.totalComps} comps`)
+        }
+      }
+    }
+
     if (!blended || blended.totalComps === 0) {
       if (slabsOnly && grade === 'Raw') {
         return res.status(200).json({
