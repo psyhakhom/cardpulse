@@ -690,7 +690,7 @@ function selectAc(i){
     parallelNum:_parallelNum,
     variantSource:card.variantSource||null,
   };
-  console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery));
+  console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery), 'variantSource:', JSON.stringify(selectedCard.variantSource));
   // Show clean display name in input
   const displayName=[card.name,card.number].filter(Boolean).join(' ');
   document.getElementById('si').value=displayName;
