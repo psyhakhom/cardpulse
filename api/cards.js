@@ -145,7 +145,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         ['deoxys','EX8'],['team rocket returns','EX7'],
         ['firered leafgreen','EX6'],
         ['team magma vs team aqua','EX5'],['magma aqua','EX5'],
-        ['sandstorm','EX4'],['dragon','EX3'],
+        ['sandstorm','EX4'],['ex dragon','EX3'],
         ['phantom forces','XY4'],['flashfire','XY2'],['furious fists','XY3'],
         ['roaring skies','XY6'],['ancient origins','XY7'],['steam siege','XY11'],
         ['fates collide','XY10'],
