@@ -139,7 +139,7 @@ async function ebaySearch(
   // Strip promo/parallel suffixes (_PR, _PR02, _p1) — catalog identifiers, not eBay terms
   // Also strip (-P2) name suffixes and -P2 card number suffixes
   // Strip rarity suffixes without + (catalog artifacts like "(LR)", "(R)") but keep "(LR+)" — sellers use it
-  query = query.replace(/['''`]s\b/g, '').replace(/['''`]/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/\s*\([A-Z]{1,2}\)(?!\+)/g, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
+  query = query.replace(/['''`]s\b/g, '').replace(/['''`]/g, '').replace(/,/g, '').replace(/\s*\(-?P\d+\)/gi, '').replace(/\s*\([A-Z]{1,2}\)(?!\+)/g, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
   console.log(`[ebay query] q="${query}" live=${live} global=${global}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
