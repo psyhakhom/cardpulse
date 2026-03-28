@@ -2081,8 +2081,10 @@ export default async function handler(req, res) {
       if (slabsOnly && grade === 'Raw') {
         return res.status(200).json({
           type: 'no-data',
-          error: 'All sold listings for this card are graded slabs (PSA, BGS, CGC).',
-          searchTip: 'Try searching with a graded option (PSA 10, BGS 10) to see graded prices.',
+          slabsOnly: true,
+          error: 'No raw sold listings found — only graded slabs available.',
+          searchTip: 'Tap a grade below to see graded prices for this card.',
+          imageUrl: dedicatedImageUrl || null,
         })
       }
       if (hadJapaneseResults) {

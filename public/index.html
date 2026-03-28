@@ -766,10 +766,12 @@ async function search(q, elId) {
       }
       if (data.type === 'no-data' || (data.error && res.status === 404)) {
         if(elId==='sr'){navPush('result',document.getElementById('si').value.trim(),sc);}
-        const cardImg=sc?.imageUrl?`<img src="${escH(sc.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
+        const cardImg=sc?.imageUrl||data.imageUrl?`<img src="${escH(sc?.imageUrl||data.imageUrl)}" style="width:120px;border-radius:8px;margin-bottom:12px" onerror="this.style.display='none'">`:'';
         const cardName=sc?.name||q;
-        const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${escH(data.searchTip)}</p>`:'';
-        el.innerHTML = renderBackBtn()+`<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">No sold comps found for<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p><p style="margin-top:8px;font-size:12px;color:var(--mu);line-height:1.6">This card may be too new or have limited market activity.<br>Try searching without the parallel variant.</p>${tip}</div>`;
+        const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${data.searchTip}</p>`:'';
+        // When only graded slabs exist, show grade pills so user can tap to see graded prices
+        const gradePills=data.slabsOnly?`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">${['PSA 10','PSA 9','BGS 10','BGS 9.5','CGC 10'].map(g=>`<button onclick="pick(this,'g')" style="padding:6px 14px;border-radius:16px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:13px;cursor:pointer">${g}</button>`).join('')}</div>`:'';
+        el.innerHTML = renderBackBtn()+`<div class="emp" style="padding:32px 0">${cardImg}<p style="margin-top:10px">${data.slabsOnly?'Only graded comps found for':'No sold comps found for'}<br><strong style="color:var(--tx)">${escH(cardName)}</strong></p>${tip}${gradePills}</div>`;
         return;
       }
       if (data.error) {
