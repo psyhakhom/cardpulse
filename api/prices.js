@@ -1593,17 +1593,26 @@ export default async function handler(req, res) {
           if (_nameP.length > 0) {
             filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().includes(w)))
           }
-          // Soft set code filter: prefer results with the set code, but keep all if
-          // filtering would empty the list (sellers sometimes omit set codes)
-          const _setMatch = processed.match(/\b([A-Z]{1,4}\d+)-\d+/i)
-          if (_setMatch && filtered.length > 0) {
-            const setCode = _setMatch[1].toUpperCase()
-            const withSet = filtered.filter(i => (i.title || '').toUpperCase().includes(setCode))
-            if (withSet.length > 0) {
-              console.log(`[parallel:set-filter] ${filtered.length} → ${withSet.length} (soft, set ${setCode})`)
-              filtered = withSet
+          // Hard card number filter: parallel path always has exact card number from autocomplete.
+          // Prefer full card number match, fall back to set code, then drop all (no-data is
+          // better than pricing off a wrong card from a different set).
+          const _numMatch = processed.match(/\b([A-Z]{1,4}\d+)-(\d+)/i)
+          if (_numMatch && filtered.length > 0) {
+            const fullNum = _numMatch[0].toUpperCase()
+            const setCode = _numMatch[1].toUpperCase()
+            const withNum = filtered.filter(i => (i.title || '').toUpperCase().includes(fullNum))
+            if (withNum.length > 0) {
+              console.log(`[parallel:set-filter] ${filtered.length} → ${withNum.length} (hard, num ${fullNum})`)
+              filtered = withNum
             } else {
-              console.log(`[parallel:set-filter] 0 matches for ${setCode}, keeping all ${filtered.length}`)
+              const withSet = filtered.filter(i => (i.title || '').toUpperCase().includes(setCode))
+              if (withSet.length > 0) {
+                console.log(`[parallel:set-filter] ${filtered.length} → ${withSet.length} (hard, set ${setCode})`)
+                filtered = withSet
+              } else {
+                console.log(`[parallel:set-filter] 0 matches for ${fullNum} or ${setCode}, dropping all ${filtered.length}`)
+                filtered = []
+              }
             }
           }
           // Gundam parallel rarity filter: require "LR+" / "LR++" in titles to exclude base LR
