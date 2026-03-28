@@ -106,6 +106,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         'gokou': 'goku', 'picolo': 'piccolo', 'piccalo': 'piccolo',
         'charizrd': 'charizard', 'charazard': 'charizard',
         'pikchu': 'pikachu', 'mewtow': 'mewtwo',
+        'epyeon': 'epyon',
         'delta': 'δ',
       }
       // Extract set code from query (FB07, BT01, OP01, ST01, SV3, etc.) for post-filtering
@@ -196,7 +197,7 @@ async function searchCatalog(query, game, maxResults = 8) {
           game_filter: game || null,
           result_limit: detectedSetCode ? 50 : 16,
         }),
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(5000),
       })
       if (!res.ok) {
         const body = await res.text()
@@ -552,7 +553,7 @@ const OP_KW = [
 ]
 const OP_CODE_RE = /\b(?:OP|ST|EB)-?\d{2}/i
 const LORCANA_KW = ['lorcana', 'disney lorcana']
-const GUNDAM_KW = ['gundam', 'mobile suit', 'gundanium', 'zaku', 'rx-78', 'newtype', 'char aznable', 'amuro']
+const GUNDAM_KW = ['gundam', 'mobile suit', 'gundanium', 'zaku', 'rx-78', 'newtype', 'char aznable', 'amuro', 'epyon']
 const GUNDAM_CODE_RE = /\bGD\d{2}/i
 
 function detectGame(query) {
