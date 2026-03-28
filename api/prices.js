@@ -386,6 +386,8 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   // For sports cards: only apply "always excluded" variants (sealed, fan art, memorabilia)
   // For TCG cards: apply all variant terms
   // Skip for parallel queries — targeted queries already ensure correct variant
+  // Gundam LR/LR+ cards are foil/holo/textured by default — sellers describe the finish
+  const isGundam = /\bgundam\b|\bGD\d{2}\b/i.test(ql)
   const preVariantFiltered = [...filtered] // snapshot before variant filtering
   if (!opts.skipVariants) for (const vt of VARIANT_TERMS) {
     // Sports queries skip TCG-specific variants (foil, holo, chrome, refractor, silver, gold, rainbow, prismatic)
@@ -415,8 +417,6 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   }
 
   // ── 2b. Holo exclusion (non-Pokemon, non-Gundam only, skip for sports and parallel) ──
-  // Gundam LR/LR+ cards are foil/holo by default — sellers describe the finish
-  const isGundam = /\bgundam\b|\bGD\d{2}\b/i.test(ql)
   if (!isSportsQuery && !opts.skipVariants) {
     const isPokemon = /\bpokemon\b|\bpokémon\b|\bcharizard\b|\bpikachu\b/i.test(ql)
     if (!isPokemon && !isGundam && !/\bholo\b/i.test(ql)) {
