@@ -1589,10 +1589,13 @@ export default async function handler(req, res) {
       let rawD = dD.status === 'fulfilled' ? dD.value.itemSummaries || [] : []
 
       // ── Pre-filter: strip graded slabs BEFORE filterItems (double filter for Raw) ──
+      let _slabsRemoved = 0
+      const _totalBeforeSlabFilter = rawA.length + rawB.length + rawC.length + rawD.length
       if (grade === 'Raw') {
         const preFilter = (items, label) => {
           const kept = items.filter((i) => {
             if (isGradedSlab(i.title)) {
+              _slabsRemoved++
               console.log(`[pre-filter:${label}] slab removed: "${(i.title || '').slice(0, 70)}"`)
               return false
             }
@@ -1606,6 +1609,7 @@ export default async function handler(req, res) {
         rawC = preFilter(rawC, 'C')
         rawD = preFilter(rawD, 'D')
       }
+      const _slabsOnly = _slabsRemoved > 0 && (rawA.length + rawB.length + rawC.length + rawD.length) === 0
 
       // ── EARLY DISAMBIGUATION: check before variant/rarity filters strip alt arts ──
       const queryHasCardNum = /\b[A-Z]{1,4}\d+-\d+/i.test(processed)
@@ -1798,7 +1802,7 @@ export default async function handler(req, res) {
       if (isSportsQuery) {
         res.push({ ...qs.d, stats: calcStats(cleanD, 'D') })
       }
-      return { results: res, blended: blend(res, isSportsQuery), allItems: [...cleanA, ...cleanB, ...cleanC, ...cleanD], hadJapaneseResults }
+      return { results: res, blended: blend(res, isSportsQuery), allItems: [...cleanA, ...cleanB, ...cleanC, ...cleanD], hadJapaneseResults, slabsOnly: _slabsOnly }
     }
 
     // Launch card image lookup in parallel with the first eBay query batch
@@ -1822,7 +1826,7 @@ export default async function handler(req, res) {
         variants: qResult.variants,
       })
     }
-    let { results, blended, allItems, hadJapaneseResults, activeListings } = qResult
+    let { results, blended, allItems, hadJapaneseResults, activeListings, slabsOnly } = qResult
     const dedicatedImageUrl = cardImageResult.status === 'fulfilled' ? cardImageResult.value : null
 
     let correctedQuery = null  // set if we used spell correction or word-strip
@@ -1876,6 +1880,13 @@ export default async function handler(req, res) {
     }
 
     if (!blended || blended.totalComps === 0) {
+      if (slabsOnly && grade === 'Raw') {
+        return res.status(200).json({
+          type: 'no-data',
+          error: 'All sold listings for this card are graded slabs (PSA, BGS, CGC).',
+          searchTip: 'Try searching with a graded option (PSA 10, BGS 10) to see graded prices.',
+        })
+      }
       if (hadJapaneseResults) {
         return res.status(200).json({
           type: 'no-data',
