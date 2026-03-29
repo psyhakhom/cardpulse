@@ -1188,7 +1188,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, limit: limitParam } = req.query
+  const { q, limit: limitParam, game: gameParam } = req.query
   const maxResults = Math.min(parseInt(limitParam) || 8, 50)
 
   if (!q || q.trim().length < 3) {
@@ -1196,7 +1196,7 @@ export default async function handler(req, res) {
   }
 
   const query = q.trim()
-  const game = detectGame(query)
+  const game = gameParam || detectGame(query)
   console.log(`[cards] q="${query}" game=${game} limit=${maxResults}`)
   const ebayDirect = null
 

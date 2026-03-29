@@ -524,7 +524,9 @@ async function doSearch(){
   const el=document.getElementById('sr');
   el.innerHTML='<div class="ld"><div class="sp"></div><p>Searching catalog…</p></div>';
   try{
-    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}&limit=50`);
+    const _gfe2=detectGameFE(q);
+    const _gp2=_gfe2?`&game=${_gfe2}`:'';
+    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}&limit=50${_gp2}`);
     if(r.ok){
       const d=await r.json();
       let cards=(d.cards||[]).filter(c=>!c.isDirect);
@@ -541,6 +543,15 @@ async function doSearch(){
 }
 function doScanSearch(){const q=document.getElementById('ssi').value.trim();if(q)search(q,'ssr');}
 
+// Frontend game detection — keywords that overlap with other games (e.g. Digimon BT vs DBS BT)
+const _DIGIMON_KW=['digimon','digi-egg','agumon','gabumon','greymon','wargreymon','metalgarurumon','omnimon','omegamon','gallantmon','imperialdramon','magnamon','alphamon','jesmon','patamon','gatomon','angewomon','angemon','magnaangemon','seraphimon','tentomon','kabuterimon','palmon','togemon','lillymon','rosemon','gomamon','ikkakumon','zudomon','biyomon','birdramon','garudamon','phoenixmon','veemon','flamedramon','exveemon','guilmon','growlmon','dukemon','renamon','kyubimon','taomon','sakuyamon','terriermon','gargomon','rapidmon','lucemon','beelzemon','lilithmon','myotismon','devimon','metalseadramon','puppetmon','machinedramon','piedmon','apocalymon','diaboromon','leomon','andromon','tyrannomon'];
+const _UNIONARENA_KW=['union arena','unionarena','bleach','ichigo','jujutsu kaisen','jjk','hunter x hunter','hxh','code geass','lelouch'];
+function detectGameFE(q){
+  const ql=q.toLowerCase();
+  if(_DIGIMON_KW.some(k=>ql.includes(k)))return'digimon';
+  if(_UNIONARENA_KW.some(k=>ql.includes(k)))return'unionarena';
+  return null;
+}
 // AUTOCOMPLETE — Card Catalog
 let acTimer=null,acSel=-1,acList=[],selectedCard=null,acAbort=null;
 // Client-side cache: last 20 query results, keyed by versioned query string
@@ -582,7 +593,10 @@ async function fetchAc(q){
   acAbort=ctrl;
   showAcLoading();
   try{
-    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}`,{signal:ctrl.signal});
+    const _gfe=detectGameFE(q);
+    const _gp=_gfe?`&game=${_gfe}`:'';
+    if(_gfe)console.log(`[ac] frontend game override: ${_gfe} for "${q}"`);
+    const r=await fetch(`/api/cards?q=${encodeURIComponent(q)}${_gp}`,{signal:ctrl.signal});
     if(ctrl.signal.aborted)return; // superseded by newer request
     if(!r.ok){hideAc();return;}
     const d=await r.json();
