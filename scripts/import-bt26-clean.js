@@ -103,6 +103,12 @@ async function fetchRarity(cardNumber) {
 // ─── Map to card_catalog row ──────────────────────────────────────────────────
 
 function mapCard(cardNumber, cardName, rarity) {
+  // Strip _SPR/_SCR/_PR suffixes from card number, use as rarity instead
+  const suffixMatch = cardNumber.match(/^(.+?)_([A-Z]+)$/)
+  if (suffixMatch) {
+    cardNumber = suffixMatch[1]
+    if (!rarity) rarity = suffixMatch[2]
+  }
   return {
     card_name: cardName,
     card_number: cardNumber,
