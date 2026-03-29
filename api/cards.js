@@ -39,7 +39,7 @@ const PKM_SET_NAMES = {
   SWSH10:'Astral Radiance',SWSH11:'Lost Origin',SWSH12:'Silver Tempest',
   SV1:'Scarlet & Violet',SV2:'Paldea Evolved',SV3:'Obsidian Flames',SV3PT5:'151',SV4:'Paradox Rift',SV5:'Temporal Forces',
   SV6:'Twilight Masquerade',SV7:'Stellar Crown',SV8:'Surging Sparks',SV9:'Journey Together',SV10:'Destined Rivals',
-  G1:'Generations',ME1:'Mega Evolution',RU1:'Rumble',
+  G1:'Generations',ME1:'Mega Evolution',ME3:'Perfect Order',RU1:'Rumble',
   POP1:'POP 1',POP2:'POP 2',POP3:'POP 3',POP4:'POP 4',POP5:'POP 5',POP6:'POP 6',POP7:'POP 7',POP8:'POP 8',POP9:'POP 9',
 }
 
@@ -149,6 +149,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         ['phantom forces','XY4'],['flashfire','XY2'],['furious fists','XY3'],
         ['roaring skies','XY6'],['ancient origins','XY7'],['steam siege','XY11'],
         ['fates collide','XY10'],
+        ['perfect order','ME3'],['me3','ME3'],
       ]
       let pkmSetStrip = null
       if (!detectedSetCode) {

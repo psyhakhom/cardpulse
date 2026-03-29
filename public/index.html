@@ -470,6 +470,7 @@ async function pickSlab(el){
   const sc=selectedCard;
   try{
     const searchQ=sc?sc.searchQuery:stripped;
+    console.log('[query-build:pickSlab]',JSON.stringify(searchQ),sc?'(catalog) game='+sc.game+' number='+sc.number:'(free text)');
     const params=new URLSearchParams({q:searchQ,grade:G,lang:L});
     if(sc)params.set('exact','1');
     if(sc?.parallel){params.set('parallel','1');if(sc.parallelNum)params.set('pnum',sc.parallelNum);if(sc.variantSource)params.set('vsrc',sc.variantSource);}
@@ -702,15 +703,28 @@ function selectAc(i){
   // Truncate long subtitles (>3 words) — sellers skip them ("Pan, & SS Trunks, Galactic Explorers")
   const _commaParts=_cleanName.split(',');
   const shortName=_commaParts.length<=1?_cleanName:(_commaParts.slice(1).join(',').trim().split(/\s+/).length<=3?_cleanName:_commaParts[0].trim());
+  const PKM_SET_SIZES={ME3:88,SV1:198,SV2:197,SV3:182,SV4:167,SV5:191,SV6:167,SV7:175,SV8:186};
+  const PKM_SET_NAMES_FE={ME3:'Perfect Order',SV1:'Scarlet & Violet',SV2:'Paldea Evolved',SV3:'Obsidian Flames',SV4:'Paradox Rift',SV5:'Temporal Forces',SV6:'Twilight Masquerade',SV7:'Stellar Crown',SV8:'Surging Sparks'};
   if(g==='mtg'||g==='pokemon'||g==='lorcana'){
-    // Set-name games: sellers use "Card Name Set Name" not collector numbers
-    // For Pokemon: strip internal set prefix from card number (EX13-5 → 5)
+    // Set-name games: sellers use "Card Name 062/088 Set Name" on eBay
     let collectorNum='';
+    let setName=card.set||'';
     if(g==='pokemon'&&card.number){
-      const m=card.number.match(/^[A-Z]{2,6}\d*-(\d+)$/i);
-      if(m)collectorNum=' '+m[1];
+      const m=card.number.match(/^([A-Z]{2,6}\d*)-(\d+)$/i);
+      if(m){
+        const setKey=m[1].toUpperCase(),num=parseInt(m[2],10),baseSize=PKM_SET_SIZES[setKey];
+        if(baseSize){
+          const pad=s=>String(s).padStart(3,'0');
+          collectorNum=pad(num)+'/'+pad(baseSize);
+        }else{
+          collectorNum=m[2];
+        }
+        // Resolve raw set codes to display names (safety net if backend didn't map)
+        if(PKM_SET_NAMES_FE[setKey]&&(!setName||setName===setKey))setName=PKM_SET_NAMES_FE[setKey];
+      }
+      console.log('[selectAc:pokemon] number:',card.number,'collectorNum:',collectorNum,'set:',card.set,'→ setName:',setName);
     }
-    cleanSQ=(shortName+(card.set?' '+card.set:'')+collectorNum).trim();
+    cleanSQ=[shortName,collectorNum,setName].filter(Boolean).join(' ');
     console.log('[selectAc]',g,'query:',JSON.stringify(cleanSQ));
   }else if(g==='yugioh'){
     // YGO: sellers rarely include set name or card number
@@ -761,7 +775,7 @@ function selectAc(i){
     const vt=VARIANT_EBAY_TERMS[(card.variant||'').toLowerCase()];
     if(vt) selectedCard.searchQuery=cleanSQ+' '+vt;
   }
-  console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery), 'variantSource:', JSON.stringify(selectedCard.variantSource), 'variant:', JSON.stringify(selectedCard.variant));
+  console.log('[query-build:selectAc] final searchQuery:', JSON.stringify(selectedCard.searchQuery), 'game:', JSON.stringify(card.game), 'number:', JSON.stringify(card.number), 'set:', JSON.stringify(card.set));
   // Show clean display name in input
   const displayName=[card.name,card.number].filter(Boolean).join(' ');
   document.getElementById('si').value=displayName;
@@ -811,7 +825,7 @@ async function search(q, elId) {
     try {
       // When a catalog card was selected, bypass preprocessor with exact query
       const searchQ = sc ? sc.searchQuery : q;
-      console.log('[search]', searchQ, sc ? '(catalog)' : '(free text)');
+      console.log('[query-build:search]', JSON.stringify(searchQ), sc ? '(catalog) game='+sc.game+' number='+sc.number : '(free text)');
       const params = new URLSearchParams({ q: searchQ, grade: G, lang: L });
       if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
       if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); if (sc.variantSource) params.set('vsrc', sc.variantSource); }
