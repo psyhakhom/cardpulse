@@ -1447,10 +1447,11 @@ export default async function handler(req, res) {
 
     // Auto-enable parallel mode for star-rarity / alt art cards from autocomplete
     // "Golden Frieza FB07-079 alt art" → should use parallel queries, not standard TCG blend
+    // Check original q — "alt art" gets stripped from processed by rarity normalization
     let _autoParallel = false
-    if (parallel !== '1' && exact === '1' && /\balt\s*art\b/i.test(processed)) {
+    if (parallel !== '1' && exact === '1' && /\balt\s*art\b/i.test(q)) {
       _autoParallel = true
-      console.log(`[parallel:auto] detected "alt art" in exact query — enabling parallel mode`)
+      console.log(`[parallel:auto] detected "alt art" in original query — enabling parallel mode`)
     }
 
     console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}"${_autoParallel ? ', auto-parallel' : ''})`)
