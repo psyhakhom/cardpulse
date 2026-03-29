@@ -1,21 +1,24 @@
 /**
- * Import DBS Classic BT19-BT23 cards from the official Bandai card game site
- * into card_catalog with proper card names and rarities.
+ * Clean import of BT19-BT23 from the official Bandai US-EN card game site.
  *
- * Source: https://www.dbs-cardgame.com/asia/cardlist/ (POST with category_exp)
+ * For each set: fetches fresh data first, aborts if 0 cards returned,
+ * deletes all existing rows for that set_code, then upserts clean data.
+ * Sets are processed sequentially so a failure on one doesn't affect others.
+ *
+ * Source: https://www.dbs-cardgame.com/us-en/cardlist/ (POST with category_exp)
  *
  * Set IDs:
- *   BT19 (Fighter's Ambition)    = 428019
- *   BT20 (Power Absorbed)        = 428020
- *   BT21 (Wild Resurgence)       = 428021
- *   BT22 (Critical Blow)         = 428022
- *   BT23 (Perfect Combination)   = 428023
+ *   BT19 (Fighter's Ambition)   = 428019
+ *   BT20 (Power Absorbed)       = 428020
+ *   BT21 (Wild Resurgence)      = 428021
+ *   BT22 (Critical Blow)        = 428022
+ *   BT23 (Perfect Combination)  = 428023
  *
  * Prerequisites:
  *   .env.local with SUPABASE_URL and SUPABASE_SERVICE_KEY
  *
  * Usage: npm run import-bt19-bt23
- *   Or single set: node --env-file=.env.local scripts/import-bt19-bt23-cards.js BT19
+ *   Or single set: node --env-file=.env.local scripts/import-bt19-bt23-cards.js BT22
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -23,7 +26,7 @@ import { createClient } from '@supabase/supabase-js'
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY)
 const delay = (ms) => new Promise((r) => setTimeout(r, ms))
 
-const BASE_URL = 'https://www.dbs-cardgame.com/asia/cardlist/index.php'
+const BASE_URL = 'https://www.dbs-cardgame.com/us-en/cardlist/index.php'
 const IMG_BASE = 'https://www.dbs-cardgame.com/images/cardlist/cardimg'
 
 const SETS = {
@@ -37,7 +40,7 @@ const SETS = {
 // ─── Fetch card list via POST ─────────────────────────────────────────────────
 
 async function fetchSetCards(setCode, setId) {
-  console.log(`\nFetching ${setCode} (ID: ${setId})...`)
+  console.log(`\n  Fetching ${setCode} (ID: ${setId})...`)
 
   const body = new URLSearchParams({ search: 'true', category_exp: String(setId) })
   const res = await fetch(`${BASE_URL}?search=true`, {
@@ -48,49 +51,38 @@ async function fetchSetCards(setCode, setId) {
   })
   if (!res.ok) throw new Error(`Fetch failed for ${setCode}: ${res.status}`)
   const html = await res.text()
+  console.log(`  HTML size: ${(html.length / 1024).toFixed(0)}KB`)
 
   const cards = []
 
-  // Parse card entries from HTML
-  // Card number: <dt class="cardNumber">BT19-001</dt>
-  // Card name: <dd class="cardName">Son Goku & Vegeta & Trunks</dd>
-  // Rarity: Uncommon[UC] or Super Rare[SR] etc.
+  // Try alt text first (most reliable)
+  const altRe = new RegExp(`alt="(${setCode}-\\d{3}[A-Z]?(?:_(?:PR|SPR|SCR|GDR))?)\\s+([^"]+)"`, 'gi')
+  let m
+  while ((m = altRe.exec(html)) !== null) {
+    const cardNumber = m[1].toUpperCase()
+    const cardName = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim()
+    cards.push({ cardNumber, cardName, rarity: null })
+  }
+  if (cards.length > 0) console.log(`  Parsed ${cards.length} cards from alt text`)
 
-  // Extract card numbers
-  const cardNumRe = /class="cardNumber"[^>]*>(BT\d+-\d{3}[A-Z]?)<\/dt>/gi
-  const cardNameRe = /class="cardName"[^>]*>([^<]+)<\/dd>/gi
-  const rarityRe = /(?:Common|Uncommon|Rare|Super Rare|Special Rare|Secret Rare|Campaign Rare|Son Gohan Rare|Expansion Rare|God Rare)\[([A-Z]{1,4})\]/gi
-
-  const numbers = [...html.matchAll(cardNumRe)].map(m => m[1].toUpperCase())
-  const names = [...html.matchAll(cardNameRe)].map(m => {
-    return m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim()
-  })
-  const rarities = [...html.matchAll(rarityRe)].map(m => m[1])
-
-  console.log(`  Parsed: ${numbers.length} numbers, ${names.length} names, ${rarities.length} rarities`)
-
-  // If structured parsing didn't work, try broader patterns
-  if (numbers.length === 0) {
-    // Try alt text pattern: alt="BT19-001 Son Goku"
-    const altRe = /alt="(BT\d+-\d{3}[A-Z]?)\s+([^"]+)"/gi
-    let m
-    while ((m = altRe.exec(html)) !== null) {
+  // Fallback: parse cardNumber→cardName→Rarity triples from HTML
+  if (cards.length === 0) {
+    const tripleRe = new RegExp(`class="cardNumber"[^>]*>\\s*(${setCode}-\\d{3}[A-Z]?(?:_\\w+)?)\\s*</dt>\\s*<dd class="cardName"[^>]*>\\s*([^<]+)`, 'gi')
+    const rarityLookup = /(?:Common|Uncommon|Rare|Super Rare|Special Rare|Secret Rare|Campaign Rare|Dragon Ball Rare|Son Gohan Rare|Gold Rare|Expansion Rare|God Rare)\[([A-Z]{1,4})\]/gi
+    const rarPositions = []
+    let rm
+    while ((rm = rarityLookup.exec(html)) !== null) {
+      rarPositions.push({ index: rm.index, rarity: rm[1] })
+    }
+    while ((m = tripleRe.exec(html)) !== null) {
       const cardNumber = m[1].toUpperCase()
-      if (!cardNumber.startsWith(setCode)) continue
-      const cardName = m[2].replace(/&amp;/g, '&').replace(/&#39;/g, "'").trim()
-      cards.push({ cardNumber, cardName, rarity: null })
+      const cardName = m[2].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim()
+      const pos = m.index
+      const nextRar = rarPositions.find(r => r.index > pos)
+      const rarity = nextRar ? nextRar.rarity : null
+      cards.push({ cardNumber, cardName, rarity })
     }
-    console.log(`  Alt-text fallback: found ${cards.length} cards`)
-  } else {
-    // Zip numbers with names and rarities
-    for (let i = 0; i < numbers.length; i++) {
-      if (!numbers[i].startsWith(setCode)) continue
-      cards.push({
-        cardNumber: numbers[i],
-        cardName: names[i] || numbers[i],
-        rarity: rarities[i] || null,
-      })
-    }
+    console.log(`  Parsed ${cards.length} cards (${cards.filter(c => c.rarity).length} with rarity)`)
   }
 
   // Deduplicate by card number
@@ -105,10 +97,10 @@ async function fetchSetCards(setCode, setId) {
   return deduped
 }
 
-// ─── Fetch rarity from detail page (fallback when list doesn't have it) ───────
+// ─── Fetch rarity from detail page (fallback) ────────────────────────────────
 
 async function fetchRarity(cardNumber) {
-  const url = `https://www.dbs-cardgame.com/asia/cardlist/detail.php?card_no=${cardNumber}`
+  const url = `https://www.dbs-cardgame.com/us-en/cardlist/detail.php?card_no=${cardNumber}`
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
     if (!res.ok) return null
@@ -123,13 +115,11 @@ async function fetchRarity(cardNumber) {
 // ─── Map to card_catalog row ──────────────────────────────────────────────────
 
 function mapCard(cardNumber, cardName, rarity, setCode) {
-  // Normalize set_code to padded format: BT1 → BT01, BT19 stays BT19
-  const normalizedSet = setCode.replace(/^(BT)(\d)$/, '$10$2')
   return {
     card_name: cardName,
     card_number: cardNumber,
     game: 'dbs',
-    set_code: normalizedSet,
+    set_code: setCode,
     rarity: rarity || null,
     image_url: `${IMG_BASE}/${cardNumber}.png`,
     search_query: `${cardName} ${cardNumber} ${rarity || ''}`.trim(),
@@ -159,10 +149,69 @@ async function flushBatch(batch) {
   }
 }
 
+// ─── Process one set (fetch → delete → insert) ───────────────────────────────
+
+async function processSet(setCode, setId, setName) {
+  console.log(`\n${'═'.repeat(50)}`)
+  console.log(`  ${setCode} — ${setName}`)
+  console.log(`${'═'.repeat(50)}`)
+
+  // Step 1: Fetch fresh data BEFORE deleting
+  const cards = await fetchSetCards(setCode, setId)
+  if (!cards.length) {
+    console.error(`  ⚠ No cards fetched for ${setCode} — skipping to protect existing data`)
+    return 0
+  }
+
+  // Fetch missing rarities from detail pages
+  const missingRarity = cards.filter(c => !c.rarity).length
+  if (missingRarity > 0) {
+    console.log(`  ${missingRarity} cards missing rarity, fetching from detail pages...`)
+    for (let i = 0; i < cards.length; i++) {
+      if (!cards[i].rarity) {
+        cards[i].rarity = await fetchRarity(cards[i].cardNumber)
+        await delay(300)
+      }
+      if ((i + 1) % 20 === 0) console.log(`    ${i + 1}/${cards.length}...`)
+    }
+  }
+
+  // Step 2: Delete all existing rows for this set
+  console.log(`\n  Deleting existing ${setCode} rows from card_catalog...`)
+  const { error: delError, count } = await supabase
+    .from('card_catalog')
+    .delete({ count: 'exact' })
+    .eq('game', 'dbs')
+    .eq('set_code', setCode)
+  if (delError) {
+    console.error(`  Delete failed for ${setCode}:`, delError.message)
+    return 0
+  }
+  console.log(`  Deleted ${count ?? '?'} existing ${setCode} rows`)
+
+  // Step 3: Insert fresh data
+  const firstRow = mapCard(cards[0].cardNumber, cards[0].cardName, cards[0].rarity, setCode)
+  console.log('\n  First card:')
+  console.log(JSON.stringify(firstRow, null, 2))
+
+  const mapped = []
+  for (const c of cards) {
+    mapped.push(mapCard(c.cardNumber, c.cardName, c.rarity, setCode))
+    if (mapped.length >= 50) {
+      await flushBatch(mapped)
+      mapped.length = 0
+    }
+  }
+  await flushBatch(mapped)
+
+  console.log(`  ✓ ${setCode} done — deleted ${count ?? '?'} old, inserted ${cards.length} new`)
+  return cards.length
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('Starting BT19-BT23 card import from dbs-cardgame.com...')
+  console.log('Starting CLEAN BT19-BT23 import from Bandai US-EN...')
   console.log(`Supabase URL: ${process.env.SUPABASE_URL ? 'set' : 'MISSING'}`)
   console.log(`Supabase Key: ${process.env.SUPABASE_SERVICE_KEY ? 'set' : 'MISSING'}`)
 
@@ -171,7 +220,7 @@ async function main() {
     process.exit(1)
   }
 
-  // Allow single set via CLI arg: node script.js BT19
+  // Allow single set via CLI arg: node script.js BT22
   const targetSet = process.argv[2]?.toUpperCase()
   const setsToImport = targetSet && SETS[targetSet]
     ? { [targetSet]: SETS[targetSet] }
@@ -180,49 +229,12 @@ async function main() {
   let grandTotal = 0
 
   for (const [setCode, { id, name }] of Object.entries(setsToImport)) {
-    console.log(`\n${'═'.repeat(50)}`)
-    console.log(`  ${setCode} — ${name}`)
-    console.log(`${'═'.repeat(50)}`)
-
-    const cards = await fetchSetCards(setCode, id)
-    if (!cards.length) {
-      console.log(`  ⚠ No cards found for ${setCode}, skipping`)
-      continue
+    try {
+      grandTotal += await processSet(setCode, id, name)
+    } catch (e) {
+      console.error(`  ✗ ${setCode} failed: ${e.message}`)
+      console.error(`    Continuing with next set...`)
     }
-
-    // Check how many have rarity from the list page
-    const missingRarity = cards.filter(c => !c.rarity).length
-    if (missingRarity > 0) {
-      console.log(`  ${missingRarity} cards missing rarity, fetching from detail pages...`)
-      for (let i = 0; i < cards.length; i++) {
-        if (!cards[i].rarity) {
-          cards[i].rarity = await fetchRarity(cards[i].cardNumber)
-          await delay(300)
-        }
-        if ((i + 1) % 20 === 0) console.log(`    ${i + 1}/${cards.length}...`)
-      }
-    }
-
-    // Log first card
-    const firstRow = mapCard(cards[0].cardNumber, cards[0].cardName, cards[0].rarity, setCode)
-    console.log('\n  First card:')
-    console.log(JSON.stringify(firstRow, null, 2))
-
-    // Map and upsert in batches
-    const mapped = []
-    for (const c of cards) {
-      mapped.push(mapCard(c.cardNumber, c.cardName, c.rarity, setCode))
-      if (mapped.length >= 50) {
-        await flushBatch(mapped)
-        mapped.length = 0
-      }
-    }
-    await flushBatch(mapped)
-
-    grandTotal += cards.length
-    console.log(`  ✓ ${setCode} done — ${cards.length} cards`)
-
-    // Brief pause between sets
     await delay(1000)
   }
 
