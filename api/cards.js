@@ -52,7 +52,7 @@ async function searchCatalog(query, game, maxResults = 8) {
     const sanitized = query
 
     // If query has a specific card number (FB02-099, BT1-031), require exact match on it
-    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+)\b/i)
+    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+|P-\d+)\b/i)
 
     let rows
     if (cardNumMatch) {
@@ -69,7 +69,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       rows = await res.json()
 
       // Re-rank: if query has name terms beyond the card number, boost rows that match them
-      const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?\b|\bE\d+-\d+\b|\bE-\d+\b/gi
+      const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?\b|\bE\d+-\d+\b|\bE-\d+\b|\bP-\d+\b/gi
       const RARITY_RE = /\b(spr|scr|sr|ssr|ur|sec|sar|r|c|uc|sp|pr|sdr)\b/gi
       const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','raw','english']
       const nameTerms = query.toLowerCase().replace(CARD_NUM_RE, '').replace(RARITY_RE, '').split(/\s+/)
