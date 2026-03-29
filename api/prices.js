@@ -1524,28 +1524,33 @@ export default async function handler(req, res) {
         // Name without card number — eBay API can't match card numbers with varied formatting
         const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
         const pNum = parseInt(pnum) || 0
-        // Extract eBay-friendly term from variant_source (e.g., "BOOSTER PACK -RAGING ROAR- [FB03]" → "Raging Roar")
+        // Map variant_source to seller-friendly eBay terms.
+        // Don't pass vsrc verbatim — sellers don't use catalog names.
+        // Card number is the anchor; variant term just narrows the pool.
         let vsrcTerm = ''
         if (vsrc) {
-          // Tournament promos: sellers use "tournament promo" / "tourney winner", not "Tournament Pack05 WINNER"
-          if (/tournament\s*pack/i.test(vsrc)) {
-            vsrcTerm = 'tournament promo'
-          } else {
+          if (/tournament\s*pack/i.test(vsrc)) vsrcTerm = 'promo'
+          else if (/manga\s*booster/i.test(vsrc)) vsrcTerm = 'manga'
+          else if (/dokkan/i.test(vsrc)) vsrcTerm = 'dokkan'
+          else if (/anniversary/i.test(vsrc)) vsrcTerm = 'anniversary'
+          else {
+            // Booster pack parallels: extract set name from dashes (e.g., -RAGING ROAR-)
             const dashMatch = vsrc.match(/-([^-]+)-/)
             if (dashMatch) vsrcTerm = dashMatch[1].trim()
-            else vsrcTerm = vsrc.replace(/\[.*?\]/g, '').trim()
+            else vsrcTerm = 'alt art'
           }
         }
         // Gundam parallels: sellers use "LR+" / "R+" in titles (not "alt art")
         const isGundamParallel = /\bgundam\b|\bGD\d{2}\b/i.test(processed) && pNum >= 1
         const gundamRarity = isGundamParallel ? (pNum >= 2 ? 'LR++' : 'LR+') : null
         console.log(`[parallel] queries: name="${nameOnly}" base="${base}" pnum=${pNum} vsrcTerm="${vsrcTerm}"${gundamRarity ? ` gundamRarity="${gundamRarity}"` : ''}`)
-        // When we have a variant source, use it for targeted queries.
-        // Otherwise fall back to generic alt art / parallel / manga.
-        // Gundam: use rarity code (LR+, R+) since sellers consistently include it.
+        // Q1: card number + variant term (most specific)
+        // Q2: name + "parallel" (broad net)
+        // Q3: card number + "alt art" (catches listings that just say alt art)
+        // Hard card number filter downstream ensures only correct card survives.
         const pOpts = { limit: 30, sort: 'newlyListed' }
-        const q1 = isGundamParallel ? base + ' (' + gundamRarity + ')' : (vsrcTerm ? base + ' ' + vsrcTerm : base + ' alt art')
-        const q3 = isGundamParallel ? nameOnly + ' (' + gundamRarity + ')' : (vsrcTerm ? nameOnly + ' ' + vsrcTerm : base + ' manga')
+        const q1 = isGundamParallel ? base + ' (' + gundamRarity + ')' : base + ' ' + (vsrcTerm || 'alt art')
+        const q3 = isGundamParallel ? nameOnly + ' (' + gundamRarity + ')' : (vsrcTerm && vsrcTerm !== 'alt art' ? base + ' alt art' : nameOnly + ' promo')
         const [pA, pB, pC, dA, dB] = await Promise.allSettled([
           ebaySearch(q1, token, pOpts),
           ebaySearch(nameOnly + ' parallel', token, pOpts),
