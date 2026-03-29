@@ -9,7 +9,7 @@ No build step. Deploys directly to Vercel:
 - **Frontend**: `public/index.html` — single-file vanilla JS SPA (all HTML/CSS/JS inline)
 - **Backend**: `api/prices.js` — eBay Browse API pricing with weighted blending
 - **Autocomplete**: `api/cards.js` — Supabase card_catalog + external API fallback
-- **Image proxy**: `api/image-proxy.js` — proxies One Piece/DBS images to avoid hotlink blocking
+- **Image proxy**: `api/image-proxy.js` — proxies One Piece/DBS/Gundam/Deckplanet images to avoid hotlink blocking
 - **Import scripts**: `scripts/import-*.js` — bulk import card data into Supabase (local only)
 - **Deploy**: `git push` to master → Vercel auto-deploys in ~30s. Force: `vercel --prod --force --scope phanousits-projects`
 - **Local dev**: `vercel dev`. For offline/mock: set `USE_REAL_API = false` in `public/index.html`
@@ -100,7 +100,7 @@ Vercel serverless function. eBay queries with weighted blending, split by card t
 
 **Catalog rarity lookup**: Async Supabase promise (8s timeout) runs in parallel with eBay queries, resolved before `filterByRarity`. Looks up card's rarity from `card_catalog` by card number. High-value rarities enforce only when user typed the rarity code. Base rarities (SR, R, UC, C) auto-enforce to filter out starred variants and anniversary reprints. Filters null-rarity rows from results.
 
-**eBay query sanitization** (in `ebaySearch()`): Strips apostrophes (`'''``), leading dashes (`-Sign-`), promo suffixes (`_PR`, `_p1`, `-P1`, `-P2`), and `(-P2)` name suffixes before sending to eBay API. Display names and catalog lookups are unaffected.
+**eBay query sanitization** (in `ebaySearch()`): Strips apostrophes (`'''``), leading dashes (`-Sign-`), promo suffixes (`_PR`, `_p1`, `-P1`, `-P2`), `(-P2)` name suffixes, and `//` dual name prefixes before sending to eBay API. Display names and catalog lookups are unaffected. Name enforcement filters strip curly apostrophes (`''`) from both name words and comp titles to prevent mismatch (e.g., "Power's" vs "powers").
 
 **Sports card detection**: `/\b(rookie|rc|topps|bowman|panini|...)\b/i` AND no TCG keywords → lighter filter set (skips set codes, holo, variant filters). TCG_RE expanded with DBS characters: fortuneteller baba, master roshi, yamcha, tien, chiaotzu, ginyu force members (ginyu, recoome, burter, jeice, guldo), raditz, nappa, zarbon, dodoria, oolong, puar, ox-king, chichi, launch, turtle hermit, kame.
 
@@ -119,7 +119,19 @@ Vercel serverless function. eBay queries with weighted blending, split by card t
 - Q2: `"{card name} parallel"` (broad, US sold)
 - Q3: `"{card name} {vsrc term}"` or `"{card name} {card number} manga"` (if no vsrc)
 
-The `vsrc` value comes from apitcg.com's `getIt` field stored in `variant_source` column. Examples: "1st Anniversary Set", "BOOSTER PACK -NEW ADVENTURE- [FB05]". The dash-enclosed name is extracted as the eBay search term (e.g., "NEW ADVENTURE" from `"BOOSTER PACK -NEW ADVENTURE- [FB05]"`).
+The `vsrc` value comes from apitcg.com's `getIt` field stored in `variant_source` column. Mapped to seller-friendly eBay terms (catalog names don't match seller language):
+- Tournament Pack → "promo"
+- Championship → "championship promo"
+- Judge Pack → "judge promo"
+- Manga Booster → "manga"
+- Anniversary → "anniversary"
+- Starter Deck → "starter deck promo"
+- Sparking Zero → "sparking zero"
+- Ultimate Battle/Release Event/Limited Pack/Selection Pack → "promo"
+- BOOSTER PACK with dash-enclosed name → extracted (e.g., "RAGING ROAR" from "-RAGING ROAR-")
+- Unknown → "alt art"
+
+**Dokkan rescue**: Dokkan Battle alt art cards aren't catalog -P variants but appear on eBay with "dokkan" in titles. When the hard card number filter drops all comps, dokkan-titled comps matching the card name are rescued.
 
 Results merged, deduped by itemId, then filtered:
 1. $10 price floor (removes base card listings)
@@ -127,7 +139,7 @@ Results merged, deduped by itemId, then filtered:
 3. Slab filter (Raw only)
 4. `filterItems()` with `opts.skipVariants=true` — skips variant, holo, set code filters; keeps slab, lot, merch, name enforcement, language, grade
 5. Card name hard block
-6. Soft set code filter (prefer comps matching set code, keep all if 0 match)
+6. Hard card number filter (require full card number → set code → dokkan rescue → drop all). No-data is better than wrong-card pricing. When parallel path has 0 comps, returns no-data instead of falling back to mixed-variant normal queries.
 7. **Tiered date filter**: 30d → 60d → 90d (uses `itemCreationDate` for active listings)
 
 **Active listing fallback**: eBay Browse API returns no sold data for some newer cards (e.g., SB01 parallels). When `soldItems:true` returns only active BIN listings (no `itemEndDate`), the parallel path uses BIN prices as market indicator. Response includes `activeListings: true` flag; frontend shows "Active listings" header + disclaimer instead of "Recent sold comps".
@@ -139,9 +151,11 @@ Results merged, deduped by itemId, then filtered:
 **Priority**: Supabase card_catalog (~150,000+ cards) → external APIs → eBay fallback. Catalog-first merge: catalog results always fill slots 1-N before external. Attribution shows 'CardPulse catalog' when catalog results present. Browse mode (`limit=50`) returns up to 50 catalog-only results.
 
 **Fuzzy search** via `fuzzy_search_cards()` Supabase RPC (pg_trgm `word_similarity`, threshold 0.25):
-- Card number queries → exact PostgREST match (unchanged)
+- Card number queries → exact PostgREST match. Recognizes P-NNN promo card numbers alongside BT/FB/GD etc.
 - Name queries → RPC with game keyword stripping + alias correction
 - Re-ranking: when query has both name + card number, results matching name terms rank higher
+
+**Variant field**: `variant` column (nullable text) passed through from catalog to frontend. Displayed as muted `· Gold Stamped` tag in autocomplete/browse subtitles and on pricing result subtitle line. In `selectAc()`, variant mapped to eBay terms via `VARIANT_EBAY_TERMS` (gold stamped→gold stamp, silver stamped→silver stamp, stamped→stamp). Unmapped variants are not appended to eBay queries.
 
 **Alias map** for common misspellings: vegita→vegeta, freiza→frieza, picolo→piccolo, charizrd→charizard, etc.
 
@@ -173,7 +187,7 @@ Results merged, deduped by itemId, then filtered:
 
 ### Image Proxy (`api/image-proxy.js`)
 
-Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www.dbs-cardgame.com). Returns 403 for other domains. 24h cache, CORS enabled.
+Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www.dbs-cardgame.com, www.gundam-gcg.com, deckplanet.com). Returns 403 for other domains. 24h cache, CORS enabled. Frontend `proxyImg()` helper routes dbs-cardgame.com and deckplanet URLs through proxy automatically — applied to autocomplete, browse, disambiguation, and no-data image renders.
 
 ## Supabase (Live)
 
@@ -183,7 +197,7 @@ Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www
 
 **`price_history`** — price snapshots from every successful search. Indexed on (card_name, queried_at desc).
 
-**`card_catalog`** — ~150,000+ cards across 7 games. Columns: `card_name`, `card_number`, `game`, `set_code`, `rarity`, `image_url`, `search_query`, `variant_source`, `times_searched`, `last_searched`. Generated columns: `card_number_key`, `rarity_key`. Unique index: `(game, card_number_key, rarity_key)`. GIN trigram index: `card_catalog_name_trgm_idx` on `card_name`. Additional indexes: `idx_card_catalog_card_number` on `card_number`, `idx_card_catalog_game_set` on `(game, set_code)`. Dedup in autocomplete uses `card_number|rarity` key (parallel cards dedup by `card_number` only, ignoring SR vs SR*). `variant_source` stores product origin from apitcg.com `getIt` field (e.g., "1st Anniversary Set", "BOOSTER PACK -RAGING ROAR- [FB03]").
+**`card_catalog`** — ~152,000+ cards across 8 games. Columns: `card_name`, `card_number`, `game`, `set_code`, `rarity`, `image_url`, `search_query`, `variant_source`, `variant`, `times_searched`, `last_searched`. Generated columns: `card_number_key`, `rarity_key`. Unique index: `(game, card_number_key, rarity_key)`. GIN trigram index: `card_catalog_name_trgm_idx` on `card_name`. Additional indexes: `idx_card_catalog_card_number` on `card_number`, `idx_card_catalog_game_set` on `(game, set_code)`. Dedup in autocomplete uses `card_number|rarity` key (parallel cards dedup by `card_number` only, ignoring SR vs SR*). `variant_source` stores product origin from apitcg.com `getIt` field (e.g., "1st Anniversary Set", "BOOSTER PACK -RAGING ROAR- [FB03]"). `variant` (nullable text) stores display variant info (e.g., "Gold Stamped") — shown in autocomplete/browse/result UI, mapped to eBay terms via `VARIANT_EBAY_TERMS` in `selectAc()`.
 
 ### RPC Functions
 
@@ -195,16 +209,18 @@ Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www
 
 | Game | Cards | Source |
 |------|-------|--------|
-| DBS Fusion World | ~2,089 | apitcg.com + Bandai official (FB07+FB08) |
-| DBS Classic (BT) | ~5,224 | Bandai US-EN (BT01-BT30 fully named + 831 SPR variants) |
+| DBS Fusion World | ~2,248 | apitcg.com + Bandai official (FB01-FB09, FS01-FS12, SB01) |
+| DBS Classic (BT) | ~5,868 | Bandai US-EN (BT01-BT30 fully named, clean re-imports) |
 | DBS EX/Anniversary | ~465 | Bandai US-EN (EX01-EX25) |
+| DBS Promo | ~1,039 | Bandai US-EN (P-001 through P-738 + variants) |
 | DBS TB/SD/Other | ~568 | Deckplanet GCS + Bandai |
+| Gundam Card Game | ~800 | gundam-gcg.com (GD01-GD03, ST01-ST09, beta, promos) |
 | Pokemon | ~20,150 | pokemontcg.io |
 | MTG | ~104,015 | Scryfall bulk |
 | Yu-Gi-Oh | ~14,298 | YGOProDeck |
 | One Piece | ~1,705 | optcgapi.com |
 | Lorcana | ~2,291 | lorcana-api.com |
-| **Total** | **~150,503** | |
+| **Total** | **~153,447** | |
 
 ### Import Scripts
 
@@ -215,13 +231,19 @@ npm run import-dbs             # DBS Fusion World (needs APITCG_KEY) — populat
 npm run import-dbs-classic     # DBS Classic BT sets (Deckplanet GCS, numbers only)
 npm run import-fb07            # FB07 Wish for Shenron from Bandai official (names+rarities)
 npm run import-fb08            # FB08 from Bandai official (reuses fb07 script)
-npm run import-fb09            # FB09 from Bandai official (reuses fb07 script)
-npm run import-bt19-bt23       # BT19-BT23 from Bandai US-EN POST API (names+rarities)
+npm run import-fb09            # FB09 Dual Evolution from Bandai FW (clean delete+re-import)
+npm run import-fs11-fs12       # FS11+FS12 starter decks from Bandai FW (clean delete+re-import)
+npm run import-bt19-bt23       # BT19-BT23 from Bandai US-EN (clean delete+re-import, 954 cards)
 npm run import-bt24-bt27       # BT24-BT28 from Bandai US-EN POST API
+npm run import-bt26-clean      # BT26 Ultimate Advent clean re-import from Bandai US-EN
 npm run import-bt29            # BT29 (UB02) from Bandai US-EN
+npm run import-bt29-clean      # BT29 Fearsome Rivals clean re-import from Bandai US-EN
 npm run import-bt30            # BT30 (UB03 Three Glorious Fighters) from Bandai US-EN
 npm run import-bt01-bt18-names # Fill BT01-BT18+TB01-TB03 placeholder names from Bandai US-EN
 npm run import-dbs-ex          # EX01-EX25 expansion/anniversary sets from Bandai
+npm run import-dbs-promo       # DBS promo cards P-001 to P-738 from Bandai US-EN (~1,039 cards)
+npm run import-gundam          # Gundam Card Game from gundam-gcg.com (~800 cards)
+npm run import-gd03            # GD03 from gundam-gcg.com (reusable for other sets via CLI arg)
 npm run import-pokemon         # Pokemon (~20k cards, retry logic, 1.5s delay for free tier)
 npm run import-mtg             # MTG from Scryfall bulk (~80MB download)
 npm run import-yugioh          # Yu-Gi-Oh from YGOProDeck
@@ -232,11 +254,20 @@ npm run populate-prices        # Bulk-search high-value cards to populate price_
 ```
 
 **Bandai import scripts**:
-- `import-fb07-cards.js`: GET `dbs-cardgame.com/fw/en/cardlist/?search=true&q=FB07`, parses alt text. Reusable for FB08/FB09 via CLI arg.
-- `import-bt19-bt23-cards.js`: POST `dbs-cardgame.com/us-en/cardlist/index.php?search=true` with `category_exp` IDs (428019-428023).
-- `import-bt24-bt27-cards.js`: Same approach, IDs 428024-428030 (BT24-BT30), uses US-EN source.
+- `import-fb07-cards.js`: GET `dbs-cardgame.com/fw/en/cardlist/?search=true&q=FB07`, parses alt text. Reusable for FB08 via CLI arg.
+- `import-fb09-cards.js`: Dedicated FB09 script with clean delete+re-import pattern.
+- `import-fs11-fs12-cards.js`: FS11+FS12 starter decks, 2-digit card numbers (FS11-01 not FS11-001).
+- `import-bt19-bt23-cards.js`: Clean delete+re-import from Bandai US-EN. IDs 428019-428023. Processes sets sequentially, aborts individual set on fetch failure.
+- `import-bt24-bt27-cards.js`: IDs 428024-428030 (BT24-BT30), uses US-EN source.
+- `import-bt26-clean.js`: BT26 Ultimate Advent clean re-import. Strips `_SPR/_SCR/_GDR` suffixes from card numbers.
+- `import-bt29-clean.js`: BT29 Fearsome Rivals clean re-import.
 - `import-dbs-bt01-bt18-names.js`: Updates placeholder rows (card_name=card_number) with real names from Bandai US-EN. Only updates placeholders, preserves manually named cards. Also inserts new SPR variants not in Deckplanet. IDs 428001-428018 (BT) + 428101-428103 (TB).
 - `import-dbs-ex-cards.js`: EX01-EX25, IDs 428401-428425. Full upsert with names/rarities/images.
+- `import-dbs-promo-cards.js`: DBS promo cards P-001 to P-738 from Bandai US-EN (category_exp=428901).
+- `import-gundam-cards.js`: Gundam Card Game from gundam-gcg.com API. GD01-GD02, ST01-ST09, beta, promos.
+- `import-gd03-cards.js`: GD03 from gundam-gcg.com scraper. Reusable for other sets via CLI arg.
+
+**Clean import pattern** (used by bt19-bt23, bt26-clean, bt29-clean, fb09, fs11-fs12): Fetch fresh data BEFORE deleting. If 0 cards fetched, abort to protect existing data. Delete all rows for that set_code, then upsert. Prevents data loss from fetch failures.
 
 **Bandai category_exp ID ranges**: BT=428001-428030, TB=428101-428103, SD=428301-428323, EX=428401-428425, XD=428501-428503, DB=428601-428603, Promo=428901.
 
@@ -256,10 +287,19 @@ Set in Vercel dashboard → Settings → Environment Variables:
 
 - **Scan tab hidden**: Removed from nav (mock data only). HTML/JS still in codebase for future ZXing integration.
 - **Collection uses localStorage**: No user accounts, data lost if browser cleared. Supabase auth needed.
-- **DBS FB07+FB08 in catalog** (122+122 cards). FB09+ still missing — run `npm run import-fb09` when needed.
+- **DBS Fusion World in catalog**: FB01-FB09 (123 cards each), FS01-FS12, SB01. FB09 "Dual Evolution" + FS11/FS12 starter decks imported 2026-03-28.
 - **Gold accent theme**: `--ac: #F5A623` (gold), `--bg: #0D0D0D`, `--s1: #141418`, `--s2: #1C1C24`. Grade pills: unselected `#252530`, selected gold. Market price: `3rem`. Confidence dot: green (high), amber (moderate), red (low). `--gn: #22c55e` for trend up arrows (not gold).
 - **Parallel card rarity codes** updated with star suffix (C→C*, UC→UC*, R→R*, SR→SR*, L→L*) across FB01-FB08, FS01-FS10, SB01. SCR and PR parallels excluded. Energy marker parallels (E-XX-P1) set to C*.
 - **BT01-BT18 now fully named** from Bandai US-EN (2,565 placeholders filled + 831 new SPR variants). Some Deckplanet images show wrong art — Bandai images preferred. Manual corrections: BT16-035 Videl, BT16-036 Beerus, BT23-139 Super Shenron SCR.
+- **BT19-BT23 clean re-import** (2026-03-28): 954 cards from Bandai US-EN, replaced old Asia data. Null images resolved.
+- **BT26 clean re-import**: Card numbers were shifted, now correct. `_SPR/_SCR/_GDR` suffix bug fixed in import script. SS Son Gohan Youth Defying Terror = BT26-101 SPR/SR.
+- **BT29 clean re-import**: Card number corruption fixed, 177 clean cards.
+- **BT30 verified clean**: 179 cards correct.
+- **DBS Promo cards imported**: P-001 through P-738 (~1,039 cards) from Bandai US-EN.
+- **`_SPR/_SCR/_GDR` suffix bug**: Import scripts now strip rarity suffixes from card numbers (e.g., BT26-013_SPR → BT26-013 with rarity=SPR). 200+ bad rows deleted across all sets.
+- **Beast Gohan**: BT22-009 "Son Gohan, Beast Roar" SR — not BT21-015. Pricing works correctly.
+- **Dual name cards** (`//` format): DBS promo cards like "Vegeta // SSG Vegeta, Crimson Warrior" strip first half before eBay query. P-360 inserted with `variant = 'Gold Stamped'`.
+- **Gundam Card Game**: ~800 cards imported (GD01, GD02, GD03, ST01-ST09, beta, promos). Wired into pricing engine and frontend with blue badge (#47c8ff). GD03 import uses gundam-gcg.com scraper.
 - **Pokemon catalog**: all `_hires.png` URLs replaced with `.png` (direct URLs work, proxy was timing out).
 - **eBay Browse API limits**: 5,000 calls/day (resets midnight UTC). Each search = 3 calls (TCG) or 4 (sports). populate-prices uses ~3 calls per card.
 - **eBay Marketplace Insights API**: Not available — scope `buy.marketplace.insights` not enabled on app. Would provide real sold data for parallel cards. Requires eBay developer approval.
