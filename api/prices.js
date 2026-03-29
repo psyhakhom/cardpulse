@@ -1527,9 +1527,14 @@ export default async function handler(req, res) {
         // Extract eBay-friendly term from variant_source (e.g., "BOOSTER PACK -RAGING ROAR- [FB03]" → "Raging Roar")
         let vsrcTerm = ''
         if (vsrc) {
-          const dashMatch = vsrc.match(/-([^-]+)-/)
-          if (dashMatch) vsrcTerm = dashMatch[1].trim()
-          else vsrcTerm = vsrc.replace(/\[.*?\]/g, '').trim()
+          // Tournament promos: sellers use "tournament promo" / "tourney winner", not "Tournament Pack05 WINNER"
+          if (/tournament\s*pack/i.test(vsrc)) {
+            vsrcTerm = /winner/i.test(vsrc) ? 'tournament winner' : 'tournament promo'
+          } else {
+            const dashMatch = vsrc.match(/-([^-]+)-/)
+            if (dashMatch) vsrcTerm = dashMatch[1].trim()
+            else vsrcTerm = vsrc.replace(/\[.*?\]/g, '').trim()
+          }
         }
         // Gundam parallels: sellers use "LR+" / "R+" in titles (not "alt art")
         const isGundamParallel = /\bgundam\b|\bGD\d{2}\b/i.test(processed) && pNum >= 1
