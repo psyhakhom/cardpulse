@@ -480,11 +480,11 @@ function filterItems(items, grade, searchQuery, lang, opts = {}) {
   // Prevents "Vespiquen ex SV3" from appearing in "charizard ex sv3" results.
   const MODIFIER_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
   const SET_CODE_WORD_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
-  const nameWords = ql.split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !MODIFIER_RE.test(w) && !SET_CODE_WORD_RE.test(w))
+  const nameWords = ql.split(/\s+/).map(w => w.replace(/[,;:!?'"''`]/g, '')).filter(w => w.length >= 3 && !MODIFIER_RE.test(w) && !SET_CODE_WORD_RE.test(w))
   if (nameWords.length > 0) {
     const before = filtered.length
     const nameFiltered = filtered.filter((i) => {
-      const t = (i.title || '').toLowerCase()
+      const t = (i.title || '').toLowerCase().replace(/[''`]/g, '')
       if (nameWords.every(w => t.includes(w))) return true
       console.log(`[filter:name] dropped "${(i.title || '').slice(0, 70)}" — no match for [${nameWords.join(', ')}]`)
       return false
@@ -1604,9 +1604,9 @@ export default async function handler(req, res) {
           // Hard block: card name enforcement
           const _MOD_P = /^(?:SIR|SCR|SPR|SR|UR|SEC|SAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|parallel|foil|alt|art|manga|red|booster|special|super|secret|common|uncommon)$/i
           const _SET_P = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
-          const _nameP = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
+          const _nameP = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"''`]/g, '')).filter(w => w.length >= 3 && !_MOD_P.test(w) && !_SET_P.test(w))
           if (_nameP.length > 0) {
-            filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().includes(w)))
+            filtered = filtered.filter(i => _nameP.every(w => (i.title || '').toLowerCase().replace(/[''`]/g, '').includes(w)))
           }
           // Hard card number filter: parallel path always has exact card number from autocomplete.
           // Prefer full card number match, fall back to set code, then drop all (no-data is
@@ -1629,7 +1629,7 @@ export default async function handler(req, res) {
                 // If comps have "dokkan" + card name words, they're valid parallel comps.
                 const dokkanComps = filtered.filter(i => {
                   const t = (i.title || '').toLowerCase()
-                  return /dokkan/.test(t) && _nameP.every(w => t.includes(w))
+                  return /dokkan/.test(t) && _nameP.every(w => t.replace(/[''`]/g, '').includes(w))
                 })
                 if (dokkanComps.length > 0) {
                   console.log(`[parallel:dokkan] rescued ${dokkanComps.length} dokkan comps by card name (no ${fullNum} or ${setCode} match)`)
@@ -1930,11 +1930,11 @@ export default async function handler(req, res) {
       // Ensures wrong-card items never contribute to weighted average OR display.
       const _MOD = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
       const _SET = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
-      const _nameW = processed.toLowerCase().split(/\s+/).filter(w => w.length >= 3 && !_MOD.test(w) && !_SET.test(w))
+      const _nameW = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"''`]/g, '')).filter(w => w.length >= 3 && !_MOD.test(w) && !_SET.test(w))
       const hardBlock = (items, label) => {
         if (!_nameW.length) return items
         const kept = items.filter((i) => {
-          const t = (i.title || '').toLowerCase()
+          const t = (i.title || '').toLowerCase().replace(/[''`]/g, '')
           if (_nameW.every(w => t.includes(w))) return true
           console.log(`[HARD BLOCK:${label}] removed: "${(i.title || '').slice(0, 70)}" — missing [${_nameW.join(', ')}]`)
           return false
@@ -2156,11 +2156,11 @@ export default async function handler(req, res) {
     {
       const _MOD_RE = /^(?:SIR|SCR|SPR|SR|LR|UR|SEC|SAR|EX|GX|V|VMAX|VSTAR|NM|raw|near|mint|card|english|holo|reverse|rare|promo|rookie|base|set|1st|first|edition|unlimited|parallel|foil|super|secret|special|ultra|common|uncommon|alt|art)$/i
       const _SET_RE = /^(?:[A-Z]{1,4}-?\d+(?:-\d+)?[A-Z]?|\d{1,3}\/\d{1,3})$/i
-      const _nameWords = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"]/g, '')).filter(w => w.length >= 3 && !_MOD_RE.test(w) && !_SET_RE.test(w))
+      const _nameWords = processed.toLowerCase().split(/\s+/).map(w => w.replace(/[,;:!?'"''`]/g, '')).filter(w => w.length >= 3 && !_MOD_RE.test(w) && !_SET_RE.test(w))
       if (_nameWords.length > 0) {
         const before = deduped.length
         deduped = deduped.filter((i) => {
-          const t = (i.title || '').toLowerCase()
+          const t = (i.title || '').toLowerCase().replace(/[''`]/g, '')
           if (_nameWords.every(w => t.includes(w))) return true
           console.log(`[HARD BLOCK] removed wrong card: "${(i.title || '').slice(0, 80)}" — missing [${_nameWords.join(', ')}]`)
           return false
