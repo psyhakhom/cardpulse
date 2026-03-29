@@ -1696,7 +1696,7 @@ export default async function handler(req, res) {
           noData: true,
           error: 'No sold comps found for this parallel variant.',
           searchTip: 'This parallel may be too new or rare for sold data. Try searching eBay directly.',
-          cardImage: cardImage || null,
+          cardImage: null,
         }
       }
 
