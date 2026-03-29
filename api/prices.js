@@ -1066,6 +1066,11 @@ function cleanFullTitle(q) {
  * Returns { query, type, tokens } for logging and debugging.
  */
 function preprocessQuery(raw, grade = 'Raw') {
+  // DBS promo dual names: strip first part before //
+  if (raw.includes('//')) {
+    raw = raw.split('//').pop().trim()
+    console.log(`[preprocess] stripped dual name → "${raw}"`)
+  }
   const { query: rarityNormed, requiredRarity } = normalizeRarity(raw)
   const normalised = normalize(rarityNormed)
   const type = detectType(normalised, grade)
@@ -1375,6 +1380,12 @@ export default async function handler(req, res) {
     let processed
     if (exact === '1') {
       processed = q.trim()
+      // DBS promo dual names: strip first part before // (eBay sellers use the second name)
+      // "Vegeta // SSG Vegeta, Crimson Warrior Gold Stamped" → "SSG Vegeta, Crimson Warrior Gold Stamped"
+      if (processed.includes('//')) {
+        processed = processed.split('//').pop().trim()
+        console.log(`[exact] stripped dual name → "${processed}"`)
+      }
       // Truncate long catalog queries: keep name up to first comma + card number
       // "Vegeta, Combination Attack in Hell BT22-049" → "Vegeta BT22-049"
       const cardNumMatch = processed.match(/\b([A-Z]{1,4}\d+-\d{3}[A-Z]?)\b/i)
