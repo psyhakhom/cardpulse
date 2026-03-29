@@ -1358,7 +1358,7 @@ export default async function handler(req, res) {
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, lang = 'English', history, exact, parallel, cardImageUrl, pnum, vsrc } = req.query
+  const { q, lang = 'English', history, exact, parallel, cardImageUrl, pnum, vsrc, game: gameParam } = req.query
   console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ` parallel${pnum ? ' P'+pnum : ''}${vsrc ? ' vsrc="'+vsrc+'"' : ''}` : ''}`)
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
@@ -1445,7 +1445,15 @@ export default async function handler(req, res) {
       console.log(`[rarity] inferred SR* from "alt art" keyword in query`)
     }
 
-    console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}")`)
+    // Auto-enable parallel mode for star-rarity / alt art cards from autocomplete
+    // "Golden Frieza FB07-079 alt art" → should use parallel queries, not standard TCG blend
+    let _autoParallel = false
+    if (parallel !== '1' && exact === '1' && /\balt\s*art\b/i.test(processed)) {
+      _autoParallel = true
+      console.log(`[parallel:auto] detected "alt art" in exact query — enabling parallel mode`)
+    }
+
+    console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}"${_autoParallel ? ', auto-parallel' : ''})`)
     if (requiredRarity) console.log(`[rarity] enforcing tier: ${requiredRarity}`)
 
     // Pokemon internal card number → collector number conversion
@@ -1529,7 +1537,7 @@ export default async function handler(req, res) {
       // ── Parallel mode: fire 3 targeted queries as PRIMARY source ──────
       // Normal A/B/C return base card comps ($1) that pollute pricing.
       // $10 price floor strips cheap base cards that slip through "manga" query.
-      if (parallel === '1') {
+      if (parallel === '1' || _autoParallel) {
         const PARALLEL_PRICE_FLOOR = 10
         const base = qs.a.q
         // Name without card number — eBay API can't match card numbers with varied formatting
@@ -2311,7 +2319,7 @@ export default async function handler(req, res) {
     })
 
     // Build self-growing card catalog — saves every searched card for future autocomplete
-    const detectedGame = (() => {
+    const detectedGame = gameParam || (() => {
       const ql = q.trim().toLowerCase()
       if (/dragon ball|dbs|goku|vegeta|gogeta|broly|frieza|fusion world|energy marker|fortuneteller baba|master roshi|yamcha|tien|chiaotzu|raditz|nappa|zarbon|dodoria|ginyu|recoome|burter|jeice|guldo/i.test(ql) || /\b(BT|FB|FS|SD|ST|SB)\d+/i.test(ql)) return 'dbs'
       if (/pokemon|charizard|pikachu/i.test(ql)) return 'pokemon'
@@ -2319,6 +2327,9 @@ export default async function handler(req, res) {
       if (/yugioh|yu-gi-oh/i.test(ql)) return 'yugioh'
       if (/one piece|luffy|zoro/i.test(ql)) return 'onepiece'
       if (/lorcana/i.test(ql)) return 'lorcana'
+      if (/digimon|agumon|gabumon|greymon|omnimon|gallantmon|patamon|gatomon|veemon|guilmon|renamon|terriermon/i.test(ql)) return 'digimon'
+      if (/union\s*arena|unionarena|bleach|ichigo|jujutsu|jjk|hunter\s*x|hxh|lelouch/i.test(ql)) return 'unionarena'
+      if (/gundam|mobile suit|gundanium|zaku/i.test(ql) || /\bGD\d{2}/i.test(ql)) return 'gundam'
       return 'unknown'
     })()
     const detectedSetCode = (processed.match(/\b(?:BT|FB|FS|SD|ST|SB|EB|TB|OP|D-BT)\d+(?:-\d+)?/i) || [])[0] || null

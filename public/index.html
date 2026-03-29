@@ -474,6 +474,7 @@ async function pickSlab(el){
     if(sc)params.set('exact','1');
     if(sc?.parallel){params.set('parallel','1');if(sc.parallelNum)params.set('pnum',sc.parallelNum);if(sc.variantSource)params.set('vsrc',sc.variantSource);}
     if(sc?.imageUrl)params.set('cardImageUrl',sc.imageUrl);
+    if(sc?.game)params.set('game',sc.game);
     const res=await fetch(`/api/prices?${params}`);
     const data=await res.json();
     if(data.type==='no-data'){
@@ -815,6 +816,7 @@ async function search(q, elId) {
       if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
       if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); if (sc.variantSource) params.set('vsrc', sc.variantSource); }
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
+      if (sc?.game) params.set('game', sc.game); // frontend-detected game for logging
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
       // Disambiguation: multiple distinct cards found — show picker
