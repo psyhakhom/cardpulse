@@ -1529,7 +1529,7 @@ export default async function handler(req, res) {
         if (vsrc) {
           // Tournament promos: sellers use "tournament promo" / "tourney winner", not "Tournament Pack05 WINNER"
           if (/tournament\s*pack/i.test(vsrc)) {
-            vsrcTerm = /winner/i.test(vsrc) ? 'tournament winner' : 'tournament promo'
+            vsrcTerm = 'tournament promo'
           } else {
             const dashMatch = vsrc.match(/-([^-]+)-/)
             if (dashMatch) vsrcTerm = dashMatch[1].trim()
