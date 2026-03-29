@@ -558,8 +558,20 @@ const GUNDAM_KW = ['gundam', 'mobile suit', 'gundanium', 'zaku', 'rx-78', 'newty
 const GUNDAM_CODE_RE = /\bGD\d{2}/i
 const UNIONARENA_KW = ['union arena', 'unionarena', 'bleach', 'ichigo', 'jujutsu kaisen', 'jjk', 'hunter x hunter', 'hxh', 'code geass', 'lelouch']
 const UNIONARENA_CODE_RE = /\b(?:BLC|HTR|JJK|CGS|OPM|DSL)-\d/i
-const DIGIMON_KW = ['digimon', 'agumon', 'greymon', 'omnimon', 'gallantmon', 'imperialdramon', 'digi-egg']
-const DIGIMON_CODE_RE = /\b(?:BT|ST|EX)\d{1,2}-\d{2}/i
+const DIGIMON_KW = ['digimon', 'digi-egg', 'agumon', 'gabumon', 'greymon', 'wargreymon', 'metalgarurumon',
+  'omnimon', 'omegamon', 'gallantmon', 'imperialdramon', 'magnamon', 'alphamon', 'jesmon',
+  'patamon', 'gatomon', 'angewomon', 'angemon', 'magnaangemon', 'seraphimon',
+  'tentomon', 'kabuterimon', 'megakabuterimon', 'herculeskabuterimon',
+  'palmon', 'togemon', 'lillymon', 'rosemon', 'gomamon', 'ikkakumon', 'zudomon',
+  'biyomon', 'birdramon', 'garudamon', 'phoenixmon', 'veemon', 'flamedramon', 'exveemon',
+  'guilmon', 'growlmon', 'wargrowlmon', 'dukemon', 'renamon', 'kyubimon', 'taomon', 'sakuyamon',
+  'terriermon', 'gargomon', 'rapidmon', 'megagargomon', 'lucemon', 'beelzemon', 'lilithmon',
+  'myotismon', 'venommyotismon', 'malomyotismon', 'devimon', 'metalseadramon',
+  'puppetmon', 'machinedramon', 'piedmon', 'apocalymon', 'diaboromon',
+  'numemon', 'etemon', 'leomon', 'andromon', 'meramon', 'tyrannomon',
+  'tai', 'matt', 'sora', 'izzy', 'mimi', 'joe', 'tk', 'kari', 'davis', 'yolei', 'cody', 'ken',
+  'takato', 'henry', 'rika', 'takuya', 'koji', 'marcus', 'mikey']
+// No DIGIMON_CODE_RE — BT/ST/EX overlap with DBS. Use keywords only for detection.
 
 function detectGame(query) {
   const ql = query.toLowerCase()
