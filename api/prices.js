@@ -1687,26 +1687,17 @@ export default async function handler(req, res) {
             }
             return { results: res_, blended: blended_, allItems: datedComps, hadJapaneseResults: false, activeListings: useActive }
           }
-          console.log(`[parallel] all parallel comps filtered out, falling back to normal queries`)
+          console.log(`[parallel] all parallel comps filtered out, returning no-data`)
         } else {
-          console.log(`[parallel] 0 parallel results, falling back to normal queries`)
+          console.log(`[parallel] 0 parallel results, returning no-data`)
         }
-        // Fallback: use the normal A+B we already fetched
-        let rawA = dA.status === 'fulfilled' ? dA.value.itemSummaries || [] : []
-        let rawB = dB.status === 'fulfilled' ? dB.value.itemSummaries || [] : []
-        if (grade === 'Raw') {
-          rawA = rawA.filter(i => !isGradedSlab(i.title))
-          rawB = rawB.filter(i => !isGradedSlab(i.title))
+        // No fallback to normal queries — mixing base/alt/promo variants gives wrong price
+        return {
+          noData: true,
+          error: 'No sold comps found for this parallel variant.',
+          searchTip: 'This parallel may be too new or rare for sold data. Try searching eBay directly.',
+          cardImage: cardImage || null,
         }
-        // skipVariants for parallel fallback — don't strip alt art comps when
-        // we're looking for a parallel/alt art card
-        const fA = filterByRarity(filterItems(rawA, grade, processed, lang, { skipVariants: true }))
-        const fB = filterByRarity(filterItems(rawB, grade, processed, lang, { skipVariants: true }))
-        const res_ = [
-          { ...qs.a, stats: calcStats(fA, 'A') },
-          { ...qs.b, stats: calcStats(fB, 'B') },
-        ]
-        return { results: res_, blended: blend(res_, isSportsQuery), allItems: [...fA, ...fB], hadJapaneseResults: false }
       }
 
       // ── Normal (non-parallel) flow ────────────────────────────────────
@@ -1966,6 +1957,16 @@ export default async function handler(req, res) {
         grade,
         lang,
         variants: qResult.variants,
+      })
+    }
+    // Parallel path returned no-data — skip retries (they'd mix base/alt variants)
+    if (qResult.noData) {
+      const dedicatedImageUrl = cardImageResult.status === 'fulfilled' ? cardImageResult.value : null
+      return res.status(200).json({
+        type: 'no-data',
+        error: qResult.error,
+        searchTip: qResult.searchTip,
+        imageUrl: qResult.cardImage || dedicatedImageUrl || null,
       })
     }
     let { results, blended, allItems, hadJapaneseResults, activeListings, slabsOnly } = qResult
