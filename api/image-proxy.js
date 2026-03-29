@@ -3,6 +3,7 @@ const ALLOWED_HOSTS = [
   'en.onepiece-cardgame.com',
   'www.dbs-cardgame.com',
   'www.gundam-gcg.com',
+  'deckplanet.com',
 ]
 
 export default async function handler(req, res) {
