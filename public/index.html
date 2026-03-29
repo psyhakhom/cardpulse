@@ -634,9 +634,10 @@ function renderAc(d,q){
     const showSet=!c.isSet&&c.set&&c.number&&!c.number.toUpperCase().startsWith(c.set.toUpperCase())?c.set:null;
     const subParts=[showSet,c.number].filter(Boolean).join(' \u00b7 ');
     const rPill=c.rarity?rarityPill(c.rarity):'';
+    const varTag=c.variant?`<span style="font-size:10px;color:var(--mu)">\u00b7 ${escH(c.variant)}</span>`:'';
     const nameStyle=c.isSet?' style="color:var(--a2)"':'';
     const ebayBadge=c.viaEbay?'<span style="font-family:monospace;font-size:8px;color:var(--mu);border:1px solid var(--bd);border-radius:3px;padding:0 4px;margin-left:4px;flex-shrink:0">via eBay</span>':'';
-    const subHTML=subParts||rPill?`<div class="ac-sub">${escH(subParts)}${rPill?' '+rPill:''}</div>`:'';
+    const subHTML=subParts||rPill||varTag?`<div class="ac-sub">${escH(subParts)}${rPill?' '+rPill:''}${varTag?' '+varTag:''}</div>`:'';
     const acDisplayName=c.name.replace(/\s*\(-?P\d+\)$/i,'').trim();
     return`<div class="ac-item" data-i="${i}" onmousedown="selectAc(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name"${nameStyle}>${escH(acDisplayName)}</div>${subHTML}</div>${ebayBadge}</div>`;
   }).join('');
@@ -737,8 +738,13 @@ function selectAc(i){
     parallel:_isParallel,
     parallelNum:_parallelNum,
     variantSource:card.variantSource||null,
+    variant:card.variant||null,
   };
-  console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery), 'variantSource:', JSON.stringify(selectedCard.variantSource));
+  // Append variant text to eBay query when present (e.g. "gold stamped" → "card name gold stamped")
+  if(card.variant&&!_isParallel){
+    selectedCard.searchQuery=cleanSQ+' '+card.variant;
+  }
+  console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery), 'variantSource:', JSON.stringify(selectedCard.variantSource), 'variant:', JSON.stringify(selectedCard.variant));
   // Show clean display name in input
   const displayName=[card.name,card.number].filter(Boolean).join(' ');
   document.getElementById('si').value=displayName;
@@ -1112,7 +1118,8 @@ function renderBrowse(el,q,cards,apiData){
     const showSet=c.set&&c.number&&!c.number.toUpperCase().startsWith((c.set||'').toUpperCase())?c.set:null;
     const subParts=[showSet,c.number].filter(Boolean).join(' \u00b7 ');
     const rPill=c.rarity?rarityPill(c.rarity):'';
-    const subHTML=subParts||rPill?`<div class="ac-sub">${escH(subParts)}${rPill?' '+rPill:''}</div>`:'';
+    const varTag=c.variant?`<span style="font-size:10px;color:var(--mu)">\u00b7 ${escH(c.variant)}</span>`:'';
+    const subHTML=subParts||rPill||varTag?`<div class="ac-sub">${escH(subParts)}${rPill?' '+rPill:''}${varTag?' '+varTag:''}</div>`:'';
     const displayName=c.name.replace(/\s*\(-?P\d+\)$/i,'').trim();
     return`<div class="ac-item" style="cursor:pointer" onclick="browsePick(${i})">${img}<div style="min-width:0;flex:1"><div class="ac-name">${escH(displayName)}</div>${subHTML}</div></div>`;
   }).join('');
@@ -1190,7 +1197,7 @@ function renderResult(el,q,r){
     <div class="rb">${jb}${fx}${tm}${cqb}
     <div class="rt">${escH(q.replace(/\s*\(-?P\d+\)$/i,'').trim())}${lb}</div>
     ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${r.cardSet?escH(r.cardSet)+' · ':''}${escH(r.cardNum)}</div>`:''}
-    <div class="rm">${G} · ${C==='Any'?'All conditions':C}</div>
+    <div class="rm">${G} · ${C==='Any'?'All conditions':C}${selectedCard?.variant?' · <span style="color:var(--mu)">'+escH(selectedCard.variant)+'</span>':''}</div>
     <div class="pg">
       <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
     </div>

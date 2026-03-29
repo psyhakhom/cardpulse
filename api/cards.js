@@ -59,7 +59,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       const num = cardNumMatch[1].toUpperCase()
       const numEnc = encodeURIComponent(num)
       console.log(`[cards:db] card number detected: ${num}`)
-      let url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
+      let url = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source,variant&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}-P*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
       if (game) url += `&game=eq.${game}`
       const res = await fetch(url, {
         headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
@@ -234,7 +234,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         if (aliasNum) {
           console.log(`[cards:db] classic alias match: "${lowerQ}" → ${aliasNum}, retrying as card number`)
           const numEnc = encodeURIComponent(aliasNum)
-          let retryUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
+          let retryUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source,variant&or=(card_number.eq.${numEnc},card_number.ilike.${numEnc}*,search_query.ilike.*${numEnc}*)&order=times_searched.desc&limit=16`
           if (game) retryUrl += `&game=eq.${game}`
           const retryRes = await fetch(retryUrl, {
             headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
@@ -254,7 +254,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       if (rows.length === 0 && cleanedQuery.length >= 5) {
         console.log(`[cards:db] fuzzy returned 0, trying ILIKE fallback for "${cleanedQuery}"`)
         const ilikeEnc = encodeURIComponent(`%${cleanedQuery}%`)
-        let ilikeUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source&card_name=ilike.${ilikeEnc}&order=times_searched.desc&limit=16`
+        let ilikeUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source,variant&card_name=ilike.${ilikeEnc}&order=times_searched.desc&limit=16`
         if (game) ilikeUrl += `&game=eq.${game}`
         try {
           const ilikeRes = await fetch(ilikeUrl, {
@@ -291,7 +291,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         console.log(`[cards:db] fuzzy missed set ${detectedSetCode}, trying direct set_code query`)
         const nameEnc = encodeURIComponent(`%${cleanedQuery}%`)
         const scEnc = encodeURIComponent(`${detectedSetCode}%`)
-        let directUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source&card_name=ilike.${nameEnc}&set_code=ilike.${scEnc}&order=times_searched.desc&limit=16`
+        let directUrl = `${SB_URL}/rest/v1/card_catalog?select=card_name,card_number,game,set_code,rarity,image_url,search_query,variant_source,variant&card_name=ilike.${nameEnc}&set_code=ilike.${scEnc}&order=times_searched.desc&limit=16`
         if (game) directUrl += `&game=eq.${game}`
         try {
           const directRes = await fetch(directUrl, {
@@ -447,6 +447,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         largeImageUrl: imageUrl,
         searchQuery: r.search_query || r.card_name,
         variantSource: r.variant_source || null,
+        variant: r.variant || null,
       }
     })
   } catch (err) {
