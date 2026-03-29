@@ -18,6 +18,7 @@
     "import-bt19-bt23": "node --env-file=.env.local scripts/import-bt19-bt23-cards.js",
     "import-bt24-bt27": "node --env-file=.env.local scripts/import-bt24-bt27-cards.js",
     "import-bt29": "node --env-file=.env.local scripts/import-bt29-cards.js",
+    "import-bt26-clean": "node --env-file=.env.local scripts/import-bt26-clean.js",
     "import-bt29-clean": "node --env-file=.env.local scripts/import-bt29-clean.js",
     "import-bt30": "node --env-file=.env.local scripts/import-bt24-bt27-cards.js BT30",
     "import-bt01-bt18-names": "node --env-file=.env.local scripts/import-dbs-bt01-bt18-names.js",
