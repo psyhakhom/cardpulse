@@ -1530,9 +1530,14 @@ export default async function handler(req, res) {
         let vsrcTerm = ''
         if (vsrc) {
           if (/tournament\s*pack/i.test(vsrc)) vsrcTerm = 'promo'
+          else if (/championship/i.test(vsrc)) vsrcTerm = 'championship promo'
+          else if (/judge\s*pack/i.test(vsrc)) vsrcTerm = 'judge promo'
           else if (/manga\s*booster/i.test(vsrc)) vsrcTerm = 'manga'
           else if (/dokkan/i.test(vsrc)) vsrcTerm = 'dokkan'
           else if (/anniversary/i.test(vsrc)) vsrcTerm = 'anniversary'
+          else if (/sparking.*zero/i.test(vsrc)) vsrcTerm = 'sparking zero'
+          else if (/starter\s*deck/i.test(vsrc)) vsrcTerm = 'starter deck promo'
+          else if (/ultimate\s*battle|release\s*event|limited\s*pack|selection\s*pack/i.test(vsrc)) vsrcTerm = 'promo'
           else {
             // Booster pack parallels: extract set name from dashes (e.g., -RAGING ROAR-)
             const dashMatch = vsrc.match(/-([^-]+)-/)
@@ -1620,8 +1625,19 @@ export default async function handler(req, res) {
                 console.log(`[parallel:set-filter] ${filtered.length} → ${withSet.length} (hard, set ${setCode})`)
                 filtered = withSet
               } else {
-                console.log(`[parallel:set-filter] 0 matches for ${fullNum} or ${setCode}, dropping all ${filtered.length}`)
-                filtered = []
+                // Dokkan rescue: dokkan reprints may omit the original card number/set code.
+                // If comps have "dokkan" + card name words, they're valid parallel comps.
+                const dokkanComps = filtered.filter(i => {
+                  const t = (i.title || '').toLowerCase()
+                  return /dokkan/.test(t) && _nameP.every(w => t.includes(w))
+                })
+                if (dokkanComps.length > 0) {
+                  console.log(`[parallel:dokkan] rescued ${dokkanComps.length} dokkan comps by card name (no ${fullNum} or ${setCode} match)`)
+                  filtered = dokkanComps
+                } else {
+                  console.log(`[parallel:set-filter] 0 matches for ${fullNum} or ${setCode}, dropping all ${filtered.length}`)
+                  filtered = []
+                }
               }
             }
           }
