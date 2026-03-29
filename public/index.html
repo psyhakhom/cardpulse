@@ -740,9 +740,11 @@ function selectAc(i){
     variantSource:card.variantSource||null,
     variant:card.variant||null,
   };
-  // Append variant text to eBay query when present (e.g. "gold stamped" → "card name gold stamped")
+  // Append mapped variant term to eBay query — only known terms, unmapped variants are ignored
+  const VARIANT_EBAY_TERMS={'gold stamped':'gold stamp','silver stamped':'silver stamp','stamped':'stamp'};
   if(card.variant&&!_isParallel){
-    selectedCard.searchQuery=cleanSQ+' '+card.variant;
+    const vt=VARIANT_EBAY_TERMS[(card.variant||'').toLowerCase()];
+    if(vt) selectedCard.searchQuery=cleanSQ+' '+vt;
   }
   console.log('[selectAc] final selectedCard.searchQuery:', JSON.stringify(selectedCard.searchQuery), 'variantSource:', JSON.stringify(selectedCard.variantSource), 'variant:', JSON.stringify(selectedCard.variant));
   // Show clean display name in input
