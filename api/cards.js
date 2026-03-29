@@ -52,7 +52,7 @@ async function searchCatalog(query, game, maxResults = 8) {
     const sanitized = query
 
     // If query has a specific card number (FB02-099, BT1-031), require exact match on it
-    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?|E\d+-\d+|E-\d+|P-\d+)\b/i)
+    const cardNumMatch = query.match(/\b((?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?|(?:BLC|HTR|JJK|CGS|OPM|DSL)-\d+-\d+|E\d+-\d+|E-\d+|P-\d+)\b/i)
 
     let rows
     if (cardNumMatch) {
@@ -69,7 +69,7 @@ async function searchCatalog(query, game, maxResults = 8) {
       rows = await res.json()
 
       // Re-rank: if query has name terms beyond the card number, boost rows that match them
-      const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?\b|\bE\d+-\d+\b|\bE-\d+\b|\bP-\d+\b/gi
+      const CARD_NUM_RE = /\b(?:BT|FB|FS|SD|ST|SB|EB|TB|GD|D-BT)\d+-\d+[A-Z]?\b|\b(?:BLC|HTR|JJK|CGS|OPM|DSL)-\d+-\d+\b|\bE\d+-\d+\b|\bE-\d+\b|\bP-\d+\b/gi
       const RARITY_RE = /\b(spr|scr|sr|ssr|ur|sec|sar|r|c|uc|sp|pr|sdr)\b/gi
       const GAME_WORDS = ['pokemon','pokémon','mtg','magic','yugioh','yu-gi-oh','lorcana','disney','one piece','onepiece','optcg','dragon ball','dragonball','dbs','fusion world','raw','english']
       const nameTerms = query.toLowerCase().replace(CARD_NUM_RE, '').replace(RARITY_RE, '').split(/\s+/)
@@ -110,7 +110,7 @@ async function searchCatalog(query, game, maxResults = 8) {
         'delta': 'δ',
       }
       // Extract set code from query (FB07, BT01, OP01, ST01, SV3, etc.) for post-filtering
-      const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|GD|OP|SV|SM|XY|SS|SW|BS|EX|D-BT|SWSH)\d{1,3}\b/i
+      const SET_CODE_RE = /\b(FB|BT|FS|SD|ST|SB|EB|TB|GD|OP|SV|SM|XY|SS|SW|BS|EX|D-BT|SWSH|BLC|HTR|JJK|CGS|OPM|DSL)\d{1,3}\b/i
       const setCodeMatch = sanitized.match(SET_CODE_RE)
       let detectedSetCode = setCodeMatch ? setCodeMatch[0].toUpperCase() : null
 
@@ -556,6 +556,10 @@ const OP_CODE_RE = /\b(?:OP|ST|EB)-?\d{2}/i
 const LORCANA_KW = ['lorcana', 'disney lorcana']
 const GUNDAM_KW = ['gundam', 'mobile suit', 'gundanium', 'zaku', 'rx-78', 'newtype', 'char aznable', 'amuro', 'epyon']
 const GUNDAM_CODE_RE = /\bGD\d{2}/i
+const UNIONARENA_KW = ['union arena', 'unionarena', 'bleach', 'ichigo', 'jujutsu kaisen', 'jjk', 'hunter x hunter', 'hxh', 'code geass', 'lelouch']
+const UNIONARENA_CODE_RE = /\b(?:BLC|HTR|JJK|CGS|OPM|DSL)-\d/i
+const DIGIMON_KW = ['digimon', 'agumon', 'greymon', 'omnimon', 'gallantmon', 'imperialdramon', 'digi-egg']
+const DIGIMON_CODE_RE = /\b(?:BT|ST|EX)\d{1,2}-\d{2}/i
 
 function detectGame(query) {
   const ql = query.toLowerCase()
@@ -566,6 +570,8 @@ function detectGame(query) {
   if (DBS_KW.some((k) => ql.includes(k)) || DBS_CODE_RE.test(query)) return 'dbs'
   if (LORCANA_KW.some((k) => ql.includes(k))) return 'lorcana'
   if (GUNDAM_KW.some((k) => ql.includes(k)) || GUNDAM_CODE_RE.test(query)) return 'gundam'
+  if (UNIONARENA_KW.some((k) => ql.includes(k)) || UNIONARENA_CODE_RE.test(query)) return 'unionarena'
+  if (DIGIMON_KW.some((k) => ql.includes(k))) return 'digimon'
   return null
 }
 
