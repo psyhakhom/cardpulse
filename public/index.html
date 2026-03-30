@@ -697,6 +697,7 @@ function selectAc(i){
   let cleanSQ;
   let _isParallel=false;
   let _parallelNum=null;
+  let _isAltRarity=false;
   const g=card.game||'';
   const _cleanName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').replace(/\s*\([A-Z]{1,2}\+{0,2}\)$/,'').split(' // ')[0].trim();
   // Keep short subtitles after comma (≤3 words) — sellers use them ("Wish-Granting Dragon", "Wish Dragon")
@@ -735,7 +736,7 @@ function selectAc(i){
     // Detect parallel suffix BEFORE stripping — parallels need keyword-based queries
     const rUp=(card.rarity||'').toUpperCase();
     // Alt-art rarities (SGR, GFR, SLR) use parallel pricing path like -P suffix cards
-    const _isAltRarity=/^(SGR|GFR|SLR)$/.test(rUp);
+    _isAltRarity=/^(SGR|GFR|SLR)$/.test(rUp);
     const isParallel=_isAltRarity||/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number)||/\(-?P\d+\)/i.test(card.name);
     _isParallel=isParallel;
     const _pMatch=card.number.match(/-P(\d+)$/i)||card.name.match(/\(-?P(\d+)\)/i);
