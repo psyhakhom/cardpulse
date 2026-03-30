@@ -30,7 +30,8 @@
     "import-digimon": "node --env-file=.env.local scripts/import-digimon-cards.js",
     "import-sb02": "node --env-file=.env.local scripts/import-sb02-cards.js",
     "import-all": "node --env-file=.env.local scripts/import-all.js",
-    "populate-prices": "node --env-file=.env.local scripts/populate-prices.js"
+    "populate-prices": "node --env-file=.env.local scripts/populate-prices.js",
+    "seed-prices": "node --env-file=.env.local scripts/price-seeder.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.100.0"
