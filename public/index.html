@@ -678,12 +678,8 @@ function acMove(dir){
   items[acSel].classList.add('sel');
   items[acSel].scrollIntoView({block:'nearest'});
 }
-let _selectAcLock=0;
 function selectAc(i){
-  // Prevent double-firing from overlapping mousedown/click events
-  const now=Date.now();if(now-_selectAcLock<500){console.log('[selectAc] blocked double-fire within 500ms');return;}_selectAcLock=now;
   const card=acList[i];if(!card)return;
-  console.log('[selectAc] tapped card:', JSON.stringify({name:card.name,number:card.number,rarity:card.rarity,game:card.game}));
   if(card.isDirect){
     // Direct eBay search — no selectedCard, use free text
     selectedCard=null;
@@ -701,7 +697,6 @@ function selectAc(i){
   let cleanSQ;
   let _isParallel=false;
   let _parallelNum=null;
-  let _isAltRarity=false;
   const g=card.game||'';
   const _cleanName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').replace(/\s*\([A-Z]{1,2}\+{0,2}\)$/,'').split(' // ')[0].trim();
   // Keep short subtitles after comma (≤3 words) — sellers use them ("Wish-Granting Dragon", "Wish Dragon")
@@ -740,7 +735,7 @@ function selectAc(i){
     // Detect parallel suffix BEFORE stripping — parallels need keyword-based queries
     const rUp=(card.rarity||'').toUpperCase();
     // Alt-art rarities (SGR, GFR, SLR) use parallel pricing path like -P suffix cards
-    _isAltRarity=/^(SGR|GFR|SLR)$/.test(rUp);
+    const _isAltRarity=/^(SGR|GFR|SLR)$/.test(rUp);
     const isParallel=_isAltRarity||/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number)||/\(-?P\d+\)/i.test(card.name);
     _isParallel=isParallel;
     const _pMatch=card.number.match(/-P(\d+)$/i)||card.name.match(/\(-?P(\d+)\)/i);
@@ -748,10 +743,9 @@ function selectAc(i){
     const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':rUp==='GFR'?' giant force rare':rUp==='SLR'?' special leader rare':'';
     if(isParallel){
-      // Parallel cards: keep full card number with -P suffix for eBay query precision
-      // "Fortuneteller Baba SB01-049-P1" not "Fortuneteller Baba SB01-049"
-      const pNum=/-P\d+$/i.test(card.number)?card.number:baseNumber;
-      cleanSQ=(shortName+' '+pNum).trim();
+      // Parallel cards: search by card name + base number — sellers always include the number
+      // Both base and parallel comps will match; rarity split picker handles the price gap
+      cleanSQ=(shortName+' '+baseNumber).trim();
       console.log('[selectAc] parallel query:',JSON.stringify(cleanSQ));
     }else{
       cleanSQ=(shortName+' '+baseNumber+variantSuffix).trim();
@@ -763,6 +757,7 @@ function selectAc(i){
     console.log('[selectAc] fallback query:',JSON.stringify(cleanSQ));
   }
   cleanSQ=cleanSQ.replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
+  cleanSQ=cleanSQ.replace(/\b(\w+-\d+)-p\d+\b/gi,'$1 parallel');
   selectedCard={
     name:card.name,
     set:card.set,
@@ -783,8 +778,9 @@ function selectAc(i){
     if(vt) selectedCard.searchQuery=cleanSQ+' '+vt;
   }
   console.log('[query-build:selectAc] final searchQuery:', JSON.stringify(selectedCard.searchQuery), 'game:', JSON.stringify(card.game), 'number:', JSON.stringify(card.number), 'set:', JSON.stringify(card.set));
-  // Show full descriptive name in input
-  document.getElementById('si').value=fullCardTitle(selectedCard,card.name);
+  // Show clean display name in input
+  const displayName=[card.name,card.number].filter(Boolean).join(' ');
+  document.getElementById('si').value=displayName;
   toggleClear();hideAc();
   // Run search using the optimized eBay query
   search(selectedCard.searchQuery,'sr');
@@ -837,7 +833,6 @@ async function search(q, elId) {
       if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); if (sc.variantSource) params.set('vsrc', sc.variantSource); }
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       if (sc?.game) params.set('game', sc.game); // frontend-detected game for logging
-      if (sc?.parallel) console.log('[query-build:parallel]', searchQ, 'pnum='+sc.parallelNum, 'vsrc='+sc.variantSource);
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
       // Disambiguation: multiple distinct cards found — show picker
@@ -856,12 +851,11 @@ async function search(q, elId) {
         if(elId==='sr'){navPush('result',document.getElementById('si').value.trim(),sc);}
         const cardImgUrl=proxyImg(sc?.imageUrl||data.imageUrl);
         const cardImg=cardImgUrl?`<div class="rh"><img src="${escH(cardImgUrl)}" onerror="this.style.display='none'"/></div>`:'';
-        const _fullTitle=fullCardTitle(sc,q);
-        const _ndNumHtml=sc?.number?`<div style="font-size:12px;color:var(--mu);margin-top:4px">${escH(sc.number)}</div>`:'';
+        const cardName=sc?.name||q;
         const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${data.searchTip}</p>`:'';
         // When only graded slabs exist, show grade pills so user can tap to see graded prices
         const gradePills=data.slabsOnly?`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">${['PSA 10','PSA 9','BGS 10','BGS 9.5','CGC 10'].map(g=>`<button onclick="pickSlab(this)" style="padding:6px 14px;border-radius:16px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:13px;cursor:pointer">${g}</button>`).join('')}</div>`:'';
-        const noDataMsg=data.slabsOnly?'<span style="font-size:1rem;color:#e0e0e0">There are only graded comps for this card.<br>Select a grade to view prices.</span>':'No sold comps found for<br><strong style="color:var(--tx)">'+escH(_fullTitle)+'</strong>'+_ndNumHtml+'<br><span style="font-size:12px;color:var(--mu)">This card may be too new or have limited market activity.</span>';
+        const noDataMsg=data.slabsOnly?'<span style="font-size:1rem;color:#e0e0e0">There are only graded comps for this card.<br>Select a grade to view prices.</span>':'No sold comps found for<br><strong style="color:var(--tx)">'+escH(cardName)+'</strong><br><span style="font-size:12px;color:var(--mu)">This card may be too new or have limited market activity.</span>';
         el.innerHTML = renderBackBtn()+`<div class="rc">${cardImg}<div class="rb" style="text-align:center;padding:24px 16px"><p>${noDataMsg}</p>${gradePills}</div></div>`;
         return;
       }
@@ -892,39 +886,6 @@ async function search(q, elId) {
  * This means the frontend never needs to change when
  * the backend changes — only this adapter function does.
  */
-const DBS_SET_NAMES={
-  BT01:'Galactic Battle',BT02:'Union Force',BT03:'Cross Worlds',BT04:'Colossal Warfare',BT05:'Miraculous Revival',
-  BT06:'Destroyer Kings',BT07:'Assault of the Saiyans',BT08:'Malicious Machinations',BT09:'Universal Onslaught',BT10:'Rise of the Unison Warrior',
-  BT11:'Vermilion Bloodline',BT12:'Vicious Rejuvenation',BT13:'Supreme Rivalry',BT14:'Cross Spirits',BT15:'Saiyan Showdown',
-  BT16:'Realm of the Gods',BT17:'Ultimate Squad',BT18:'Dawn of the Z-Legends',BT19:"Fighter's Ambition",BT20:'Power Absorbed',
-  BT21:'Wild Resurgence',BT22:'Critical Blow',BT23:'Perfect Combination',BT24:'Beyond Generations',BT25:'Legends of the Dragon Warriors',
-  BT26:'Ultimate Advent',BT27:'Masters Zenkai Series Set 04',BT28:'Fusion World Opening',BT29:'Fearsome Rivals',BT30:'Three Glorious Fighters',
-  FB01:'Awakened Pulse',FB02:'Blazing Aura',FB03:'Raging Roar',FB04:'Guardian of the Dragon Balls',FB05:"Crimson Sands",
-  FB06:'Resurgence',FB07:'Wish for Shenron',FB08:'Rumble Frenzy',FB09:'Dual Evolution',
-  SB01:'Manga Booster 01',SB02:'Manga Booster 02',
-  FS01:'Starter Deck 01',FS02:'Starter Deck 02',FS03:'Starter Deck 03',FS04:'Starter Deck 04',
-  FS05:'Starter Deck 05',FS06:'Starter Deck 06',FS07:'Starter Deck 07',FS08:'Starter Deck 08',
-  FS09:'Starter Deck 09',FS10:'Starter Deck 10',FS11:'Starter Deck 11',FS12:'Starter Deck 12',
-  TB01:'Tournament of Power',TB02:'World Martial Arts Tournament',TB03:'Clash of Fates',
-  EX01:'Expansion 01',EX03:'Ultimate Box',EX06:'Special Anniversary Box',EX13:'Supreme Rivalry EX',
-  EX19:'Fighters Ambition EX',EX21:'Wild Resurgence EX',EX22:'Critical Blow EX',EX23:'Perfect Combination EX',
-  EX24:'Beyond Generations EX',EX25:'Legend of the Dragon Warrior EX',
-};
-// Build full descriptive card name: "Fortuneteller Baba (Alternate Art) - Manga Booster 01 (SB01)"
-function fullCardTitle(sc, fallbackName) {
-  const name = (sc?.name || fallbackName || '').replace(/\s*\(-?P\d+\)$/i, '').trim();
-  if (!sc?.number) return name;
-  const rUp = (sc.rarity || '').toUpperCase();
-  const isPar = sc.parallel;
-  const isAltRar = /^(SGR|GFR|SLR)$/.test(rUp);
-  const varLabel = isPar ? (/\*$/.test(rUp) || isAltRar ? 'Alternate Art' : 'Parallel') : (isAltRar ? 'Alternate Art' : '');
-  const scMatch = (sc.number || '').match(/^([A-Z]{1,4}\d+)/i);
-  const scUp = scMatch ? scMatch[1].toUpperCase() : '';
-  const setName = DBS_SET_NAMES[scUp] || (sc.set || '');
-  const setDisplay = setName ? setName + (scUp && setName !== scUp ? ' (' + scUp + ')' : '') : scUp;
-  const parts = [name + (varLabel ? ' (' + varLabel + ')' : ''), setDisplay].filter(Boolean);
-  return parts.join(' - ');
-}
 function normalizeApiResponse(data, q, sc) {
   function cardType(q, g) {
   const ql = q.toLowerCase();
@@ -1274,8 +1235,8 @@ function renderResult(el,q,r){
     <img src="${r.img}" style="opacity:0" onload="this.style.opacity='1';var s=document.getElementById('shim');if(s)s.remove()" onerror="this.style.display='none'"/>
     <div class="rhl">${ctl}</div></div>
     <div class="rb">${jb}${fx}${tm}${cqb}
-    <div class="rt">${escH(fullCardTitle(selectedCard,q))}${lb}</div>
-    ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${escH(r.cardNum)}</div>`:''}
+    <div class="rt">${escH(q.replace(/\s*\(-?P\d+\)$/i,'').trim())}${lb}</div>
+    ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${r.cardSet?escH(r.cardSet)+' · ':''}${escH(r.cardNum)}</div>`:''}
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}${selectedCard?.variant?' · <span style="color:var(--mu)">'+escH(selectedCard.variant)+'</span>':''}</div>
     <div class="pg">
       <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
