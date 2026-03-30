@@ -328,8 +328,9 @@ Set in Vercel dashboard → Settings → Environment Variables:
 - **SB02 Manga Booster 02**: 130 cards (60 base + 70 parallels) from Bandai FW. Variants (_p1, _p2, _f) get star rarity suffix.
 - **FB09 Dual Evolution**: 123 cards imported. **FS11/FS12 starter decks**: 36 cards total (2-digit numbers: FS11-01).
 - **Catalog cleanup**: Deleted 62 'unknown' game garbage rows. BT3-033 bad duplicate, BT9-134 Vegeta wrong row, BT28-055 Dr. Arinsu wrong row deleted.
-- **Star rarity auto-parallel**: SR\*/SCR\* cards selected from autocomplete now trigger parallel pricing path via `_autoParallel` (detects "alt art" in original query before `normalizeRarity()` strips it). Also auto-detects SGR/GFR/SLR/DBR keywords.
-- **SGR/GFR/SLR parallel pricing**: Son Gohan Rare, Giant Force Rare, and Special Leader Rare cards from BT Masters sets now trigger parallel pricing path (`parallel=1`). Frontend detects these rarities and passes rarity code as `vsrc`. Backend maps SGR/GFR/SLR to eBay search terms.
+- **Star rarity auto-parallel**: SR\*/SCR\* cards selected from autocomplete now trigger parallel pricing path via `_autoParallel` (detects "alt art" in original query before `normalizeRarity()` strips it). Also auto-detects SGR/GFR/SLR/DBR keywords in backend.
+- **SGR/GFR/SLR parallel pricing**: Son Gohan Rare, Giant Force Rare, and Special Leader Rare cards from BT Masters sets now trigger parallel pricing path (`parallel=1`). Frontend detects these rarities via `_isAltRarity` in `selectAc()` and passes rarity code as `vsrc`. Backend maps SGR/GFR/SLR to eBay search terms. `_isAltRarity` must be declared with `let` at function scope (alongside `_isParallel`, `_parallelNum`) — was `const` inside DBS branch causing ReferenceError when accessed outside it.
+- **Parallel -P suffix cards (known issue)**: `-P1`/`-P2` suffix cards fire the parallel path correctly, but preserving the full card number (e.g., `SB01-049-P1`) through the entire `selectAc()` → `search()` → `/api/prices` pipeline has been fragile. Commits `df40822` through `96fc752` attempted to improve card title/subtitle display but corrupted the card object passed through `selectAc()`, breaking parallel card selection. Reverted `index.html` to `89ca4d9` state (commit `69e4a2d`). **Safe to re-attempt subtitle display improvements later**, but must preserve `card.number` including `-P` suffix throughout the `selectAc()` pipeline — do not strip it before `selectedCard` is constructed. The `cleanSQ.replace(/\b(\w+-\d+)-p\d+\b/gi,'$1 parallel')` at line ~762 converts `-P1` to `"parallel"` which is the current working behavior for the eBay query; the backend parallel path handles the rest.
 - **One Piece GitHub removed**: GitHub data source (danielisonp/optcg) returned 404 — removed entirely. One Piece cards served from Supabase catalog (~1,705 cards). Official site scraper kept as fallback.
 - **ME3 Perfect Order**: 124 cards imported from pokemontcg.io (set_code ME3). `PKM_SET_NAMES` and `PKM_SET_KEYWORDS` updated in cards.js. Collector number format: ME3-62 → 062/088.
 - **Pokemon catalog**: all `_hires.png` URLs replaced with `.png` (direct URLs work, proxy was timing out).
@@ -342,7 +343,8 @@ Set in Vercel dashboard → Settings → Environment Variables:
 - In `normalizeApiResponse()`, `ct` and `jx` are referenced before assignment — works via closure.
 - **P-suffix stripped from display**: Card names like "Pan : GT (-P2)" display as "Pan : GT" everywhere (result title, browse, autocomplete). P-number visible in card number subtitle (e.g., "PROMOTION · FB03-124-P2").
 - **DEP0169 warning**: `url.parse()` deprecation logged on every request. Not in our code — comes from a dependency (@supabase/supabase-js or Node internals). Harmless, will resolve when dependency updates.
-- **Price seeder source='seeder'**: Seeder writes to `price_history` with `source='seeder'` to separate from user search data (`source='ebay'`). Query with `WHERE source = 'seeder'` to filter.
+- **Price seeder source='seeder'**: Seeder writes to `price_history` with `source='seeder'` to separate from user search data (`source='ebay'`). Numeric confidence: high=80, medium=50, low=25. Query with `WHERE source = 'seeder'` to filter. eBay rate limited after DBS 100-card + Pokemon test runs — resets midnight UTC / 2pm HST. Remaining games to seed: pokemon (rerun), mtg, gundam, lorcana, yugioh, onepiece, digimon, unionarena.
+- **Favicon 404**: `/favicon.ico` returning 404 — need to add a favicon to `public/` directory.
 
 ## Project Info
 
@@ -369,8 +371,11 @@ Set in Vercel dashboard → Settings → Environment Variables:
 
 ## Next Tasks
 
-1. Add ZXing barcode scanning to replace mock scan loop
-2. Set up Supabase auth for persistent user collections
-3. Add PWA manifest.json and service worker for home screen install
-4. Validate pricing accuracy (test 30 cards manually vs eBay sold prices)
-5. Launch on Reddit (r/pkmntcg, r/footballcards, r/dragonballsuper)
+1. **Re-attempt card title/subtitle display** — show "Fortuneteller Baba (Alternate Art) - Manga Booster 01 (SB01)" on result screen. Must preserve `card.number` with `-P` suffix through `selectAc()` pipeline. Add `DBS_SET_NAMES` map for human-readable set names.
+2. **Add favicon** — `public/favicon.ico` to fix 404
+3. **Run price seeder for remaining games** — pokemon (rerun), mtg, gundam, lorcana, yugioh, onepiece, digimon, unionarena (after eBay rate limit resets)
+4. Add ZXing barcode scanning to replace mock scan loop
+5. Set up Supabase auth for persistent user collections
+6. Add PWA manifest.json and service worker for home screen install
+7. Validate pricing accuracy (test 30 cards manually vs eBay sold prices)
+8. Launch on Reddit (r/pkmntcg, r/footballcards, r/dragonballsuper)
