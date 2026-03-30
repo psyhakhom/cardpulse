@@ -778,8 +778,9 @@ function selectAc(i){
     if(vt) selectedCard.searchQuery=cleanSQ+' '+vt;
   }
   console.log('[query-build:selectAc] final searchQuery:', JSON.stringify(selectedCard.searchQuery), 'game:', JSON.stringify(card.game), 'number:', JSON.stringify(card.number), 'set:', JSON.stringify(card.set));
-  // Show clean display name in input
-  const displayName=[card.name,card.number].filter(Boolean).join(' ');
+  // Show clean display name in input — strip (-P1) suffix
+  const _dispName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').trim();
+  const displayName=[_dispName,card.number].filter(Boolean).join(' ');
   document.getElementById('si').value=displayName;
   toggleClear();hideAc();
   // Run search using the optimized eBay query
@@ -886,6 +887,24 @@ async function search(q, elId) {
  * This means the frontend never needs to change when
  * the backend changes — only this adapter function does.
  */
+const DBS_SET_NAMES={
+  BT01:'Galactic Battle',BT02:'Union Force',BT03:'Cross Worlds',BT04:'Colossal Warfare',BT05:'Miraculous Revival',
+  BT06:'Destroyer Kings',BT07:'Assault of the Saiyans',BT08:'Malicious Machinations',BT09:'Universal Onslaught',BT10:'Rise of the Unison Warrior',
+  BT11:'Vermilion Bloodline',BT12:'Vicious Rejuvenation',BT13:'Supreme Rivalry',BT14:'Cross Spirits',BT15:'Saiyan Showdown',
+  BT16:'Realm of the Gods',BT17:'Ultimate Squad',BT18:'Dawn of the Z-Legends',BT19:"Fighter's Ambition",BT20:'Power Absorbed',
+  BT21:'Wild Resurgence',BT22:'Critical Blow',BT23:'Perfect Combination',BT24:'Beyond Generations',BT25:'Legends of the Dragon Warriors',
+  BT26:'Ultimate Advent',BT27:'Masters Zenkai Series Set 04',BT28:'Fusion World Opening',BT29:'Fearsome Rivals',BT30:'Three Glorious Fighters',
+  FB01:'Awakened Pulse',FB02:'Blazing Aura',FB03:'Raging Roar',FB04:'Guardian of the Dragon Balls',FB05:"Crimson Sands",
+  FB06:'Resurgence',FB07:'Wish for Shenron',FB08:'Rumble Frenzy',FB09:'Dual Evolution',
+  SB01:'Manga Booster 01',SB02:'Manga Booster 02',
+  FS01:'Starter Deck 01',FS02:'Starter Deck 02',FS03:'Starter Deck 03',FS04:'Starter Deck 04',
+  FS05:'Starter Deck 05',FS06:'Starter Deck 06',FS07:'Starter Deck 07',FS08:'Starter Deck 08',
+  FS09:'Starter Deck 09',FS10:'Starter Deck 10',FS11:'Starter Deck 11',FS12:'Starter Deck 12',
+  TB01:'Tournament of Power',TB02:'World Martial Arts Tournament',TB03:'Clash of Fates',
+  EX01:'Expansion 01',EX03:'Ultimate Box',EX06:'Special Anniversary Box',EX13:'Supreme Rivalry EX',
+  EX19:'Fighters Ambition EX',EX21:'Wild Resurgence EX',EX22:'Critical Blow EX',EX23:'Perfect Combination EX',
+  EX24:'Beyond Generations EX',EX25:'Legend of the Dragon Warrior EX',
+};
 function normalizeApiResponse(data, q, sc) {
   function cardType(q, g) {
   const ql = q.toLowerCase();
@@ -1236,7 +1255,7 @@ function renderResult(el,q,r){
     <div class="rhl">${ctl}</div></div>
     <div class="rb">${jb}${fx}${tm}${cqb}
     <div class="rt">${escH(q.replace(/\s*\(-?P\d+\)$/i,'').trim())}${lb}</div>
-    ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${r.cardSet?escH(r.cardSet)+' · ':''}${escH(r.cardNum)}</div>`:''}
+    ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${(()=>{const _sc=selectedCard,_rUp=(_sc?.rarity||'').toUpperCase(),_isPar=_sc?.parallel,_isAltRar=/^(SGR|GFR|SLR)$/.test(_rUp),_parLabel=_isPar?(/\*$/.test(_rUp)||_isAltRar?'Alternate Art':'Parallel'):(_isAltRar?'Alternate Art':''),_setCode=(r.cardNum||'').match(/^([A-Z]{1,4}\d+)/i),_scUp=_setCode?_setCode[1].toUpperCase():'',_setName=DBS_SET_NAMES[_scUp]||(r.cardSet||''),_parts=[_parLabel,_setName?_setName+(_scUp&&_setName!==_scUp?' ('+_scUp+')':''):_scUp,r.cardNum].filter(Boolean);return _parts.map(p=>escH(p)).join(' · ')})()}</div>`:''}
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}${selectedCard?.variant?' · <span style="color:var(--mu)">'+escH(selectedCard.variant)+'</span>':''}</div>
     <div class="pg">
       <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
