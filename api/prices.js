@@ -1704,6 +1704,20 @@ export default async function handler(req, res) {
             }
           }
 
+          // Star-rarity filter: SCR*/SR*/SCR** cards must have alt art indicators in title
+          // Prevents base SCR ($14.99) from mixing with alt art SCR* ($224.95+)
+          const _isStarRarity = requiredRarity && /\*/.test(requiredRarity)
+          if (_isStarRarity && filtered.length > 0) {
+            const starRe = /\balt[\s-]*art\b|\balternate[\s-]*art\b|\bSCR\s*[☆★*]\b|\bSR\s*[☆★*]\b|\bstar\b|\b\*\b/i
+            const starFiltered = filtered.filter(i => starRe.test(i.title || ''))
+            if (starFiltered.length > 0) {
+              console.log(`[parallel:star-rarity] ${filtered.length} → ${starFiltered.length} (enforcing ${requiredRarity} — alt art indicators)`)
+              filtered = starFiltered
+            } else {
+              console.log(`[parallel:star-rarity] 0 matches for ${requiredRarity} indicators, keeping all ${filtered.length}`)
+            }
+          }
+
           // Separate sold items (have past itemEndDate) from active listings (no itemEndDate or future)
           const _now = Date.now()
           const _cutoff180d = _now - 180 * 24 * 60 * 60 * 1000
