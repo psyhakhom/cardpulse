@@ -1453,6 +1453,11 @@ export default async function handler(req, res) {
       _autoParallel = true
       console.log(`[parallel:auto] detected "alt art" in original query — enabling parallel mode`)
     }
+    // Auto-parallel for alt-art DBS rarities (SGR, GFR, SLR) in query or vsrc
+    if (!_autoParallel && parallel !== '1' && exact === '1' && /\b(SGR|GFR|SLR|son gohan rare|giant force rare|special leader rare|gold rare)\b/i.test(q)) {
+      _autoParallel = true
+      console.log(`[parallel:auto] detected alt-art rarity keyword in query — enabling parallel mode`)
+    }
 
     console.log(`[prices] processed query: "${processed}" (exact=${exact}, original q="${q}"${_autoParallel ? ', auto-parallel' : ''})`)
     if (requiredRarity) console.log(`[rarity] enforcing tier: ${requiredRarity}`)
@@ -1549,7 +1554,10 @@ export default async function handler(req, res) {
         // Card number is the anchor; variant term just narrows the pool.
         let vsrcTerm = ''
         if (vsrc) {
-          if (/tournament\s*pack/i.test(vsrc)) vsrcTerm = 'promo'
+          if (/^SGR$/i.test(vsrc)) vsrcTerm = 'SGR'
+          else if (/^GFR$/i.test(vsrc)) vsrcTerm = 'GFR'
+          else if (/^SLR$/i.test(vsrc)) vsrcTerm = 'SLR'
+          else if (/tournament\s*pack/i.test(vsrc)) vsrcTerm = 'promo'
           else if (/championship/i.test(vsrc)) vsrcTerm = 'championship promo'
           else if (/judge\s*pack/i.test(vsrc)) vsrcTerm = 'judge promo'
           else if (/manga\s*booster/i.test(vsrc)) vsrcTerm = 'manga'

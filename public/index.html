@@ -733,13 +733,15 @@ function selectAc(i){
   }else if(card.number&&/^[A-Z]{1,4}\d+-/i.test(card.number)){
     // DBS, One Piece, etc: sellers use card numbers (FB07-079, OP05-119, BT22-049)
     // Detect parallel suffix BEFORE stripping — parallels need keyword-based queries
-    const isParallel=/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number)||/\(-?P\d+\)/i.test(card.name);
+    const rUp=(card.rarity||'').toUpperCase();
+    // Alt-art rarities (SGR, GFR, SLR) use parallel pricing path like -P suffix cards
+    const _isAltRarity=/^(SGR|GFR|SLR)$/.test(rUp);
+    const isParallel=_isAltRarity||/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number)||/\(-?P\d+\)/i.test(card.name);
     _isParallel=isParallel;
     const _pMatch=card.number.match(/-P(\d+)$/i)||card.name.match(/\(-?P(\d+)\)/i);
     _parallelNum=_pMatch?_pMatch[1]:null;
     const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
-    const rUp=(card.rarity||'').toUpperCase();
-    const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':'';
+    const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':rUp==='GFR'?' giant force rare':rUp==='SLR'?' special leader rare':'';
     if(isParallel){
       // Parallel cards: search by card name + base number — sellers always include the number
       // Both base and parallel comps will match; rarity split picker handles the price gap
@@ -766,7 +768,7 @@ function selectAc(i){
     searchQuery:cleanSQ,
     parallel:_isParallel,
     parallelNum:_parallelNum,
-    variantSource:card.variantSource||null,
+    variantSource:card.variantSource||(_isAltRarity?rUp:null),
     variant:card.variant||null,
   };
   // Append mapped variant term to eBay query — only known terms, unmapped variants are ignored
