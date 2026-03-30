@@ -804,68 +804,14 @@ async function searchYugioh(query) {
   })
 }
 
-// ─── ONE PIECE / OPTCG GITHUB DATA ──────────────────────────────────────────
-let opCardData = null
-let opDataLoading = null
-let opLoadFailedAt = 0
-
-async function loadOpData() {
-  if (opCardData) return opCardData
-  if (opDataLoading) return opDataLoading
-  // Backoff: don't retry within 60s of a failure
-  if (opLoadFailedAt && Date.now() - opLoadFailedAt < 60000) return null
-
-  opDataLoading = (async () => {
-    console.log('[cards:op] loading OPTCG card data from GitHub...')
-    try {
-      const res = await fetch('https://raw.githubusercontent.com/danielisonp/optcg/main/cards.json', {
-        signal: AbortSignal.timeout(10000),
-      })
-      if (!res.ok) throw new Error(`GitHub ${res.status}`)
-      opCardData = await res.json()
-      console.log(`[cards:op] loaded ${Array.isArray(opCardData) ? opCardData.length : 'unknown'} cards`)
-      opDataLoading = null
-      return opCardData
-    } catch (err) {
-      console.error(`[cards:op] failed to load card data: ${err.message}`)
-      opLoadFailedAt = Date.now()
-      opDataLoading = null
-      return null
-    }
-  })()
-  return opDataLoading
-}
+// ─── ONE PIECE / OPTCG ──────────────────────────────────────────────────────
+// One Piece cards are in Supabase catalog (~1,705 cards from optcgapi.com).
+// GitHub data source (danielisonp/optcg) is 404 — removed.
+// Official site scraper kept as fallback for cards not yet in catalog.
 
 async function searchOnePiece(query) {
   return withCache(`op:${query.toLowerCase()}`, async () => {
     const sanitized = sanitizeQuery(query)
-    const terms = sanitized.toLowerCase().split(/\s+/)
-    const data = await loadOpData()
-
-    if (data && Array.isArray(data)) {
-      const results = data.filter((card) => {
-        const hay = `${card.name || ''} ${card.id || ''} ${card.number || ''} ${card.type || ''}`.toLowerCase()
-        return terms.every((t) => hay.includes(t))
-      }).slice(0, 8)
-
-      if (results.length > 0) {
-        return results.map((card) => {
-          let img = card.image || card.imageUrl || null
-          if (img) img = `/api/image-proxy?url=${encodeURIComponent(img)}`
-          return {
-            id: `op-${card.id || card.number || Date.now()}`,
-            name: card.name || '',
-            set: (card.number || card.id || '').replace(/-\d+$/, ''),
-            number: card.number || card.id || '',
-            rarity: card.rarity || '',
-            game: 'onepiece',
-            imageUrl: img,
-            largeImageUrl: img,
-            searchQuery: buildSearchQuery(card.name, card.number || card.id, card.rarity),
-          }
-        })
-      }
-    }
 
     // Fallback: try the official site
     try {

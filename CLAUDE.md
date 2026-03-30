@@ -11,6 +11,8 @@ No build step. Deploys directly to Vercel:
 - **Autocomplete**: `api/cards.js` — Supabase card_catalog + external API fallback
 - **Image proxy**: `api/image-proxy.js` — proxies One Piece/DBS/Gundam/Deckplanet images to avoid hotlink blocking
 - **Import scripts**: `scripts/import-*.js` — bulk import card data into Supabase (local only)
+- **Price seeder**: `scripts/price-seeder.js` — Claude-validated price history seeding (local CLI)
+- **Seed cron**: `api/seed-prices.js` — Vercel serverless cron endpoint (nightly 2am UTC)
 - **Deploy**: `git push` to master → Vercel auto-deploys in ~30s. Force: `vercel --prod --force --scope phanousits-projects`
 - **Local dev**: `vercel dev`. For offline/mock: set `USE_REAL_API = false` in `public/index.html`
 
@@ -29,12 +31,12 @@ Key functions:
 - `pick()` — grade pill click handler (now rendered inside result card). Swaps/adds/removes grade term in search input, re-triggers search. `_manualGrade` flag prevents auto-detection from overriding manual clicks.
 
 `selectedCard` — set when user clicks autocomplete result. Passes `exact=1` to bypass preprocessor. `selectAc()` builds per-game eBay-optimized queries:
-- **MTG/Pokemon/Lorcana**: card name + set name (sellers use set names, not collector numbers)
+- **MTG/Pokemon/Lorcana**: card name + set name (sellers use set names, not collector numbers). Pokemon with known set sizes uses collector number format: "Meowth ex 062/088 Perfect Order" via `PKM_SET_SIZES` map (ME3:88, SV1-SV8). `PKM_SET_NAMES_FE` frontend map resolves raw set codes to display names as safety net.
 - **Yu-Gi-Oh**: card name only (sellers rarely include set/number)
 - **DBS/One Piece**: card name + card number (sellers use card numbers like FB07-079, BT22-049)
 - Strips promo/parallel suffixes: `_PR`, `_p1`, `-P1`, `-P2`, `(-P2)` name suffix
-- **Parallel detection**: `-P` suffix detected before stripping. Extracts P-number (`parallelNum`) and `variantSource` from catalog. Sets `selectedCard.parallel=true`, frontend passes `parallel=1`, `pnum=N`, and `vsrc=...` to backend. Query uses name + base number (no -P suffix): "Fortuneteller Baba SB01-049"
-- SR\*/SCR\* selected → appends "alt art"; DBR → "dragon ball rare"; SGR → "gold rare"
+- **Parallel detection**: `-P` suffix detected before stripping. Also triggers for alt-art rarities: SGR (Son Gohan Rare), GFR (Giant Force Rare), SLR (Special Leader Rare) — these set `parallel=1` regardless of card number suffix. Extracts P-number (`parallelNum`) and `variantSource` from catalog (or rarity code for SGR/GFR/SLR). Frontend passes `parallel=1`, `pnum=N`, and `vsrc=...` to backend. Query uses name + base number (no -P suffix): "Fortuneteller Baba SB01-049"
+- SR\*/SCR\* selected → appends "alt art"; DBR → "dragon ball rare"; SGR → "gold rare"; GFR → "giant force rare"; SLR → "special leader rare"
 - Truncates at first comma: "Special Beam Cannon, Inherited Power" → "Special Beam Cannon"
 
 **Back navigation** (`navStack`): Stack-based navigation tracks search → browse → disambiguation → result transitions. Back button appears on browse, disambiguation, and result views (styled as pill: border #444, bg #1a1a24, border-radius 20px). Browser back (popstate) also triggers `goBack()`. `disambigPick()` skips intermediate nav push so back from result returns to disambiguation. Back from result to 'search' state uses cached `_lastBrowseHTML` for instant render (no re-fetch). Browse: Enter/search → shows all catalog matches (limit=50) before pricing; tapping a card triggers pricing.
@@ -146,6 +148,10 @@ Results merged, deduped by itemId, then filtered:
 
 **Price population script** (`scripts/populate-prices.js`): Bulk-searches high-value cards through the deployed API to populate `price_history`. Prioritizes recent sets and high rarities (SCR, SPR, SR*, SEC, SAR, DBR, SGR). Throttled at 2s/request, skips cards searched in last 24h. Run: `npm run populate-prices` or `npm run populate-prices -- --limit 100 --game dbs`.
 
+**Price seeder with Claude validation** (`scripts/price-seeder.js`): Proactive price history seeder that validates eBay comps with Claude Sonnet before logging. For each card: fetches comps via `/api/prices`, passes to Claude for validation (flags wrong card/set/language, lots, slabs, outliers), logs cleaned price to `price_history` with `source='seeder'`. Confidence: high=80, medium=50, low=25. Card list auto-built from Supabase by rarity priority (DBS: SCR>GDR>SPR>SR*>SR>SLR>CR, Pokemon: SIR>Hyper Rare>IR). Pokemon English-only filter skips Z/R-prefixed Japanese sets. DBS sort: main sets (BT/FB/SB) before promos, newer sets first. Rate limiting: 2s between cards, 10s between games. Run: `npm run seed-prices` or `npm run seed-prices -- --game=dbs --limit=100 --dry-run --verbose`.
+
+**Vercel cron endpoint** (`api/seed-prices.js`): Nightly price seeder at 2am UTC. Top 20 cards per game. Manual trigger: `GET /api/seed-prices?limit=5&game=dbs`. Configured in `vercel.json` crons. Requires Vercel Pro plan for cron; works as manual endpoint on Hobby.
+
 ### Autocomplete (`api/cards.js`)
 
 **Priority**: Supabase card_catalog (~150,000+ cards) → external APIs → eBay fallback. Catalog-first merge: catalog results always fill slots 1-N before external. Attribution shows 'CardPulse catalog' when catalog results present. Browse mode (`limit=50`) returns up to 50 catalog-only results.
@@ -226,7 +232,7 @@ Proxies images from allowed domains (optcgapi.com, en.onepiece-cardgame.com, www
 | Yu-Gi-Oh | ~14,298 | YGOProDeck |
 | One Piece | ~1,705 | optcgapi.com |
 | Lorcana | ~2,291 | lorcana-api.com |
-| **Total** | **~159,743** | |
+| **Total** | **~159,870+** | |
 
 ### Import Scripts
 
@@ -260,6 +266,8 @@ npm run import-onepiece        # One Piece from optcgapi.com
 npm run import-lorcana         # Lorcana from lorcana-api.com
 npm run import-all             # Run all imports sequentially
 npm run populate-prices        # Bulk-search high-value cards to populate price_history
+npm run seed-prices            # Claude-validated price seeder (source='seeder')
+npm run seed-prices -- --game=dbs --limit=100 --dry-run --verbose
 ```
 
 **Bandai import scripts**:
@@ -296,6 +304,7 @@ Set in Vercel dashboard → Settings → Environment Variables:
 | `SUPABASE_URL` | Supabase project URL | Configured |
 | `SUPABASE_SERVICE_KEY` | service_role key (not anon key) | Configured |
 | `POKEMON_TCG_API_KEY` | Optional — higher rate limit for pokemontcg.io | Not set |
+| `ANTHROPIC_API_KEY` | Claude API key for price-seeder comp validation | In .env.local |
 
 ## Known Issues
 
@@ -319,10 +328,12 @@ Set in Vercel dashboard → Settings → Environment Variables:
 - **SB02 Manga Booster 02**: 130 cards (60 base + 70 parallels) from Bandai FW. Variants (_p1, _p2, _f) get star rarity suffix.
 - **FB09 Dual Evolution**: 123 cards imported. **FS11/FS12 starter decks**: 36 cards total (2-digit numbers: FS11-01).
 - **Catalog cleanup**: Deleted 62 'unknown' game garbage rows. BT3-033 bad duplicate, BT9-134 Vegeta wrong row, BT28-055 Dr. Arinsu wrong row deleted.
-- **Star rarity auto-parallel**: SR\*/SCR\* cards selected from autocomplete now trigger parallel pricing path via `_autoParallel` (detects "alt art" in original query before `normalizeRarity()` strips it).
-- **One Piece GitHub 404**: Pre-warm call to One Piece card data returns 404 — pre-existing, non-blocking.
+- **Star rarity auto-parallel**: SR\*/SCR\* cards selected from autocomplete now trigger parallel pricing path via `_autoParallel` (detects "alt art" in original query before `normalizeRarity()` strips it). Also auto-detects SGR/GFR/SLR/DBR keywords.
+- **SGR/GFR/SLR parallel pricing**: Son Gohan Rare, Giant Force Rare, and Special Leader Rare cards from BT Masters sets now trigger parallel pricing path (`parallel=1`). Frontend detects these rarities and passes rarity code as `vsrc`. Backend maps SGR/GFR/SLR to eBay search terms.
+- **One Piece GitHub removed**: GitHub data source (danielisonp/optcg) returned 404 — removed entirely. One Piece cards served from Supabase catalog (~1,705 cards). Official site scraper kept as fallback.
+- **ME3 Perfect Order**: 124 cards imported from pokemontcg.io (set_code ME3). `PKM_SET_NAMES` and `PKM_SET_KEYWORDS` updated in cards.js. Collector number format: ME3-62 → 062/088.
 - **Pokemon catalog**: all `_hires.png` URLs replaced with `.png` (direct URLs work, proxy was timing out).
-- **eBay Browse API limits**: 5,000 calls/day (resets midnight UTC). Each search = 3 calls (TCG) or 4 (sports). populate-prices uses ~3 calls per card.
+- **eBay Browse API limits**: 5,000 calls/day (resets midnight UTC / 2pm HST). Each search = 3 calls (TCG) or 4 (sports). populate-prices uses ~3 calls per card. Price seeder uses ~3 calls per card (~300 for 100-card run).
 - **eBay Marketplace Insights API**: Not available — scope `buy.marketplace.insights` not enabled on app. Would provide real sold data for parallel cards. Requires eBay developer approval.
 - **Parallel sold data gap**: eBay Browse API returns active listings (not sold) for SB01 parallels despite `soldItems:true`. Active BIN prices used as fallback with disclaimer.
 - **Comp date tiering**: `extractComps()` and parallel pricing path filter comps to 30d first, expanding to 60d then 90d if <2 results. Uses `itemCreationDate` for active listings (no `itemEndDate`). Prevents stale comps from skewing market price.
@@ -330,6 +341,8 @@ Set in Vercel dashboard → Settings → Environment Variables:
 - **One Piece image proxy**: Images still show SAMPLE watermark from some sources despite proxy.
 - In `normalizeApiResponse()`, `ct` and `jx` are referenced before assignment — works via closure.
 - **P-suffix stripped from display**: Card names like "Pan : GT (-P2)" display as "Pan : GT" everywhere (result title, browse, autocomplete). P-number visible in card number subtitle (e.g., "PROMOTION · FB03-124-P2").
+- **DEP0169 warning**: `url.parse()` deprecation logged on every request. Not in our code — comes from a dependency (@supabase/supabase-js or Node internals). Harmless, will resolve when dependency updates.
+- **Price seeder source='seeder'**: Seeder writes to `price_history` with `source='seeder'` to separate from user search data (`source='ebay'`). Query with `WHERE source = 'seeder'` to filter.
 
 ## Project Info
 
