@@ -778,10 +778,8 @@ function selectAc(i){
     if(vt) selectedCard.searchQuery=cleanSQ+' '+vt;
   }
   console.log('[query-build:selectAc] final searchQuery:', JSON.stringify(selectedCard.searchQuery), 'game:', JSON.stringify(card.game), 'number:', JSON.stringify(card.number), 'set:', JSON.stringify(card.set));
-  // Show clean display name in input — strip (-P1) suffix
-  const _dispName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').trim();
-  const displayName=[_dispName,card.number].filter(Boolean).join(' ');
-  document.getElementById('si').value=displayName;
+  // Show full descriptive name in input
+  document.getElementById('si').value=fullCardTitle(selectedCard,card.name);
   toggleClear();hideAc();
   // Run search using the optimized eBay query
   search(selectedCard.searchQuery,'sr');
@@ -852,14 +850,12 @@ async function search(q, elId) {
         if(elId==='sr'){navPush('result',document.getElementById('si').value.trim(),sc);}
         const cardImgUrl=proxyImg(sc?.imageUrl||data.imageUrl);
         const cardImg=cardImgUrl?`<div class="rh"><img src="${escH(cardImgUrl)}" onerror="this.style.display='none'"/></div>`:'';
-        const cardName=(sc?.name||q).replace(/\s*\(-?P\d+\)$/i,'').trim();
+        const _fullTitle=fullCardTitle(sc,q);
+        const _ndNumHtml=sc?.number?`<div style="font-size:12px;color:var(--mu);margin-top:4px">${escH(sc.number)}</div>`:'';
         const tip=data.searchTip?`<p style="margin-top:10px;font-size:12px;color:var(--a2);line-height:1.6">${data.searchTip}</p>`:'';
-        // Build subtitle (same logic as renderResult)
-        const _ndSub=(()=>{if(!sc?.number)return'';const _rUp=(sc.rarity||'').toUpperCase(),_isPar=sc.parallel,_isAltRar=/^(SGR|GFR|SLR)$/.test(_rUp),_parLabel=_isPar?(/\*$/.test(_rUp)||_isAltRar?'Alternate Art':'Parallel'):(_isAltRar?'Alternate Art':''),_setCode=(sc.number||'').match(/^([A-Z]{1,4}\d+)/i),_scUp=_setCode?_setCode[1].toUpperCase():'',_setName=DBS_SET_NAMES[_scUp]||(sc.set||''),_parts=[_parLabel,_setName?_setName+(_scUp&&_setName!==_scUp?' ('+_scUp+')':''):_scUp,sc.number].filter(Boolean);return _parts.map(p=>escH(p)).join(' · ');})();
-        const _ndSubHtml=_ndSub?`<div style="font-size:12px;color:var(--mu);margin-top:6px">${_ndSub}</div>`:'';
         // When only graded slabs exist, show grade pills so user can tap to see graded prices
         const gradePills=data.slabsOnly?`<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">${['PSA 10','PSA 9','BGS 10','BGS 9.5','CGC 10'].map(g=>`<button onclick="pickSlab(this)" style="padding:6px 14px;border-radius:16px;border:1px solid var(--bd);background:var(--s2);color:var(--tx);font-size:13px;cursor:pointer">${g}</button>`).join('')}</div>`:'';
-        const noDataMsg=data.slabsOnly?'<span style="font-size:1rem;color:#e0e0e0">There are only graded comps for this card.<br>Select a grade to view prices.</span>':'No sold comps found for<br><strong style="color:var(--tx)">'+escH(cardName)+'</strong>'+_ndSubHtml+'<br><span style="font-size:12px;color:var(--mu)">This card may be too new or have limited market activity.</span>';
+        const noDataMsg=data.slabsOnly?'<span style="font-size:1rem;color:#e0e0e0">There are only graded comps for this card.<br>Select a grade to view prices.</span>':'No sold comps found for<br><strong style="color:var(--tx)">'+escH(_fullTitle)+'</strong>'+_ndNumHtml+'<br><span style="font-size:12px;color:var(--mu)">This card may be too new or have limited market activity.</span>';
         el.innerHTML = renderBackBtn()+`<div class="rc">${cardImg}<div class="rb" style="text-align:center;padding:24px 16px"><p>${noDataMsg}</p>${gradePills}</div></div>`;
         return;
       }
@@ -908,6 +904,21 @@ const DBS_SET_NAMES={
   EX19:'Fighters Ambition EX',EX21:'Wild Resurgence EX',EX22:'Critical Blow EX',EX23:'Perfect Combination EX',
   EX24:'Beyond Generations EX',EX25:'Legend of the Dragon Warrior EX',
 };
+// Build full descriptive card name: "Fortuneteller Baba (Alternate Art) - Manga Booster 01 (SB01)"
+function fullCardTitle(sc, fallbackName) {
+  const name = (sc?.name || fallbackName || '').replace(/\s*\(-?P\d+\)$/i, '').trim();
+  if (!sc?.number) return name;
+  const rUp = (sc.rarity || '').toUpperCase();
+  const isPar = sc.parallel;
+  const isAltRar = /^(SGR|GFR|SLR)$/.test(rUp);
+  const varLabel = isPar ? (/\*$/.test(rUp) || isAltRar ? 'Alternate Art' : 'Parallel') : (isAltRar ? 'Alternate Art' : '');
+  const scMatch = (sc.number || '').match(/^([A-Z]{1,4}\d+)/i);
+  const scUp = scMatch ? scMatch[1].toUpperCase() : '';
+  const setName = DBS_SET_NAMES[scUp] || (sc.set || '');
+  const setDisplay = setName ? setName + (scUp && setName !== scUp ? ' (' + scUp + ')' : '') : scUp;
+  const parts = [name + (varLabel ? ' (' + varLabel + ')' : ''), setDisplay].filter(Boolean);
+  return parts.join(' - ');
+}
 function normalizeApiResponse(data, q, sc) {
   function cardType(q, g) {
   const ql = q.toLowerCase();
@@ -1257,8 +1268,8 @@ function renderResult(el,q,r){
     <img src="${r.img}" style="opacity:0" onload="this.style.opacity='1';var s=document.getElementById('shim');if(s)s.remove()" onerror="this.style.display='none'"/>
     <div class="rhl">${ctl}</div></div>
     <div class="rb">${jb}${fx}${tm}${cqb}
-    <div class="rt">${escH(q.replace(/\s*\(-?P\d+\)$/i,'').trim())}${lb}</div>
-    ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${(()=>{const _sc=selectedCard,_rUp=(_sc?.rarity||'').toUpperCase(),_isPar=_sc?.parallel,_isAltRar=/^(SGR|GFR|SLR)$/.test(_rUp),_parLabel=_isPar?(/\*$/.test(_rUp)||_isAltRar?'Alternate Art':'Parallel'):(_isAltRar?'Alternate Art':''),_setCode=(r.cardNum||'').match(/^([A-Z]{1,4}\d+)/i),_scUp=_setCode?_setCode[1].toUpperCase():'',_setName=DBS_SET_NAMES[_scUp]||(r.cardSet||''),_parts=[_parLabel,_setName?_setName+(_scUp&&_setName!==_scUp?' ('+_scUp+')':''):_scUp,r.cardNum].filter(Boolean);return _parts.map(p=>escH(p)).join(' · ')})()}</div>`:''}
+    <div class="rt">${escH(fullCardTitle(selectedCard,q))}${lb}</div>
+    ${r.cardNum?`<div class="rm" style="margin-bottom:4px;color:var(--mu)">${escH(r.cardNum)}</div>`:''}
     <div class="rm">${G} · ${C==='Any'?'All conditions':C}${selectedCard?.variant?' · <span style="color:var(--mu)">'+escH(selectedCard.variant)+'</span>':''}</div>
     <div class="pg">
       <div class="pb"><div class="pv av">${fP(r.avg)}</div><div class="pl">Market Price</div></div>
