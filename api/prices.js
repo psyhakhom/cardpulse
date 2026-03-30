@@ -140,7 +140,8 @@ async function ebaySearch(
   // Also strip (-P2) name suffixes and -P2 card number suffixes
   // Strip rarity suffixes without + (catalog artifacts like "(LR)", "(R)") but keep "(LR+)" — sellers use it
   // Replace word-hyphens with spaces ("Wish-Granting" → "Wish Granting") but keep card number hyphens ("BT23-139")
-  query = query.replace(/['''`]s\b/g, '').replace(/['''`]/g, '').replace(/,/g, '').replace(/([a-zA-Z])-([a-zA-Z])/g, '$1 $2').replace(/\s*\(-?P\d+\)/gi, '').replace(/\s*\([A-Z]{1,2}\)(?!\+)/g, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/(\d{2,3})-P\d+/gi, '$1').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
+  // Keep -P suffix on full card numbers (SB01-049-P1) but strip standalone -P patterns
+  query = query.replace(/['''`]s\b/g, '').replace(/['''`]/g, '').replace(/,/g, '').replace(/([a-zA-Z])-([a-zA-Z])/g, '$1 $2').replace(/\s*\(-?P\d+\)/gi, '').replace(/\s*\([A-Z]{1,2}\)(?!\+)/g, '').replace(/_PR\d*/gi, '').replace(/_p\d+/gi, '').replace(/\s+-/g, ' ').replace(/^-/, '').replace(/\s+/g, ' ').trim()
   console.log(`[ebay query] q="${query}" live=${live} global=${global}${activeOnly ? ' activeOnly' : ''}`)
   const locFilter = global ? '' : ',itemLocationCountry:US'
   let filter
@@ -1667,6 +1668,23 @@ export default async function handler(req, res) {
                   filtered = []
                 }
               }
+            }
+          }
+          // -P suffix filter: when query has -P1/-P2 etc., drop comps that are clearly base cards
+          // Base cards slip through because they match the card number without the -P suffix
+          const _pSuffix = processed.match(/\b[A-Z]{1,4}\d+-\d+-(P\d+)\b/i)
+          if (_pSuffix && filtered.length > 0) {
+            const pCode = _pSuffix[1].toUpperCase() // "P1", "P2"
+            const parallelIndicators = /\bparallel\b|\balt\s*art\b|\balternate\s*art\b|\bmanga\b|\bpromo\b|\bspecial\b|\b-P\d+\b/i
+            const pFiltered = filtered.filter(i => {
+              const t = i.title || ''
+              return parallelIndicators.test(t) || t.toUpperCase().includes(pCode)
+            })
+            if (pFiltered.length > 0) {
+              console.log(`[parallel:p-suffix] ${filtered.length} → ${pFiltered.length} (enforcing ${pCode} indicators)`)
+              filtered = pFiltered
+            } else {
+              console.log(`[parallel:p-suffix] 0 matches for ${pCode} indicators, keeping all ${filtered.length} (may include base cards)`)
             }
           }
           // Gundam parallel rarity filter: require "LR+" / "LR++" in titles to exclude base LR

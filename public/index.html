@@ -759,7 +759,6 @@ function selectAc(i){
     console.log('[selectAc] fallback query:',JSON.stringify(cleanSQ));
   }
   cleanSQ=cleanSQ.replace(/[:;+]/g,' ').replace(/\s+/g,' ').trim();
-  cleanSQ=cleanSQ.replace(/\b(\w+-\d+)-p\d+\b/gi,'$1 parallel');
   selectedCard={
     name:card.name,
     set:card.set,
@@ -834,6 +833,7 @@ async function search(q, elId) {
       if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); if (sc.variantSource) params.set('vsrc', sc.variantSource); }
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       if (sc?.game) params.set('game', sc.game); // frontend-detected game for logging
+      if (sc?.parallel) console.log('[query-build:parallel]', searchQ, 'pnum='+sc.parallelNum, 'vsrc='+sc.variantSource);
       const res = await fetch(`/api/prices?${params}`);
       const data = await res.json();
       // Disambiguation: multiple distinct cards found — show picker
