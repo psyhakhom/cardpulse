@@ -474,7 +474,7 @@ async function pickSlab(el){
     console.log('[query-build:pickSlab]',JSON.stringify(searchQ),sc?'(catalog) game='+sc.game+' number='+sc.number:'(free text)');
     const params=new URLSearchParams({q:searchQ,grade:G,lang:L});
     if(sc)params.set('exact','1');
-    if(sc?.parallel){params.set('parallel','1');if(sc.parallelNum)params.set('pnum',sc.parallelNum);if(sc.variantSource)params.set('vsrc',sc.variantSource);}
+    if(sc?.parallel){params.set('parallel','1');if(sc.parallelNum)params.set('pnum',sc.parallelNum);if(sc.variantSource)params.set('vsrc',sc.variantSource);if(sc.rarity)params.set('rarity',sc.rarity);if(sc.fullCardNum)params.set('cardnum',sc.fullCardNum);}
     if(sc?.imageUrl)params.set('cardImageUrl',sc.imageUrl);
     if(sc?.game)params.set('game',sc.game);
     const res=await fetch(`/api/prices?${params}`);
@@ -699,6 +699,7 @@ function selectAc(i){
   let _isParallel=false;
   let _parallelNum=null;
   let _isAltRarity=false;
+  let _fullCardNum=null;
   const g=card.game||'';
   const _cleanName=(card.name||'').replace(/\s*\(-?P\d+\)$/i,'').replace(/\s*\([A-Z]{1,2}\+{0,2}\)$/,'').split(' // ')[0].trim();
   // Keep short subtitles after comma (≤3 words) — sellers use them ("Wish-Granting Dragon", "Wish Dragon")
@@ -740,6 +741,7 @@ function selectAc(i){
     _isAltRarity=/^(SGR|GFR|SLR)$/.test(rUp);
     const isParallel=_isAltRarity||/-P\d+$/i.test(card.number)||/_p\d+$/i.test(card.number)||/\(-?P\d+\)/i.test(card.name);
     _isParallel=isParallel;
+    if(isParallel)_fullCardNum=card.number; // preserve full number (e.g. FB03-139-P1) before stripping
     const _pMatch=card.number.match(/-P(\d+)$/i)||card.name.match(/\(-?P(\d+)\)/i);
     _parallelNum=_pMatch?_pMatch[1]:null;
     const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
@@ -770,6 +772,7 @@ function selectAc(i){
     searchQuery:cleanSQ,
     parallel:_isParallel,
     parallelNum:_parallelNum,
+    fullCardNum:_fullCardNum,
     variantSource:card.variantSource||(_isAltRarity?rUp:null),
     variant:card.variant||null,
   };
@@ -832,7 +835,7 @@ async function search(q, elId) {
       console.log('[query-build:search]', JSON.stringify(searchQ), sc ? '(catalog) game='+sc.game+' number='+sc.number : '(free text)');
       const params = new URLSearchParams({ q: searchQ, grade: G, lang: L });
       if (sc) params.set('exact', '1'); // tell backend to skip preprocessor
-      if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); if (sc.variantSource) params.set('vsrc', sc.variantSource); }
+      if (sc?.parallel) { params.set('parallel', '1'); if (sc.parallelNum) params.set('pnum', sc.parallelNum); if (sc.variantSource) params.set('vsrc', sc.variantSource); if (sc.rarity) params.set('rarity', sc.rarity); if (sc.fullCardNum) params.set('cardnum', sc.fullCardNum); }
       if (sc?.imageUrl) params.set('cardImageUrl', sc.imageUrl); // pass official image for card_catalog
       if (sc?.game) params.set('game', sc.game); // frontend-detected game for logging
       const res = await fetch(`/api/prices?${params}`);

@@ -1359,8 +1359,8 @@ export default async function handler(req, res) {
   res.setHeader('Vercel-CDN-Cache-Control', 'no-store')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
-  const { q, lang = 'English', history, exact, parallel, cardImageUrl, pnum, vsrc, game: gameParam } = req.query
-  console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ` parallel${pnum ? ' P'+pnum : ''}${vsrc ? ' vsrc="'+vsrc+'"' : ''}` : ''}`)
+  const { q, lang = 'English', history, exact, parallel, cardImageUrl, pnum, vsrc, game: gameParam, rarity: rarityParam, cardnum: cardnumParam } = req.query
+  console.log(`[prices] q="${q}"${exact === '1' ? ' exact' : ''}${parallel === '1' ? ` parallel${pnum ? ' P'+pnum : ''}${vsrc ? ' vsrc="'+vsrc+'"' : ''}${rarityParam ? ' rarity='+rarityParam : ''}${cardnumParam ? ' cardnum='+cardnumParam : ''}` : ''}`)
   // Normalize grade — ensure exact case match for all filtering logic
   const VALID_GRADES = ['Raw', 'PSA 9', 'PSA 10', 'BGS 10', 'CGC 10', 'BGS 9.5']
   const rawGrade = req.query.grade || 'Raw'
@@ -1414,6 +1414,12 @@ export default async function handler(req, res) {
       const pp = preprocessQuery(q.trim(), grade)
       processed = pp.query
       requiredRarity = pp.requiredRarity || null
+    }
+
+    // Explicit rarity param from frontend overrides inferred rarity
+    if (rarityParam && parallel === '1') {
+      requiredRarity = rarityParam
+      console.log(`[rarity] explicit from frontend: ${rarityParam}`)
     }
 
     // Catalog rarity lookup — start async, resolve before filtering
@@ -1546,9 +1552,14 @@ export default async function handler(req, res) {
       // $10 price floor strips cheap base cards that slip through "manga" query.
       if (parallel === '1' || _autoParallel) {
         const PARALLEL_PRICE_FLOOR = 10
-        const base = qs.a.q
+        // Use full card number (including -P suffix) from frontend when available
+        let base = qs.a.q
+        if (cardnumParam && /\b[A-Z]{1,4}\d+-\d+/i.test(base)) {
+          base = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?(?:-P\d+)?\b/i, cardnumParam)
+          console.log(`[parallel] swapped card number with cardnum param → "${base}"`)
+        }
         // Name without card number — eBay API can't match card numbers with varied formatting
-        const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?\b/gi, '').replace(/\s+/g, ' ').trim()
+        const nameOnly = base.replace(/\b[A-Z]{1,4}\d+-\d+[A-Z]?(?:-P\d+)?\b/gi, '').replace(/\s+/g, ' ').trim()
         const pNum = parseInt(pnum) || 0
         // Map variant_source to seller-friendly eBay terms.
         // Don't pass vsrc verbatim — sellers don't use catalog names.
