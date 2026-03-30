@@ -678,8 +678,12 @@ function acMove(dir){
   items[acSel].classList.add('sel');
   items[acSel].scrollIntoView({block:'nearest'});
 }
+let _selectAcLock=0;
 function selectAc(i){
+  // Prevent double-firing from overlapping mousedown/click events
+  const now=Date.now();if(now-_selectAcLock<500){console.log('[selectAc] blocked double-fire within 500ms');return;}_selectAcLock=now;
   const card=acList[i];if(!card)return;
+  console.log('[selectAc] tapped card:', JSON.stringify({name:card.name,number:card.number,rarity:card.rarity,game:card.game}));
   if(card.isDirect){
     // Direct eBay search — no selectedCard, use free text
     selectedCard=null;
