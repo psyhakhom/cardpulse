@@ -744,9 +744,10 @@ function selectAc(i){
     const baseNumber=card.number.replace(/_PR\d*$/i,'').replace(/_p\d+$/i,'').replace(/-P\d+$/i,'');
     const variantSuffix=/\*/.test(rUp)?' alt art':rUp==='DBR'?' dragon ball rare':rUp==='SGR'?' gold rare':rUp==='GFR'?' giant force rare':rUp==='SLR'?' special leader rare':'';
     if(isParallel){
-      // Parallel cards: search by card name + base number — sellers always include the number
-      // Both base and parallel comps will match; rarity split picker handles the price gap
-      cleanSQ=(shortName+' '+baseNumber).trim();
+      // Parallel cards: keep full card number with -P suffix for eBay query precision
+      // "Fortuneteller Baba SB01-049-P1" not "Fortuneteller Baba SB01-049"
+      const pNum=/-P\d+$/i.test(card.number)?card.number:baseNumber;
+      cleanSQ=(shortName+' '+pNum).trim();
       console.log('[selectAc] parallel query:',JSON.stringify(cleanSQ));
     }else{
       cleanSQ=(shortName+' '+baseNumber+variantSuffix).trim();
